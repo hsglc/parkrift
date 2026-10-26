@@ -31,7 +31,127 @@ private enum Mat {
 
 // MARK: - Car model
 
-/// Low-poly 3D car built from primitives. Faces +x in its local frame (meters).
+enum CarStyle: Int, CaseIterable {
+    case sedan
+    case hatch
+    case suv
+}
+
+/// Shared car geometry (built once per style, copied per car so each can have its own paint).
+private enum CarShapes {
+    struct Profile {
+        let body: UIBezierPath
+        let cabin: UIBezierPath
+        let window: UIBezierPath
+        let windshield: (CGPoint, CGPoint)
+        let rearWindow: (CGPoint, CGPoint)
+        let roofHeight: CGFloat
+    }
+
+    /// Side silhouette of the lower body with wheel arches (x forward, y up, meters).
+    static func bodyPath(nose: CGFloat, hood: CGFloat, deck: CGFloat, tail: CGFloat) -> UIBezierPath {
+        let path = UIBezierPath()
+        let bottom: CGFloat = 0.30
+        let arch: CGFloat = 0.47
+        path.move(to: CGPoint(x: 2.12, y: bottom))
+        path.addLine(to: CGPoint(x: 1.35 + arch, y: bottom))
+        path.addArc(withCenter: CGPoint(x: 1.35, y: 0.37), radius: arch, startAngle: -0.15, endAngle: CGFloat.pi + 0.15, clockwise: true)
+        path.addLine(to: CGPoint(x: -1.35 + arch, y: bottom))
+        path.addArc(withCenter: CGPoint(x: -1.35, y: 0.37), radius: arch, startAngle: -0.15, endAngle: CGFloat.pi + 0.15, clockwise: true)
+        path.addLine(to: CGPoint(x: -2.12, y: bottom))
+        path.addQuadCurve(to: CGPoint(x: -2.22, y: tail), controlPoint: CGPoint(x: -2.24, y: bottom + 0.05))
+        path.addQuadCurve(to: CGPoint(x: -1.95, y: deck), controlPoint: CGPoint(x: -2.22, y: deck))
+        path.addLine(to: CGPoint(x: 1.2, y: hood))
+        path.addQuadCurve(to: CGPoint(x: 2.2, y: nose), controlPoint: CGPoint(x: 2.08, y: hood - 0.02))
+        path.addQuadCurve(to: CGPoint(x: 2.12, y: bottom), controlPoint: CGPoint(x: 2.26, y: bottom + 0.05))
+        path.close()
+        path.flatness = 0.02
+        return path
+    }
+
+    static func polygon(_ points: [CGPoint]) -> UIBezierPath {
+        let path = UIBezierPath()
+        path.move(to: points[0])
+        for point in points.dropFirst() { path.addLine(to: point) }
+        path.close()
+        return path
+    }
+
+    static func profile(_ style: CarStyle) -> Profile {
+        switch style {
+        case .sedan:
+            let rearBase = CGPoint(x: -1.45, y: 0.97), rearTop = CGPoint(x: -0.9, y: 1.46)
+            let frontTop = CGPoint(x: 0.25, y: 1.48), frontBase = CGPoint(x: 1.12, y: 0.97)
+            return Profile(body: bodyPath(nose: 0.74, hood: 0.96, deck: 0.98, tail: 0.78),
+                           cabin: polygon([rearBase, rearTop, frontTop, frontBase]),
+                           window: polygon([CGPoint(x: -1.2, y: 1.03), CGPoint(x: -0.82, y: 1.39),
+                                            CGPoint(x: 0.2, y: 1.41), CGPoint(x: 0.88, y: 1.03)]),
+                           windshield: (frontTop, frontBase), rearWindow: (rearBase, rearTop), roofHeight: 1.48)
+        case .hatch:
+            let rearBase = CGPoint(x: -2.0, y: 0.98), rearTop = CGPoint(x: -1.72, y: 1.5)
+            let frontTop = CGPoint(x: 0.3, y: 1.52), frontBase = CGPoint(x: 1.1, y: 0.97)
+            return Profile(body: bodyPath(nose: 0.76, hood: 0.96, deck: 0.98, tail: 0.82),
+                           cabin: polygon([rearBase, rearTop, frontTop, frontBase]),
+                           window: polygon([CGPoint(x: -1.72, y: 1.04), CGPoint(x: -1.55, y: 1.43),
+                                            CGPoint(x: 0.24, y: 1.45), CGPoint(x: 0.86, y: 1.04)]),
+                           windshield: (frontTop, frontBase), rearWindow: (rearBase, rearTop), roofHeight: 1.52)
+        case .suv:
+            let rearBase = CGPoint(x: -2.08, y: 1.12), rearTop = CGPoint(x: -1.98, y: 1.82)
+            let frontTop = CGPoint(x: 0.55, y: 1.84), frontBase = CGPoint(x: 1.25, y: 1.12)
+            return Profile(body: bodyPath(nose: 0.9, hood: 1.1, deck: 1.12, tail: 0.95),
+                           cabin: polygon([rearBase, rearTop, frontTop, frontBase]),
+                           window: polygon([CGPoint(x: -1.9, y: 1.2), CGPoint(x: -1.84, y: 1.74),
+                                            CGPoint(x: 0.5, y: 1.76), CGPoint(x: 1.02, y: 1.2)]),
+                           windshield: (frontTop, frontBase), rearWindow: (rearBase, rearTop), roofHeight: 1.84)
+        }
+    }
+
+    private static var cache: [CarStyle: (body: SCNGeometry, cabin: SCNGeometry, window: SCNGeometry)] = [:]
+
+    static func geometry(_ style: CarStyle) -> (body: SCNGeometry, cabin: SCNGeometry, window: SCNGeometry) {
+        if let cached = cache[style] { return cached }
+        let p = profile(style)
+        let body = SCNShape(path: p.body, extrusionDepth: 2.0)
+        body.chamferRadius = 0.1
+        body.chamferMode = .both
+        let cabin = SCNShape(path: p.cabin, extrusionDepth: 1.7)
+        cabin.chamferRadius = 0.08
+        cabin.chamferMode = .both
+        let window = SCNShape(path: p.window, extrusionDepth: 0.02)
+        let result = (body: body as SCNGeometry, cabin: cabin as SCNGeometry, window: window as SCNGeometry)
+        cache[style] = result
+        return result
+    }
+
+    static let tyre: SCNGeometry = {
+        let tyre = SCNCylinder(radius: 0.36, height: 0.26)
+        tyre.radialSegmentCount = 18
+        tyre.materials = [Mat.pbr(UIColor(white: 0.06, alpha: 1), metal: 0, rough: 0.9)]
+        return tyre
+    }()
+
+    static let rim: SCNGeometry = {
+        let rim = SCNCylinder(radius: 0.23, height: 0.28)
+        rim.radialSegmentCount = 12
+        rim.materials = [Mat.pbr(UIColor(white: 0.78, alpha: 1), metal: 0.9, rough: 0.3)]
+        return rim
+    }()
+
+    static let hubcap: SCNGeometry = {
+        let cap = SCNCylinder(radius: 0.08, height: 0.3)
+        cap.radialSegmentCount = 8
+        cap.materials = [Mat.pbr(UIColor(white: 0.25, alpha: 1), metal: 0.7, rough: 0.4)]
+        return cap
+    }()
+
+    static let glass = Mat.pbr(UIColor(red: 0.08, green: 0.12, blue: 0.19, alpha: 1), metal: 0.7, rough: 0.08)
+    static let trim = Mat.pbr(UIColor(white: 0.10, alpha: 1), metal: 0.1, rough: 0.75)
+    static let chrome = Mat.pbr(UIColor(white: 0.82, alpha: 1), metal: 0.95, rough: 0.2)
+    static let headlight = Mat.glow(UIColor(red: 1.0, green: 0.97, blue: 0.86, alpha: 1))
+}
+
+/// 3D car: extruded body silhouette with wheel arches, cabin, glass, lights, bumpers and mirrors.
+/// Faces +x in its local frame (meters). Static parts are merged into one node for speed.
 final class Car3D {
     let node = SCNNode()
     private let body = SCNNode()
@@ -42,59 +162,95 @@ final class Car3D {
     private var spin: CGFloat = 0
     private var lastPosition: CGPoint?
 
-    init(color: UIColor) {
-        let paint = Mat.pbr(color, metal: 0.15, rough: 0.55)
-        let trim = Mat.pbr(UIColor(white: 0.12, alpha: 1), metal: 0.1, rough: 0.7)
-        let glass = Mat.pbr(UIColor(red: 0.10, green: 0.14, blue: 0.22, alpha: 1), metal: 0.6, rough: 0.12)
-        let chrome = Mat.pbr(UIColor(white: 0.8, alpha: 1), metal: 0.9, rough: 0.25)
-        let rubber = Mat.pbr(UIColor(white: 0.07, alpha: 1), metal: 0, rough: 0.9)
+    init(color: UIColor, style: CarStyle = .sedan) {
+        let paint = Mat.pbr(color, metal: 0.35, rough: 0.32)
+        paint.fresnelExponent = 1.5
         brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
         reverseMaterial = Mat.glow(UIColor(white: 0.35, alpha: 1))
+        let profile = CarShapes.profile(style)
+        let shapes = CarShapes.geometry(style)
+        let parts = SCNNode()
 
+        func add(_ geometry: SCNGeometry, _ material: SCNMaterial, at position: SCNVector3,
+                 rotation: SCNVector3 = SCNVector3Zero, to parent: SCNNode) {
+            let copy = geometry.copy() as! SCNGeometry
+            copy.materials = [material]
+            let child = SCNNode(geometry: copy)
+            // Center extruded shapes on the requested z, whatever their extrusion origin
+            let (low, high) = copy.boundingBox
+            child.position = SCNVector3(position.x, position.y, position.z - (low.z + high.z) / 2)
+            child.eulerAngles = rotation
+            parent.addChildNode(child)
+        }
         func box(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ chamfer: CGFloat, _ material: SCNMaterial,
-                 at position: SCNVector3, parent: SCNNode) {
+                 at position: SCNVector3, rotationZ: Float = 0, to parent: SCNNode) {
             let geometry = SCNBox(width: w, height: h, length: l, chamferRadius: chamfer)
-            geometry.chamferSegmentCount = 1
+            geometry.chamferSegmentCount = 2
             geometry.materials = [material]
             let child = SCNNode(geometry: geometry)
             child.position = position
+            child.eulerAngles.z = rotationZ
             parent.addChildNode(child)
         }
 
-        // Body
-        box(4.3, 0.62, 2.0, 0.26, paint, at: SCNVector3(0, 0.66, 0), parent: body)
-        box(2.3, 0.6, 1.78, 0.24, glass, at: SCNVector3(-0.25, 1.18, 0), parent: body)
-        box(1.8, 0.1, 1.62, 0.05, paint, at: SCNVector3(-0.35, 1.49, 0), parent: body)
-        box(0.16, 0.28, 2.02, 0.07, trim, at: SCNVector3(2.14, 0.48, 0), parent: body)
-        box(0.16, 0.28, 2.02, 0.07, trim, at: SCNVector3(-2.14, 0.48, 0), parent: body)
-        box(0.2, 0.13, 0.22, 0.04, paint, at: SCNVector3(0.72, 1.02, 1.08), parent: body)
-        box(0.2, 0.13, 0.22, 0.04, paint, at: SCNVector3(0.72, 1.02, -1.08), parent: body)
-        let headlight = Mat.glow(UIColor(red: 1.0, green: 0.97, blue: 0.85, alpha: 1))
-        for z: Float in [0.62, -0.62] {
-            box(0.06, 0.16, 0.46, 0.03, headlight, at: SCNVector3(2.17, 0.74, z), parent: body)
-            box(0.06, 0.16, 0.46, 0.03, brakeMaterial, at: SCNVector3(-2.17, 0.76, z), parent: body)
+        // Body and cabin (extruded along z, centered)
+        add(shapes.body, paint, at: SCNVector3(0, 0, 0), to: parts)
+        add(shapes.cabin, paint, at: SCNVector3(0, -0.01, 0), to: parts)
+        // Side windows
+        add(shapes.window, CarShapes.glass, at: SCNVector3(0, 0, 0.862), to: parts)
+        add(shapes.window, CarShapes.glass, at: SCNVector3(0, 0, -0.862), to: parts)
+        // B-pillar
+        let pillarX = Float((profile.windshield.0.x + profile.rearWindow.1.x) / 2)
+        box(0.1, profile.roofHeight - 1.0, 1.74, 0.02, CarShapes.trim,
+            at: SCNVector3(pillarX, Float((profile.roofHeight + 1.0) / 2), 0), to: parts)
+        // Windshield and rear window as tilted glass panels
+        for (a, b) in [profile.windshield, profile.rearWindow] {
+            let length = hypot(b.x - a.x, b.y - a.y)
+            let angle = atan2(b.y - a.y, b.x - a.x)
+            let normal = CGPoint(x: -sin(angle), y: cos(angle))
+            let outward: CGFloat = a.x > 0 || b.x > 0 ? 1 : -1
+            let mid = CGPoint(x: (a.x + b.x) / 2 + normal.x * 0.012 * outward, y: (a.y + b.y) / 2 + normal.y * 0.012 * outward)
+            box(length * 0.9, 0.02, 1.5, 0.005, CarShapes.glass,
+                at: SCNVector3(Float(mid.x), Float(mid.y), 0), rotationZ: Float(angle), to: parts)
         }
-        box(0.06, 0.1, 0.3, 0.02, reverseMaterial, at: SCNVector3(-2.17, 0.58, 0), parent: body)
+        // Bumpers, grille, mirrors
+        box(0.18, 0.2, 1.96, 0.08, CarShapes.trim, at: SCNVector3(2.16, 0.38, 0), to: parts)
+        box(0.18, 0.2, 1.96, 0.08, CarShapes.trim, at: SCNVector3(-2.16, 0.38, 0), to: parts)
+        box(0.05, 0.16, 0.9, 0.03, CarShapes.trim, at: SCNVector3(2.2, 0.58, 0), to: parts)
+        box(0.04, 0.03, 0.86, 0.01, CarShapes.chrome, at: SCNVector3(2.225, 0.64, 0), to: parts)
+        let mirrorY = Float(profile.windshield.1.y + 0.08)
+        let mirrorX = Float(profile.windshield.1.x - 0.12)
+        for z: Float in [1.0, -1.0] {
+            box(0.16, 0.12, 0.2, 0.04, paint, at: SCNVector3(mirrorX, mirrorY, z), to: parts)
+            // Door handles
+            box(0.14, 0.03, 0.02, 0.01, CarShapes.chrome, at: SCNVector3(0.25, 0.86, z * 1.005), to: parts)
+            box(0.14, 0.03, 0.02, 0.01, CarShapes.chrome, at: SCNVector3(-0.75, 0.86, z * 1.005), to: parts)
+        }
+        // Headlights
+        for z: Float in [0.66, -0.66] {
+            box(0.08, 0.11, 0.4, 0.04, CarShapes.headlight, at: SCNVector3(2.17, 0.72, z), to: parts)
+        }
+        body.addChildNode(parts.flattenedClone())
+
+        // Lights that change at runtime stay separate
+        let tailY: Float = style == .suv ? 0.88 : 0.8
+        for z: Float in [0.66, -0.66] {
+            box(0.07, 0.12, 0.42, 0.03, brakeMaterial, at: SCNVector3(-2.2, tailY, z), to: body)
+        }
+        box(0.06, 0.08, 0.26, 0.02, reverseMaterial, at: SCNVector3(-2.2, tailY - 0.14, 0), to: body)
         node.addChildNode(body)
 
-        // Wheels: pivot (steering) -> spin (rolling) -> tyre
-        let tyre = SCNCylinder(radius: 0.37, height: 0.3)
-        tyre.radialSegmentCount = 8
-        tyre.materials = [rubber]
-        let hub = SCNCylinder(radius: 0.2, height: 0.32)
-        hub.radialSegmentCount = 6
-        hub.materials = [chrome]
-        let spots: [(Float, Float, Bool)] = [(1.35, 0.98, true), (1.35, -0.98, true), (-1.35, 0.98, false), (-1.35, -0.98, false)]
+        // Wheels: pivot (steering) -> spin (rolling) -> tyre + rim
+        let spots: [(Float, Float, Bool)] = [(1.35, 0.92, true), (1.35, -0.92, true), (-1.35, 0.92, false), (-1.35, -0.92, false)]
         for spot in spots {
             let pivot = SCNNode()
-            pivot.position = SCNVector3(spot.0, 0.37, spot.1)
+            pivot.position = SCNVector3(spot.0, 0.36, spot.1)
             let spinner = SCNNode()
-            let tyreNode = SCNNode(geometry: tyre)
-            tyreNode.eulerAngles.x = Float.pi / 2
-            let hubNode = SCNNode(geometry: hub)
-            hubNode.eulerAngles.x = Float.pi / 2
-            spinner.addChildNode(tyreNode)
-            spinner.addChildNode(hubNode)
+            for geometry in [CarShapes.tyre, CarShapes.rim, CarShapes.hubcap] {
+                let part = SCNNode(geometry: geometry)
+                part.eulerAngles.x = Float.pi / 2
+                spinner.addChildNode(part)
+            }
             pivot.addChildNode(spinner)
             node.addChildNode(pivot)
             spinNodes.append(spinner)
@@ -363,8 +519,8 @@ final class World3D {
 
     // MARK: Level
 
-    func makeCar(color: UIColor) -> Car3D {
-        let car = Car3D(color: color)
+    func makeCar(color: UIColor, style: CarStyle = .sedan) -> Car3D {
+        let car = Car3D(color: color, style: style)
         scene.rootNode.addChildNode(car.node)
         return car
     }
@@ -452,7 +608,8 @@ final class World3D {
         for obstacle in level.obstacles {
             switch obstacle.kind {
             case .car:
-                let car = Car3D(color: CarArt.parkedColors[obstacle.tint % CarArt.parkedColors.count])
+                let car = Car3D(color: CarArt.parkedColors[obstacle.tint % CarArt.parkedColors.count],
+                                style: CarStyle(rawValue: (obstacle.tint + Int(obstacle.center.x)) % 3) ?? .sedan)
                 car.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
                 parkedCars.addChildNode(car.node)
             case .building:

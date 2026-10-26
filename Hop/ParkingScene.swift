@@ -493,8 +493,9 @@ final class ParkingScene: SKScene {
         if let city = level.city {
             let newTraffic = Traffic(map: city, starts: level.bots, seed: UInt64(levelIndex * 31 + 7))
             traffic = newTraffic
-            for bot in newTraffic.bots {
-                botCars.append(world.makeCar(color: CarArt.parkedColors[bot.tint % CarArt.parkedColors.count]))
+            for (index, bot) in newTraffic.bots.enumerated() {
+                botCars.append(world.makeCar(color: CarArt.parkedColors[bot.tint % CarArt.parkedColors.count],
+                                             style: CarStyle(rawValue: index % 3) ?? .sedan))
             }
         }
         route = []

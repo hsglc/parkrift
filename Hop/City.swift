@@ -287,7 +287,7 @@ extension Levels {
 
             var bots: [BotStart] = []
             var attempts = 0
-            while bots.count < 40 && attempts < 600 {
+            while bots.count < 56 && attempts < 900 {
                 attempts += 1
                 let index = rng.int(segments.count)
                 let s = segments[index]
@@ -362,13 +362,22 @@ extension Levels {
         // Traffic
         var bots: [BotStart] = []
         var attempts = 0
-        while bots.count < 12 && attempts < 200 {
+        while bots.count < 30 && attempts < 600 {
             attempts += 1
             let index = rng.int(segments.count)
             if index == startSegment { continue }
             let s = segments[index]
             let forward = rng.unit() < 0.5
-            bots.append(BotStart(from: forward ? s.a : s.b, to: forward ? s.b : s.a, progress: rng.range(0.15, 0.85), tint: rng.int(6)))
+            let candidate = BotStart(from: forward ? s.a : s.b, to: forward ? s.b : s.a, progress: rng.range(0.1, 0.9), tint: rng.int(6))
+            let lane = map.lane(from: candidate.from, to: candidate.to)
+            let p = CGPoint(x: lane.start.x + (lane.end.x - lane.start.x) * candidate.progress,
+                            y: lane.start.y + (lane.end.y - lane.start.y) * candidate.progress)
+            if bots.contains(where: { other in
+                let l = map.lane(from: other.from, to: other.to)
+                let q = CGPoint(x: l.start.x + (l.end.x - l.start.x) * other.progress, y: l.start.y + (l.end.y - l.start.y) * other.progress)
+                return q.distance(to: p) < 90
+            }) { continue }
+            bots.append(candidate)
         }
 
         return LevelDef(nameTR: "Şehir", nameEN: "City", starts: starts, spots: spots, obstacles: obstacles,
