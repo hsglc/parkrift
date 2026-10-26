@@ -65,7 +65,14 @@ jobs:
             CODE_SIGN_STYLE=Automatic \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*(sign|provision)|ARCHIVE (SUCCEEDED|FAILED)" || true
-          test -d "$RUNNER_TEMP/Hop.xcarchive" || { echo "::error::Archive failed"; tail -n 80 "$RUNNER_TEMP/archive.log"; exit 1; }
+          if [ ! -d "$RUNNER_TEMP/Hop.xcarchive" ]; then
+            tail -n 80 "$RUNNER_TEMP/archive.log"
+            grep -E "error:|requires a provisioning|No profiles|No Accounts|No signing certificate|Signing for|FAILED" "$RUNNER_TEMP/archive.log" \
+              | sed -E 's#^/Users/runner/work/hop/hop/##' | sort -u | head -n 9 \
+              | while IFS= read -r line; do echo "::error::${line:0:900}"; done
+            echo "::error::Archive failed"
+            exit 1
+          fi
 
       - name: Export and upload to TestFlight
         run: |
@@ -98,7 +105,12 @@ jobs:
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            2>&1 | tee "$RUNNER_TEMP/export.log"
+            2>&1 | tee "$RUNNER_TEMP/export.log" || {
+              grep -E "error|Error|failed|FAILED" "$RUNNER_TEMP/export.log" | sort -u | head -n 9 \
+                | while IFS= read -r line; do echo "::error::${line:0:900}"; done
+              echo "::error::Export/upload failed"
+              exit 1
+            }
 
       - name: Upload logs
         if: always()
