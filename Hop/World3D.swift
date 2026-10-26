@@ -359,37 +359,47 @@ private enum CarFactory {
             holder.addChildNode(part)
         }
         let flat = flattened(holder)
-        flat.geometry?.levelsOfDetail = [SCNLevelOfDetail(geometry: nil, worldSpaceDistance: PerfSettings.carDetailDistance)]
         flat.castsShadow = false
         return flat
     }()
 
-    /// Simple far-away car: body block and dark cabin.
+    /// Simple far-away car: body block, dark cabin and wheel blocks (vertex data written directly;
+    /// SceneKit needs a real mesh for a level of detail).
     private static func lowDetail(style: CarStyle, paint: SCNMaterial) -> SCNGeometry? {
-        let holder = SCNNode()
+        let mesh = MeshBuilder()
         let profile = CarShapes.profile(style)
-        let bodyTop: CGFloat = style == .racer ? 0.8 : (style == .suv ? 1.1 : 0.98)
-        _ = box(4.3, bodyTop - 0.28, 2.0, 0.15, paint, at: SCNVector3(0, Float((bodyTop + 0.28) / 2), 0), to: holder)
-        let cabinLength = abs(profile.windshield.1.x - profile.rearWindow.0.x) * 0.8
+        let bodyTop: Float = style == .racer ? 0.8 : (style == .suv ? 1.1 : 0.98)
+        mesh.addBox(center: SIMD3(0, 0.28, 0), width: 4.3, height: bodyTop - 0.28, length: 2.0, angle: 0,
+                    wall: paint, roof: paint, wallRepeats: { _ in SIMD2(1, 1) })
+        let cabinLength = Float(abs(profile.windshield.1.x - profile.rearWindow.0.x)) * 0.8
         let cabinX = Float((profile.windshield.1.x + profile.rearWindow.0.x) / 2)
-        _ = box(cabinLength, profile.roofHeight - bodyTop, style == .racer ? 1.5 : 1.7, 0.12, CarShapes.glass,
-                at: SCNVector3(cabinX, Float((profile.roofHeight + bodyTop) / 2), 0), to: holder)
+        mesh.addBox(center: SIMD3(cabinX, bodyTop, 0), width: cabinLength, height: Float(profile.roofHeight) - bodyTop,
+                    length: style == .racer ? 1.5 : 1.7, angle: 0,
+                    wall: CarShapes.glass, roof: paint, wallRepeats: { _ in SIMD2(1, 1) })
         for spot in wheelSpots {
-            _ = box(0.7, 0.6, 0.26, 0.1, CarShapes.trim, at: SCNVector3(spot.0, 0.33, spot.1), to: holder)
+            mesh.addBox(center: SIMD3(spot.0, 0.03, spot.1), width: 0.7, height: 0.6, length: 0.28, angle: 0,
+                        wall: CarShapes.trim, roof: CarShapes.trim, wallRepeats: { _ in SIMD2(1, 1) })
         }
-        return flattened(holder).geometry
+        return mesh.build()
     }
 
     private static var bodies: [String: SCNNode] = [:]
+    private static var lowTemplates: [String: SCNNode] = [:]
+
+    /// Simple far-away version for the same style and color (built with `body`).
+    static func lowBody(style: CarStyle, color: UIColor, parked: Bool) -> SCNNode? {
+        lowTemplates["\(style.rawValue)-\(colorKey(color))-\(parked)"]
+    }
 
     /// Every cached geometry including far-distance versions, for warming up the GPU.
     static var allGeometries: [SCNGeometry] {
         var result: [SCNGeometry] = [CarShapes.flameOuter, CarShapes.flameInner]
         if let wheel = wheelTemplate.geometry { result.append(wheel) }
         for template in bodies.values {
-            guard let geometry = template.geometry else { continue }
-            result.append(geometry)
-            result += (geometry.levelsOfDetail ?? []).compactMap { $0.geometry }
+            if let geometry = template.geometry { result.append(geometry) }
+        }
+        for template in lowTemplates.values {
+            if let geometry = template.geometry { result.append(geometry) }
         }
         return result
     }
@@ -417,10 +427,10 @@ private enum CarFactory {
             }
         }
         let template = flattened(parts)
-        if let geometry = template.geometry, let low = lowDetail(style: style, paint: paintMaterial) {
-            geometry.levelsOfDetail = [SCNLevelOfDetail(geometry: low, worldSpaceDistance: PerfSettings.carDetailDistance)]
-        }
         bodies[key] = template
+        if lowTemplates[key] == nil, let low = lowDetail(style: style, paint: paintMaterial) {
+            lowTemplates[key] = SCNNode(geometry: low)
+        }
         return template
     }
 }
@@ -440,6 +450,10 @@ final class Car3D {
     private var nitroOn = false
     private var lastBraking: Bool?
     private var lastReversing: Bool?
+    /// Wheels and lights, hidden for far-away traffic.
+    private var detailNodes: [SCNNode] = []
+    private var detailVisible = true
+    private var lowNode: SCNNode?
 
     /// `parked`: a car that never moves (wheels and lights baked into one geometry).
     init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false) {
@@ -449,7 +463,14 @@ final class Car3D {
 
         if PerfSettings.optimized {
             // clone() shares the cached geometry with every car of this style and color
-            body.addChildNode(CarFactory.body(style: style, color: color, parked: parked).clone())
+            let high = CarFactory.body(style: style, color: color, parked: parked).clone()
+            body.addChildNode(high)
+            detailNodes.append(high)
+            if let low = CarFactory.lowBody(style: style, color: color, parked: parked)?.clone() {
+                low.isHidden = true
+                body.addChildNode(low)
+                lowNode = low
+            }
             if parked { return }
         } else {
             let paint = Mat.pbr(color, metal: 0.35, rough: 0.32)
@@ -483,10 +504,8 @@ final class Car3D {
         }
         lights.append(CarFactory.box(0.06, 0.08, 0.26, 0.02, reverseMaterial, at: SCNVector3(-2.2, tailY - 0.14, 0), to: body))
         if PerfSettings.optimized {
-            for light in lights {
-                light.castsShadow = false
-                light.geometry?.levelsOfDetail = [SCNLevelOfDetail(geometry: nil, worldSpaceDistance: PerfSettings.carDetailDistance)]
-            }
+            for light in lights { light.castsShadow = false }
+            detailNodes += lights
         }
 
         // Wheels: pivot (steering) -> spin (rolling) -> tyre + rim
@@ -505,6 +524,7 @@ final class Car3D {
             }
             pivot.addChildNode(spinner)
             node.addChildNode(pivot)
+            detailNodes.append(pivot)
             spinNodes.append(spinner)
             if spot.2 { steerPivots.append(pivot) }
         }
@@ -545,6 +565,14 @@ final class Car3D {
         }
     }
 
+    /// Shows or hides wheels and lights (far-away traffic only needs the simple body).
+    func setDetail(_ visible: Bool) {
+        guard PerfSettings.optimized, visible != detailVisible else { return }
+        detailVisible = visible
+        for detail in detailNodes { detail.isHidden = !visible }
+        lowNode?.isHidden = visible
+    }
+
     /// Exhaust flames while the nitro burns.
     func setNitro(_ on: Bool) {
         guard on != nitroOn else { return }
@@ -567,6 +595,7 @@ final class World3D {
     weak var renderer: SCNView?
     let cameraNode = SCNNode()
     private let levelRoot = SCNNode()
+    private var parkedCars3D: [(car: Car3D, position: CGPoint)] = []
     /// Classic parking lot ground, curbs, trees and poles (hidden in the city).
     private let lotRoot = SCNNode()
     private let fxRoot = SCNNode()
@@ -893,6 +922,7 @@ final class World3D {
         fxRoot.childNodes.forEach { $0.removeFromParentNode() }
         myNeon = nil
         cinematicActive = false
+        parkedCars3D.removeAll()
         arrowNode = nil
         lotRoot.isHidden = level.city != nil
         if let city = level.city {
@@ -989,6 +1019,7 @@ final class World3D {
                 car.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
                 if PerfSettings.optimized {
                     levelRoot.addChildNode(car.node)
+                    parkedCars3D.append((car, obstacle.center))
                 } else {
                     parkedCars.addChildNode(car.node)
                 }
@@ -1243,6 +1274,14 @@ final class World3D {
         var objects: [Any] = [scene.rootNode]
         objects += CarFactory.allGeometries
         renderer.prepare(objects, completionHandler: nil)
+    }
+
+    /// Full detail only for parked cars near the player (world units).
+    func updateDetail(around point: CGPoint) {
+        let range = PerfSettings.carDetailDistance * 10
+        for entry in parkedCars3D {
+            entry.car.setDetail(abs(entry.position.x - point.x) < range && abs(entry.position.y - point.y) < range)
+        }
     }
 
     func markParked() {

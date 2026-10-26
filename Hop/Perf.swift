@@ -208,16 +208,12 @@ enum SceneStats {
     static func effective(_ root: SCNNode, camera: SIMD3<Float>) -> (drawCalls: Int, triangles: Int) {
         var drawCalls = 0
         var triangles = 0
-        root.enumerateHierarchy { node, stop in
-            guard !node.isHidden, var geometry = node.geometry else { return }
-            if let levels = geometry.levelsOfDetail, !levels.isEmpty {
-                let (low, high) = node.boundingBox
-                let center = node.simdConvertPosition(SIMD3((low.x + high.x) / 2, (low.y + high.y) / 2, (low.z + high.z) / 2), to: nil)
-                let distance = CGFloat(simd_distance(center, camera))
-                var chosen: SCNGeometry? = geometry
-                for level in levels where distance >= level.worldSpaceDistance { chosen = level.geometry }
-                guard let picked = chosen else { return }
-                geometry = picked
+        root.enumerateHierarchy { node, _ in
+            guard let geometry = node.geometry else { return }
+            var current: SCNNode? = node
+            while let check = current {
+                if check.isHidden { return }
+                current = check.parent
             }
             drawCalls += geometry.elements.count
             triangles += geometry.elements.reduce(0) { $0 + $1.primitiveCount }

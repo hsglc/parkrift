@@ -96,6 +96,7 @@ final class ParkingScene: SKScene {
     var levelLoadMilliseconds: Double = 0
     private var finishAnimating = false
     private var nitroFiredAt: [Double] = []
+    private var detailClock: CGFloat = 0
     private var navNode = SKNode()
     private var navArrow = SKSpriteNode()
     private var navLabel = SKLabelNode()
@@ -1184,7 +1185,10 @@ final class ParkingScene: SKScene {
             var blockers = [carPosition]
             if friendPresent && remoteTarget != nil { blockers.append(remotePosition) }
             traffic.step(dt, blockers: blockers)
+            let detailRange = PerfSettings.carDetailDistance * 10
             for (index, bot) in traffic.bots.enumerated() where index < botCars.count {
+                let near = abs(bot.position.x - carPosition.x) < detailRange && abs(bot.position.y - carPosition.y) < detailRange
+                botCars[index].setDetail(near)
                 botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)
             }
             if online && friendPresent && isHost {
@@ -1196,6 +1200,11 @@ final class ParkingScene: SKScene {
             }
         }
         if isCity { updateNavigation(dt) }
+        detailClock -= dt
+        if detailClock <= 0 {
+            detailClock = 0.2
+            world?.updateDetail(around: carPosition)
+        }
 
         if online && friendPresent && remoteParked && !localParked && phase == .driving {
             giveUp -= dt

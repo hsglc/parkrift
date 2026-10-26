@@ -85,6 +85,9 @@ jobs:
             fi
           }
           run optimized-1
+          run legacy-1 -legacy
+          run optimized-2
+          run legacy-2 -legacy
 
       - name: Collect crash reports
         if: always()
