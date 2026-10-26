@@ -14,8 +14,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 40
     env:
-      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID || '668Y8934S8' }}
+      ASC_ISSUER_ID: 1e043955-17da-4831-838a-b4e2d593d0b5
       TEAM_ID: A88LG8CJV6
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
       - name: Check secrets
         run: |
           missing=0
-          for name in ASC_KEY_ID ASC_ISSUER_ID; do
+          for name in ASC_KEY_ID; do
             if [ -z "${!name}" ]; then echo "::error::Missing secret $name"; missing=1; fi
           done
           if [ -z "${{ secrets.ASC_KEY_P8 }}" ]; then echo "::error::Missing secret ASC_KEY_P8"; missing=1; fi
