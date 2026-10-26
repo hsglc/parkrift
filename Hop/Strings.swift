@@ -6,7 +6,7 @@ enum Strings {
 
     static var title: String { "Hop!" }
     static var tapToStart: String { isTurkish ? "Başlamak için dokun" : "Tap to start" }
-    static var hint: String { isTurkish ? "Dokun: zıpla · Havada tekrar dokun: çift zıpla" : "Tap: jump · Tap again in the air: double jump" }
+    static var hint: String { isTurkish ? "Her dokunuşta yüksel · Sütunların arasından geç" : "Tap to fly up · Pass between the pillars" }
     static var gameOver: String { isTurkish ? "Oyun bitti" : "Game over" }
     static var tapToRetry: String { isTurkish ? "Tekrar için dokun" : "Tap to try again" }
     static func best(_ value: Int) -> String { isTurkish ? "Rekor: \(value)" : "Best: \(value)" }
