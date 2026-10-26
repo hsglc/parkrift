@@ -47,7 +47,7 @@ final class AudioManager {
         try? session.setActive(true)
 
         buffers["music"] = load("music", ext: "m4a")
-        for name in ["engine", "bump", "beep", "go", "park", "click", "horn"] {
+        for name in ["engine", "bump", "beep", "go", "park", "click", "horn", "nitro"] {
             buffers[name] = load(name, ext: "wav")
         }
 

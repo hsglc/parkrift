@@ -86,4 +86,6 @@ enum Strings {
     static var penaltyHint: String { t("Puan = süre + her kaza 3 sn", "Score = time + 3 s per crash") }
     static func crashes(_ n: Int) -> String { t("\(n) kaza", "\(n) crashes") }
     static var mode: String { t("MOD", "MODE") }
+    static var nitro: String { t("NİTRO", "NITRO") }
+    static var nitroGo: String { t("NİTRO!", "NITRO!") }
 }

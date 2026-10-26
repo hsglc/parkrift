@@ -35,6 +35,7 @@ enum CarStyle: Int, CaseIterable {
     case sedan
     case hatch
     case suv
+    case racer
 }
 
 /// Shared car geometry (built once per style, copied per car so each can have its own paint).
@@ -95,6 +96,14 @@ private enum CarShapes {
                            window: polygon([CGPoint(x: -1.72, y: 1.04), CGPoint(x: -1.55, y: 1.43),
                                             CGPoint(x: 0.24, y: 1.45), CGPoint(x: 0.86, y: 1.04)]),
                            windshield: (frontTop, frontBase), rearWindow: (rearBase, rearTop), roofHeight: 1.52)
+        case .racer:
+            let rearBase = CGPoint(x: -1.35, y: 0.8), rearTop = CGPoint(x: -0.55, y: 1.2)
+            let frontTop = CGPoint(x: 0.1, y: 1.22), frontBase = CGPoint(x: 1.05, y: 0.72)
+            return Profile(body: bodyPath(nose: 0.46, hood: 0.7, deck: 0.82, tail: 0.76),
+                           cabin: polygon([rearBase, rearTop, frontTop, frontBase]),
+                           window: polygon([CGPoint(x: -1.1, y: 0.86), CGPoint(x: -0.5, y: 1.15),
+                                            CGPoint(x: 0.06, y: 1.16), CGPoint(x: 0.82, y: 0.79)]),
+                           windshield: (frontTop, frontBase), rearWindow: (rearBase, rearTop), roofHeight: 1.22)
         case .suv:
             let rearBase = CGPoint(x: -2.08, y: 1.12), rearTop = CGPoint(x: -1.98, y: 1.82)
             let frontTop = CGPoint(x: 0.55, y: 1.84), frontBase = CGPoint(x: 1.25, y: 1.12)
@@ -114,7 +123,7 @@ private enum CarShapes {
         let body = SCNShape(path: p.body, extrusionDepth: 2.0)
         body.chamferRadius = 0.1
         body.chamferMode = .both
-        let cabin = SCNShape(path: p.cabin, extrusionDepth: 1.7)
+        let cabin = SCNShape(path: p.cabin, extrusionDepth: style == .racer ? 1.5 : 1.7)
         cabin.chamferRadius = 0.08
         cabin.chamferMode = .both
         let window = SCNShape(path: p.window, extrusionDepth: 0.02)
@@ -148,6 +157,45 @@ private enum CarShapes {
     static let trim = Mat.pbr(UIColor(white: 0.10, alpha: 1), metal: 0.1, rough: 0.75)
     static let chrome = Mat.pbr(UIColor(white: 0.82, alpha: 1), metal: 0.95, rough: 0.2)
     static let headlight = Mat.glow(UIColor(red: 1.0, green: 0.97, blue: 0.86, alpha: 1))
+    static let stripe = Mat.pbr(UIColor(white: 0.97, alpha: 1), metal: 0.2, rough: 0.35)
+    static let carbon = Mat.pbr(UIColor(white: 0.06, alpha: 1), metal: 0.5, rough: 0.35)
+
+    /// Thin slices of the body/cabin silhouettes, used as racing stripes.
+    private static var stripeCache: (body: SCNGeometry, cabin: SCNGeometry)?
+    static func stripes() -> (body: SCNGeometry, cabin: SCNGeometry) {
+        if let cached = stripeCache { return cached }
+        let p = profile(.racer)
+        let body = SCNShape(path: p.body, extrusionDepth: 0.2)
+        body.chamferRadius = 0.04
+        let cabin = SCNShape(path: p.cabin, extrusionDepth: 0.2)
+        cabin.chamferRadius = 0.04
+        stripeCache = (body, cabin)
+        return (body, cabin)
+    }
+
+    static let flameOuter: SCNGeometry = {
+        let cone = SCNCone(topRadius: 0, bottomRadius: 0.16, height: 1.0)
+        cone.radialSegmentCount = 10
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = UIColor(red: 0.25, green: 0.6, blue: 1.0, alpha: 0.85)
+        material.blendMode = .add
+        material.writesToDepthBuffer = false
+        cone.materials = [material]
+        return cone
+    }()
+
+    static let flameInner: SCNGeometry = {
+        let cone = SCNCone(topRadius: 0, bottomRadius: 0.08, height: 0.6)
+        cone.radialSegmentCount = 8
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = UIColor(red: 1.0, green: 0.95, blue: 0.75, alpha: 1)
+        material.blendMode = .add
+        material.writesToDepthBuffer = false
+        cone.materials = [material]
+        return cone
+    }()
 }
 
 /// 3D car: extruded body silhouette with wheel arches, cabin, glass, lights, bumpers and mirrors.
@@ -161,6 +209,8 @@ final class Car3D {
     private let reverseMaterial: SCNMaterial
     private var spin: CGFloat = 0
     private var lastPosition: CGPoint?
+    private var flames: [SCNNode] = []
+    private var nitroOn = false
 
     init(color: UIColor, style: CarStyle = .sedan) {
         let paint = Mat.pbr(color, metal: 0.35, rough: 0.32)
@@ -227,10 +277,70 @@ final class Car3D {
             box(0.14, 0.03, 0.02, 0.01, CarShapes.chrome, at: SCNVector3(-0.75, 0.86, z * 1.005), to: parts)
         }
         // Headlights
+        let headlightY: Float = style == .racer ? 0.56 : 0.72
         for z: Float in [0.66, -0.66] {
-            box(0.08, 0.11, 0.4, 0.04, CarShapes.headlight, at: SCNVector3(2.17, 0.72, z), to: parts)
+            box(0.08, 0.11, 0.4, 0.04, CarShapes.headlight, at: SCNVector3(2.17, headlightY, z), to: parts)
+        }
+        if style == .racer {
+            // Twin racing stripes over nose, roof and tail
+            let stripes = CarShapes.stripes()
+            for z: Float in [0.2, -0.2] {
+                let bodyStripe = SCNNode(geometry: stripes.body.copy() as? SCNGeometry)
+                bodyStripe.geometry?.materials = [CarShapes.stripe]
+                bodyStripe.scale = SCNVector3(1.004, 1.012, 1)
+                let bodyStripeBox = bodyStripe.boundingBox
+                bodyStripe.position = SCNVector3(0, -0.004, z - (bodyStripeBox.min.z + bodyStripeBox.max.z) / 2)
+                parts.addChildNode(bodyStripe)
+                let cabinStripe = SCNNode(geometry: stripes.cabin.copy() as? SCNGeometry)
+                cabinStripe.geometry?.materials = [CarShapes.stripe]
+                cabinStripe.scale = SCNVector3(1.006, 1.012, 1)
+                let cabinStripeBox = cabinStripe.boundingBox
+                cabinStripe.position = SCNVector3(0, -0.012, z - (cabinStripeBox.min.z + cabinStripeBox.max.z) / 2)
+                parts.addChildNode(cabinStripe)
+            }
+            // Rear wing on two struts
+            for z: Float in [0.62, -0.62] {
+                box(0.1, 0.36, 0.07, 0.02, CarShapes.carbon, at: SCNVector3(-1.95, 0.98, z), to: parts)
+            }
+            box(0.5, 0.07, 2.1, 0.03, CarShapes.carbon, at: SCNVector3(-2.0, 1.17, 0), to: parts)
+            for z: Float in [1.05, -1.05] {
+                box(0.55, 0.22, 0.04, 0.02, paint, at: SCNVector3(-2.0, 1.12, z), to: parts)
+                // Side skirts
+                box(2.4, 0.1, 0.08, 0.03, CarShapes.carbon, at: SCNVector3(0, 0.31, z * 0.97), to: parts)
+            }
+            // Front splitter and hood scoop
+            box(0.35, 0.05, 2.0, 0.02, CarShapes.carbon, at: SCNVector3(2.12, 0.27, 0), to: parts)
+            box(0.5, 0.08, 0.5, 0.04, CarShapes.carbon, at: SCNVector3(1.5, 0.74, 0), to: parts)
+            // Exhaust pipes
+            let pipe = SCNCylinder(radius: 0.07, height: 0.25)
+            pipe.radialSegmentCount = 10
+            pipe.materials = [CarShapes.chrome]
+            for z: Float in [0.42, -0.42] {
+                let pipeNode = SCNNode(geometry: pipe)
+                pipeNode.eulerAngles.z = Float.pi / 2
+                pipeNode.position = SCNVector3(-2.2, 0.36, z)
+                parts.addChildNode(pipeNode)
+            }
         }
         body.addChildNode(parts.flattenedClone())
+
+        if style == .racer {
+            for z: Float in [0.42, -0.42] {
+                let flame = SCNNode()
+                flame.position = SCNVector3(-2.32, 0.36, z)
+                let outer = SCNNode(geometry: CarShapes.flameOuter)
+                outer.eulerAngles.z = Float.pi / 2
+                outer.position = SCNVector3(-0.5, 0, 0)
+                flame.addChildNode(outer)
+                let inner = SCNNode(geometry: CarShapes.flameInner)
+                inner.eulerAngles.z = Float.pi / 2
+                inner.position = SCNVector3(-0.3, 0, 0)
+                flame.addChildNode(inner)
+                flame.isHidden = true
+                body.addChildNode(flame)
+                flames.append(flame)
+            }
+        }
 
         // Lights that change at runtime stay separate
         let tailY: Float = style == .suv ? 0.88 : 0.8
@@ -278,6 +388,20 @@ final class Car3D {
             ? UIColor(red: 1.0, green: 0.10, blue: 0.08, alpha: 1)
             : UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1)
         reverseMaterial.emission.contents = reversing ? UIColor.white : UIColor(white: 0.35, alpha: 1)
+        if nitroOn {
+            for flame in flames {
+                let length = Float.random(in: 0.75...1.35)
+                let width = Float.random(in: 0.85...1.15)
+                flame.scale = SCNVector3(length, width, width)
+            }
+        }
+    }
+
+    /// Exhaust flames while the nitro burns.
+    func setNitro(_ on: Bool) {
+        guard on != nitroOn else { return }
+        nitroOn = on
+        for flame in flames { flame.isHidden = !on }
     }
 
     var isHidden: Bool {
@@ -461,7 +585,7 @@ final class World3D {
     private let chaseHeight: Float = 7.2
     private let lookAhead: Float = 6.5
     private let lookHeight: Float = 0.6
-    private let fieldOfView: CGFloat = 56
+    private var fieldOfView: CGFloat = 56
     private var cameraYaw: Float = 0
     private var cameraFocus = SIMD3<Float>(0, 0, 0)
     private var cameraReady = false
@@ -511,6 +635,12 @@ final class World3D {
         let depth = CGFloat(-c.z)
         return CGPoint(x: viewSize.width / 2 + CGFloat(c.x) / depth * focal,
                        y: viewSize.height / 2 + CGFloat(c.y) / depth * focal)
+    }
+
+    /// Nitro: widen the view (0 = normal, 1 = full boost).
+    func setBoost(_ amount: CGFloat) {
+        fieldOfView = 56 + 16 * amount
+        cameraNode.camera?.fieldOfView = fieldOfView
     }
 
     func shake(strength: CGFloat) {
@@ -819,7 +949,7 @@ final class World3D {
         load(level: level, spotSlots: [0, 1], mySlot: 0)
         arrowNode?.isHidden = true
         for slot in 0..<2 {
-            let car = makeCar(color: CarArt.playerColors[slot])
+            let car = makeCar(color: CarArt.playerColors[slot], style: .racer)
             let spot = level.spots[slot]
             car.update(position: spot.center, heading: spot.angle, steer: 0)
         }

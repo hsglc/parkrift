@@ -100,6 +100,20 @@ final class ParkingScene: SKScene {
     private var friendMarker = SKShapeNode()
     private var gasPedal = SKSpriteNode()
     private var hornButton = SKSpriteNode()
+
+    // Nitro
+    private var nitro: CGFloat = 0.5          // tank 0...1
+    private var boostTime: CGFloat = 0        // seconds of boost left
+    private var boostVisual: CGFloat = 0      // eased 0...1 for effects
+    private var remoteBoost = false
+    private let boostDuration: CGFloat = 3.0
+    private let nitroFillTime: CGFloat = 10
+    private var nitroButton = SKSpriteNode()
+    private var nitroIcon = SKSpriteNode()
+    private var nitroRing = SKShapeNode()
+    private var speedLines: [(sprite: SKSpriteNode, angle: CGFloat, radius: CGFloat)] = []
+    private var boostTint = SKSpriteNode()
+    private var isBoosting: Bool { boostTime > 0 }
     private var lastHorn: TimeInterval = -10
     private var newBest = false
     private let advanceDelay: TimeInterval = 4.5
@@ -191,8 +205,8 @@ final class ParkingScene: SKScene {
         self.isHost = isHost
         self.friendPresent = online
         self.levelIndex = Levels.clamp(level)
-        localCar = world.makeCar(color: CarArt.playerColors[self.slot])
-        remoteCar = world.makeCar(color: CarArt.playerColors[1 - self.slot])
+        localCar = world.makeCar(color: CarArt.playerColors[self.slot], style: .racer)
+        remoteCar = world.makeCar(color: CarArt.playerColors[1 - self.slot], style: .racer)
     }
 
     override func didMove(to view: SKView) {
@@ -467,6 +481,45 @@ final class ParkingScene: SKScene {
         hornText.position = CGPoint(x: 0, y: -15)
         hornButton.addChild(hornText)
 
+        nitroButton = makeGlass(width: 70, height: 70)
+        nitroButton.position = CGPoint(x: reversePedal.position.x - reverseSize.width / 2 - 52, y: 50)
+        controlsLayer.addChild(nitroButton)
+        let nitroTrack = SKShapeNode(circleOfRadius: 39)
+        nitroTrack.strokeColor = UIColor.white.withAlphaComponent(0.18)
+        nitroTrack.lineWidth = 5
+        nitroTrack.fillColor = .clear
+        nitroButton.addChild(nitroTrack)
+        nitroRing = SKShapeNode()
+        nitroRing.strokeColor = UIColor(red: 0.30, green: 0.85, blue: 1.0, alpha: 1)
+        nitroRing.lineWidth = 5
+        nitroRing.lineCap = .round
+        nitroRing.glowWidth = 2
+        nitroButton.addChild(nitroRing)
+        nitroIcon = makeIcon("flame.fill", size: 24, color: UIColor(red: 0.35, green: 0.85, blue: 1.0, alpha: 1))
+        nitroIcon.position = CGPoint(x: 0, y: 7)
+        nitroButton.addChild(nitroIcon)
+        let nitroText = makeLabel(Strings.nitro, size: 10, color: .white)
+        nitroText.position = CGPoint(x: 0, y: -17)
+        nitroButton.addChild(nitroText)
+
+        // Screen effects for the boost
+        speedLines.removeAll()
+        for _ in 0..<30 {
+            let line = SKSpriteNode(color: .white, size: CGSize(width: 2.5, height: 80))
+            line.alpha = 0
+            line.zPosition = 45
+            addChild(line)
+            speedLines.append((line, CGFloat.random(in: 0...(2 * CGFloat.pi)), CGFloat.random(in: 0...size.width * 0.6)))
+        }
+        boostTint = SKSpriteNode(texture: CarArt.vignette(size: size))
+        boostTint.size = size
+        boostTint.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        boostTint.color = UIColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1)
+        boostTint.colorBlendFactor = 1
+        boostTint.alpha = 0
+        boostTint.zPosition = 44
+        addChild(boostTint)
+
         let gearDisc = makeGlass(width: 36, height: 36)
         gearDisc.position = CGPoint(x: reversePedal.position.x, y: reversePedal.position.y + reverseSize.height / 2 + 26)
         controlsLayer.addChild(gearDisc)
@@ -540,6 +593,9 @@ final class ParkingScene: SKScene {
         resultsShown = false
         advanceScheduled = false
         newBest = false
+        nitro = 0.5
+        boostTime = 0
+        remoteBoost = false
         statusLabel.text = ""
         setCountdown("3")
         countdownNode.removeAllActions()
@@ -586,6 +642,7 @@ final class ParkingScene: SKScene {
                                                   velocity: CGFloat(message["v"] as? Double ?? 0)))
             if remoteSnapshots.count > 30 { remoteSnapshots.removeFirst(remoteSnapshots.count - 30) }
             remoteSteer = CGFloat(message["st"] as? Double ?? 0)
+            remoteBoost = (message["n"] as? Int ?? 0) == 1
             remoteBraking = (message["b"] as? Int ?? 0) == 1
             remoteReversing = (message["r"] as? Int ?? 0) == 1
         case "p":
@@ -686,6 +743,95 @@ final class ParkingScene: SKScene {
         load(level: Levels.clamp(levelIndex + 1))
     }
 
+    // MARK: Nitro
+
+    private func fireNitro() {
+        guard phase == .driving, !localParked, !isBoosting else { return }
+        guard nitro >= 1 else {
+            nitroButton.removeAction(forKey: "deny")
+            nitroButton.run(.sequence([.moveBy(x: -5, y: 0, duration: 0.04), .moveBy(x: 10, y: 0, duration: 0.06),
+                                       .moveBy(x: -5, y: 0, duration: 0.04)]), withKey: "deny")
+            tickHaptic.impactOccurred(intensity: 0.3)
+            return
+        }
+        nitro = 0
+        boostTime = boostDuration
+        engaged = true
+        if gear == .reverse && velocity <= 2 { gear = .drive }
+        velocity = max(velocity, 0) + 45
+        audio.play("nitro", volume: 0.8)
+        bumpHaptic.impactOccurred(intensity: 1.0)
+        world?.shake(strength: 3)
+        let banner = makeLabel(Strings.nitroGo, size: 34, color: UIColor(red: 0.45, green: 0.9, blue: 1.0, alpha: 1))
+        banner.position = CGPoint(x: size.width / 2, y: size.height * 0.62)
+        banner.zPosition = 20
+        banner.setScale(0.5)
+        hud.addChild(banner)
+        banner.run(.sequence([.scale(to: 1.15, duration: 0.12), .scale(to: 1.0, duration: 0.1), .wait(forDuration: 0.5),
+                              .group([.fadeOut(withDuration: 0.3), .moveBy(x: 0, y: 20, duration: 0.3)]), .removeFromParent()]))
+    }
+
+    private func updateNitro(_ dt: CGFloat) {
+        if isBoosting {
+            boostTime = max(0, boostTime - dt)
+            if phase != .driving || localParked { boostTime = 0 }
+        } else if phase == .driving && !localParked {
+            let before = nitro
+            nitro = min(1, nitro + dt / nitroFillTime)
+            if before < 1 && nitro >= 1 {
+                tickHaptic.impactOccurred(intensity: 0.7)
+                nitroButton.run(.sequence([.scale(to: 1.15, duration: 0.1), .scale(to: 1.0, duration: 0.15)]))
+            }
+        }
+        boostVisual = approach(boostVisual, isBoosting ? 1 : 0, (isBoosting ? 5 : 2) * dt)
+        world?.setBoost(boostVisual)
+        localCar?.setNitro(isBoosting)
+        remoteCar?.setNitro(remoteBoost && friendPresent)
+
+        // Ring: fill level, or remaining boost while burning
+        let fraction = isBoosting ? boostTime / boostDuration : nitro
+        if fraction > 0.01 {
+            let path = CGMutablePath()
+            path.addArc(center: .zero, radius: 39, startAngle: CGFloat.pi / 2,
+                        endAngle: CGFloat.pi / 2 - fraction * 2 * CGFloat.pi, clockwise: true)
+            nitroRing.path = path
+        } else {
+            nitroRing.path = nil
+        }
+        let ready = nitro >= 1 && !isBoosting
+        nitroRing.strokeColor = isBoosting ? UIColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1)
+                                           : (ready ? UIColor(red: 0.35, green: 1.0, blue: 0.9, alpha: 1) : UIColor(red: 0.30, green: 0.70, blue: 1.0, alpha: 1))
+        nitroButton.alpha = ready || isBoosting ? 1 : 0.75
+        if ready && nitroIcon.action(forKey: "pulse") == nil {
+            nitroIcon.run(.repeatForever(.sequence([.scale(to: 1.2, duration: 0.35), .scale(to: 1.0, duration: 0.35)])), withKey: "pulse")
+        } else if !ready {
+            nitroIcon.removeAction(forKey: "pulse")
+            nitroIcon.setScale(1)
+        }
+
+        // Speed lines and blue tint
+        boostTint.alpha = boostVisual * 0.75
+        let center = CGPoint(x: size.width / 2, y: size.height * 0.45)
+        let maxRadius = hypot(size.width, size.height) * 0.6
+        for index in speedLines.indices {
+            var line = speedLines[index]
+            if boostVisual < 0.02 {
+                line.sprite.alpha = 0
+                continue
+            }
+            line.radius += (700 + 900 * boostVisual) * dt
+            if line.radius > maxRadius {
+                line.radius = size.height * 0.3 + CGFloat.random(in: 0...60)
+                line.angle = CGFloat.random(in: 0...(2 * CGFloat.pi))
+            }
+            line.sprite.position = CGPoint(x: center.x + cos(line.angle) * line.radius, y: center.y + sin(line.angle) * line.radius)
+            line.sprite.zRotation = line.angle - CGFloat.pi / 2
+            line.sprite.alpha = 0.5 * boostVisual * min(1, (line.radius - size.height * 0.25) / 120)
+            line.sprite.yScale = 0.6 + boostVisual
+            speedLines[index] = line
+        }
+    }
+
     // MARK: Horn
 
     private func honk() {
@@ -745,7 +891,7 @@ final class ParkingScene: SKScene {
         model?.send(["t": "s", "l": levelIndex, "ts": CACurrentMediaTime(),
                      "x": Double(carPosition.x), "y": Double(carPosition.y),
                      "h": Double(heading), "v": Double(velocity), "st": Double(steer),
-                     "b": braking ? 1 : 0, "r": (gear == .reverse && velocity < -1) ? 1 : 0])
+                     "b": braking ? 1 : 0, "r": (gear == .reverse && velocity < -1) ? 1 : 0, "n": isBoosting ? 1 : 0])
     }
 
     // MARK: Input
@@ -797,6 +943,10 @@ final class ParkingScene: SKScene {
             }
             if hornButton.contains(point) {
                 honk()
+                continue
+            }
+            if nitroButton.contains(point) {
+                fireNitro()
                 continue
             }
             if soundButton.contains(point) {
@@ -937,6 +1087,7 @@ final class ParkingScene: SKScene {
         }
 
         updateRemoteCar(dt)
+        updateNitro(dt)
 
         timerLabel.text = String(format: "%.1f", localParked ? localTime : elapsed)
         world?.follow(position: carPosition, heading: heading, dt: dt)
@@ -1203,7 +1354,15 @@ final class ParkingScene: SKScene {
                 velocity = approach(velocity, creep, resistance)
             }
         }
-        velocity = max(-maxReverse, min(maxForward, velocity))
+        if isBoosting && gear == .drive {
+            braking = false
+            velocity += 300 * dt
+        }
+        let topSpeed = isBoosting ? maxForward * 1.7 : maxForward
+        if velocity > topSpeed {
+            velocity = isBoosting ? topSpeed : max(topSpeed, velocity - 110 * dt)
+        }
+        velocity = max(-maxReverse, velocity)
 
         let speedFactor = 1 - 0.4 * min(1, abs(velocity) / maxForward)
         let targetSteer = wheelInput * maxSteer * speedFactor
