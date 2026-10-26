@@ -1,0 +1,96 @@
+name: Benchmark (iOS Simulator)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [bench]
+
+permissions:
+  contents: write
+
+jobs:
+  bench:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build for simulator (Release)
+        run: |
+          set -o pipefail
+          xcodebuild -project Hop.xcodeproj -scheme Hop -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build > build.log 2>&1 || {
+              grep -E "error:" build.log | head -40 | while read -r line; do echo "::error::$line"; done
+              exit 1
+            }
+
+      - name: Boot simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          best = None
+          for runtime, devices in data.items():
+              if "iOS" not in runtime:
+                  continue
+              for d in devices:
+                  if d["name"].startswith("iPhone") and "Pro" in d["name"] and "Max" not in d["name"]:
+                      best = (runtime, d["udid"], d["name"])
+          print(best[1] if best else "")
+          ')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          NAME=$(xcrun simctl list devices | grep "$UDID" | head -1 | sed 's/ (.*//' | xargs)
+          echo "::notice title=device::$NAME ($UDID)"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
+
+      - name: Run benchmarks
+        run: |
+          mkdir -p results
+          run() {
+            local label=$1; shift
+            xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+            sleep 2
+            ( timeout 90 xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark "$@" > "results/$label.log" 2>&1 ) &
+            local pid=$!
+            sleep 16
+            xcrun simctl io "$UDID" screenshot "results/$label.png" || true
+            wait $pid || true
+            local line=$(grep -a "PPBENCH" "results/$label.log" | tail -1 | sed 's/.*PPBENCH //')
+            if [ -n "$line" ]; then
+              echo "$line" > "results/$label.json"
+              echo "::notice title=bench-$label::$line"
+            else
+              echo "::warning title=bench-$label::no result"
+              tail -20 "results/$label.log" | while read -r l; do echo "::warning::$l"; done
+            fi
+          }
+          run optimized-1
+          run legacy-1 -legacy
+          run optimized-2
+          run legacy-2 -legacy
+
+      - name: Publish results to bench-results branch
+        if: always()
+        run: |
+          cd results
+          git init -q
+          git config user.name "Hüseyin Gülcü"
+          git config user.email "huseyinglc0@gmail.com"
+          git add -A
+          git commit -q -m "Benchmark results for ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:bench-results

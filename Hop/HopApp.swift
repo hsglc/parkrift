@@ -284,7 +284,13 @@ struct RootView: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .onAppear { AudioManager.shared.ensureRunning() }
+        .onAppear {
+            AudioManager.shared.ensureRunning()
+            if PerfSettings.benchmark && model.screen == .menu {
+                AudioManager.shared.isMuted = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.playRace() }
+            }
+        }
     }
 }
 
@@ -296,7 +302,14 @@ struct SceneKitView: UIViewRepresentable {
         let view = SCNView(frame: .zero)
         view.scene = world.scene
         view.pointOfView = world.cameraNode
-        view.antialiasingMode = .multisampling4X
+        if PerfSettings.optimized {
+            // Native 3x on Pro phones costs 2.25x the pixels of 2x; 2x MSAA instead of 4x
+            view.antialiasingMode = .multisampling2X
+            view.contentScaleFactor = min(UIScreen.main.scale, 2)
+        } else {
+            view.antialiasingMode = .multisampling4X
+        }
+        view.delegate = FrameMonitor.shared
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = true
         view.isPlaying = true

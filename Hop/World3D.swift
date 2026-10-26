@@ -198,25 +198,30 @@ private enum CarShapes {
     }()
 }
 
-/// 3D car: extruded body silhouette with wheel arches, cabin, glass, lights, bumpers and mirrors.
-/// Faces +x in its local frame (meters). Static parts are merged into one node for speed.
-final class Car3D {
-    let node = SCNNode()
-    private let body = SCNNode()
-    private var steerPivots: [SCNNode] = []
-    private var spinNodes: [SCNNode] = []
-    private let brakeMaterial: SCNMaterial
-    private let reverseMaterial: SCNMaterial
-    private var spin: CGFloat = 0
-    private var lastPosition: CGPoint?
-    private var flames: [SCNNode] = []
-    private var nitroOn = false
+/// Builds and caches car geometry. With optimizations on, every car's static parts are one merged
+/// geometry (a few draw calls), shared by all cars of the same style and color, with a simple
+/// far-distance version (level of detail).
+private enum CarFactory {
+    static func colorKey(_ color: UIColor) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "%.3f-%.3f-%.3f", r, g, b)
+    }
 
-    init(color: UIColor, style: CarStyle = .sedan) {
+    private static var paints: [String: SCNMaterial] = [:]
+    static func paint(_ color: UIColor) -> SCNMaterial {
+        let key = colorKey(color)
+        if let cached = paints[key] { return cached }
         let paint = Mat.pbr(color, metal: 0.35, rough: 0.32)
         paint.fresnelExponent = 1.5
-        brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
-        reverseMaterial = Mat.glow(UIColor(white: 0.35, alpha: 1))
+        paints[key] = paint
+        return paint
+    }
+
+    static let parkedBrake = Mat.glow(UIColor(red: 0.45, green: 0.03, blue: 0.04, alpha: 1))
+
+    /// All static parts of a car (body, cabin, glass, trim, lights, racer extras), in car space.
+    static func buildParts(style: CarStyle, paint: SCNMaterial) -> SCNNode {
         let profile = CarShapes.profile(style)
         let shapes = CarShapes.geometry(style)
         let parts = SCNNode()
@@ -322,7 +327,116 @@ final class Car3D {
                 parts.addChildNode(pipeNode)
             }
         }
-        body.addChildNode(parts.flattenedClone())
+        return parts
+    }
+
+    static func box(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ chamfer: CGFloat, _ material: SCNMaterial,
+                    at position: SCNVector3, to parent: SCNNode) -> SCNNode {
+        let geometry = SCNBox(width: w, height: h, length: l, chamferRadius: chamfer)
+        geometry.chamferSegmentCount = 2
+        geometry.materials = [material]
+        let child = SCNNode(geometry: geometry)
+        child.position = position
+        parent.addChildNode(child)
+        return child
+    }
+
+    static let wheelSpots: [(Float, Float, Bool)] = [(1.35, 0.92, true), (1.35, -0.92, true), (-1.35, 0.92, false), (-1.35, -0.92, false)]
+
+    static func tailY(_ style: CarStyle) -> Float { style == .suv ? 0.88 : 0.8 }
+
+    /// Tyre + rim + hubcap as one geometry, hidden beyond the detail distance.
+    static let wheel: SCNGeometry = {
+        let holder = SCNNode()
+        for geometry in [CarShapes.tyre, CarShapes.rim, CarShapes.hubcap] {
+            let part = SCNNode(geometry: geometry)
+            part.eulerAngles.x = Float.pi / 2
+            holder.addChildNode(part)
+        }
+        let merged = GeometryMerger.merge(holder) ?? CarShapes.tyre
+        merged.levelsOfDetail = [SCNLevelOfDetail(geometry: nil, worldSpaceDistance: PerfSettings.carDetailDistance)]
+        return merged
+    }()
+
+    /// Simple far-away car: body block and dark cabin.
+    private static func lowDetail(style: CarStyle, paint: SCNMaterial) -> SCNGeometry? {
+        let holder = SCNNode()
+        let profile = CarShapes.profile(style)
+        let bodyTop: CGFloat = style == .racer ? 0.8 : (style == .suv ? 1.1 : 0.98)
+        _ = box(4.3, bodyTop - 0.28, 2.0, 0.15, paint, at: SCNVector3(0, Float((bodyTop + 0.28) / 2), 0), to: holder)
+        let cabinLength = abs(profile.windshield.1.x - profile.rearWindow.0.x) * 0.8
+        let cabinX = Float((profile.windshield.1.x + profile.rearWindow.0.x) / 2)
+        _ = box(cabinLength, profile.roofHeight - bodyTop, style == .racer ? 1.5 : 1.7, 0.12, CarShapes.glass,
+                at: SCNVector3(cabinX, Float((profile.roofHeight + bodyTop) / 2), 0), to: holder)
+        for spot in wheelSpots {
+            _ = box(0.7, 0.6, 0.26, 0.1, CarShapes.trim, at: SCNVector3(spot.0, 0.33, spot.1), to: holder)
+        }
+        return GeometryMerger.merge(holder)
+    }
+
+    private static var bodies: [String: SCNGeometry] = [:]
+
+    /// Merged static geometry for a moving car (lights and wheels are separate) or a parked car
+    /// (everything baked in).
+    static func body(style: CarStyle, color: UIColor, parked: Bool) -> SCNGeometry {
+        let key = "\(style.rawValue)-\(colorKey(color))-\(parked)"
+        if let cached = bodies[key] { return cached }
+        let paintMaterial = paint(color)
+        let parts = buildParts(style: style, paint: paintMaterial)
+        if parked {
+            for z: Float in [0.66, -0.66] {
+                _ = box(0.07, 0.12, 0.42, 0.03, parkedBrake, at: SCNVector3(-2.2, tailY(style), z), to: parts)
+            }
+            for spot in wheelSpots {
+                let wheelNode = SCNNode()
+                wheelNode.position = SCNVector3(spot.0, 0.36, spot.1)
+                for geometry in [CarShapes.tyre, CarShapes.rim, CarShapes.hubcap] {
+                    let part = SCNNode(geometry: geometry)
+                    part.eulerAngles.x = Float.pi / 2
+                    wheelNode.addChildNode(part)
+                }
+                parts.addChildNode(wheelNode)
+            }
+        }
+        let merged = GeometryMerger.merge(parts) ?? SCNBox(width: 4.3, height: 1, length: 2, chamferRadius: 0.2)
+        if let low = lowDetail(style: style, paint: paintMaterial) {
+            merged.levelsOfDetail = [SCNLevelOfDetail(geometry: low, worldSpaceDistance: PerfSettings.carDetailDistance)]
+        }
+        bodies[key] = merged
+        return merged
+    }
+}
+
+/// 3D car: extruded body silhouette with wheel arches, cabin, glass, lights, bumpers and mirrors.
+/// Faces +x in its local frame (meters).
+final class Car3D {
+    let node = SCNNode()
+    private let body = SCNNode()
+    private var steerPivots: [SCNNode] = []
+    private var spinNodes: [SCNNode] = []
+    private let brakeMaterial: SCNMaterial
+    private let reverseMaterial: SCNMaterial
+    private var spin: CGFloat = 0
+    private var lastPosition: CGPoint?
+    private var flames: [SCNNode] = []
+    private var nitroOn = false
+    private var lastBraking: Bool?
+    private var lastReversing: Bool?
+
+    /// `parked`: a car that never moves (wheels and lights baked into one geometry).
+    init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false) {
+        brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
+        reverseMaterial = Mat.glow(UIColor(white: 0.35, alpha: 1))
+        node.addChildNode(body)
+
+        if PerfSettings.optimized {
+            body.addChildNode(SCNNode(geometry: CarFactory.body(style: style, color: color, parked: parked)))
+            if parked { return }
+        } else {
+            let paint = Mat.pbr(color, metal: 0.35, rough: 0.32)
+            paint.fresnelExponent = 1.5
+            body.addChildNode(CarFactory.buildParts(style: style, paint: paint).flattenedClone())
+        }
 
         if style == .racer {
             for z: Float in [0.42, -0.42] {
@@ -343,23 +457,34 @@ final class Car3D {
         }
 
         // Lights that change at runtime stay separate
-        let tailY: Float = style == .suv ? 0.88 : 0.8
+        let tailY = CarFactory.tailY(style)
+        var lights: [SCNNode] = []
         for z: Float in [0.66, -0.66] {
-            box(0.07, 0.12, 0.42, 0.03, brakeMaterial, at: SCNVector3(-2.2, tailY, z), to: body)
+            lights.append(CarFactory.box(0.07, 0.12, 0.42, 0.03, brakeMaterial, at: SCNVector3(-2.2, tailY, z), to: body))
         }
-        box(0.06, 0.08, 0.26, 0.02, reverseMaterial, at: SCNVector3(-2.2, tailY - 0.14, 0), to: body)
-        node.addChildNode(body)
+        lights.append(CarFactory.box(0.06, 0.08, 0.26, 0.02, reverseMaterial, at: SCNVector3(-2.2, tailY - 0.14, 0), to: body))
+        if PerfSettings.optimized {
+            for light in lights {
+                light.castsShadow = false
+                light.geometry?.levelsOfDetail = [SCNLevelOfDetail(geometry: nil, worldSpaceDistance: PerfSettings.carDetailDistance)]
+            }
+        }
 
         // Wheels: pivot (steering) -> spin (rolling) -> tyre + rim
-        let spots: [(Float, Float, Bool)] = [(1.35, 0.92, true), (1.35, -0.92, true), (-1.35, 0.92, false), (-1.35, -0.92, false)]
-        for spot in spots {
+        for spot in CarFactory.wheelSpots {
             let pivot = SCNNode()
             pivot.position = SCNVector3(spot.0, 0.36, spot.1)
             let spinner = SCNNode()
-            for geometry in [CarShapes.tyre, CarShapes.rim, CarShapes.hubcap] {
-                let part = SCNNode(geometry: geometry)
-                part.eulerAngles.x = Float.pi / 2
-                spinner.addChildNode(part)
+            if PerfSettings.optimized {
+                let wheelNode = SCNNode(geometry: CarFactory.wheel)
+                wheelNode.castsShadow = false
+                spinner.addChildNode(wheelNode)
+            } else {
+                for geometry in [CarShapes.tyre, CarShapes.rim, CarShapes.hubcap] {
+                    let part = SCNNode(geometry: geometry)
+                    part.eulerAngles.x = Float.pi / 2
+                    spinner.addChildNode(part)
+                }
             }
             pivot.addChildNode(spinner)
             node.addChildNode(pivot)
@@ -384,10 +509,16 @@ final class Car3D {
         }
         lastPosition = position
 
-        brakeMaterial.emission.contents = braking
-            ? UIColor(red: 1.0, green: 0.10, blue: 0.08, alpha: 1)
-            : UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1)
-        reverseMaterial.emission.contents = reversing ? UIColor.white : UIColor(white: 0.35, alpha: 1)
+        if !PerfSettings.optimized || lastBraking != braking {
+            lastBraking = braking
+            brakeMaterial.emission.contents = braking
+                ? UIColor(red: 1.0, green: 0.10, blue: 0.08, alpha: 1)
+                : UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1)
+        }
+        if !PerfSettings.optimized || lastReversing != reversing {
+            lastReversing = reversing
+            reverseMaterial.emission.contents = reversing ? UIColor.white : UIColor(white: 0.35, alpha: 1)
+        }
         if nitroOn {
             for flame in flames {
                 let length = Float.random(in: 0.75...1.35)
@@ -468,7 +599,7 @@ final class World3D {
         sun.color = UIColor(red: 1.0, green: 0.96, blue: 0.88, alpha: 1)
         sun.castsShadow = true
         sun.shadowMode = .forward
-        sun.shadowSampleCount = 16
+        sun.shadowSampleCount = PerfSettings.optimized ? 4 : 16
         sun.shadowRadius = 3
         sun.shadowColor = UIColor.black.withAlphaComponent(0.5)
         sun.shadowMapSize = CGSize(width: 2048, height: 2048)
@@ -734,19 +865,65 @@ final class World3D {
 
         let parkedCars = SCNNode()
         var roofCache: [Int: SCNMaterial] = [:]
-        defer { levelRoot.addChildNode(parkedCars.flattenedClone()) }
+        // Optimized: all buildings become one geometry with one facade/roof material per color
+        let buildingsRoot = SCNNode()
+        var facadeCache: [Int: SCNMaterial] = [:]
+        var facadeRepeats: [ObjectIdentifier: (CGFloat, CGFloat, CGFloat)] = [:]
+        defer {
+            if PerfSettings.optimized {
+                if let merged = GeometryMerger.merge(buildingsRoot, uvScale: { node, element in
+                    guard let r = facadeRepeats[ObjectIdentifier(node)], element < 4 else { return SIMD2(1, 1) }
+                    let span = element % 2 == 0 ? r.0 : r.1
+                    return SIMD2(Float(max(1, (span / 4).rounded())), Float(max(1, (r.2 / 3.2).rounded())))
+                }) {
+                    levelRoot.addChildNode(SCNNode(geometry: merged))
+                }
+            } else {
+                levelRoot.addChildNode(parkedCars.flattenedClone())
+            }
+        }
         for obstacle in level.obstacles {
             switch obstacle.kind {
             case .car:
                 let car = Car3D(color: CarArt.parkedColors[obstacle.tint % CarArt.parkedColors.count],
-                                style: CarStyle(rawValue: (obstacle.tint + Int(obstacle.center.x)) % 3) ?? .sedan)
+                                style: CarStyle(rawValue: (obstacle.tint + Int(obstacle.center.x)) % 3) ?? .sedan,
+                                parked: true)
                 car.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
-                parkedCars.addChildNode(car.node)
+                if PerfSettings.optimized {
+                    levelRoot.addChildNode(car.node)
+                } else {
+                    parkedCars.addChildNode(car.node)
+                }
             case .building:
                 let height = obstacle.height
                 let width = obstacle.size.width / 10
                 let length = obstacle.size.height / 10
                 let box = SCNBox(width: width, height: height, length: length, chamferRadius: 0)
+                if PerfSettings.optimized {
+                    let facade: SCNMaterial
+                    if let cached = facadeCache[obstacle.tint] {
+                        facade = cached
+                    } else {
+                        facade = Mat.lambert(CarArt.facadeImage(tint: obstacle.tint))
+                        facade.diffuse.wrapS = .repeat
+                        facade.diffuse.wrapT = .repeat
+                        facadeCache[obstacle.tint] = facade
+                    }
+                    let roof: SCNMaterial
+                    if let cached = roofCache[obstacle.tint] {
+                        roof = cached
+                    } else {
+                        roof = Mat.lambert(CarArt.buildingColors[obstacle.tint % CarArt.buildingColors.count].darker(by: 0.3))
+                        roofCache[obstacle.tint] = roof
+                    }
+                    box.materials = [facade, facade, facade, facade, roof, roof]
+                    let node = SCNNode(geometry: box)
+                    node.position = World3D.vec(obstacle.center, y: height / 2)
+                    node.eulerAngles.y = Float(obstacle.angle)
+                    facadeRepeats[ObjectIdentifier(node)] = (width, length, height)
+                    buildingsRoot.addChildNode(node)
+                    continue
+                }
                 func facade(_ span: CGFloat) -> SCNMaterial {
                     let material = Mat.lambert(CarArt.facadeImage(tint: obstacle.tint))
                     material.diffuse.wrapS = .repeat

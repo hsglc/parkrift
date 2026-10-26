@@ -83,7 +83,17 @@ final class ParkingScene: SKScene {
     private var myMarker = SKShapeNode()
     private var hudLeft: CGFloat = 10
     private var routeLine = SKShapeNode()
-    private var botDots: [SKShapeNode] = []
+    private var botDots: [SKNode] = []
+
+    // Benchmark autopilot
+    private let benchmark = PerfSettings.benchmark
+    private var autoControls: Set<Control> = []
+    private var autoReverse: CGFloat = 0
+    private var stuckTime: CGFloat = 0
+    private var benchClock: CGFloat = 0
+    private var benchRecording = false
+    private var benchDone = false
+    var levelLoadMilliseconds: Double = 0
     private var navNode = SKNode()
     private var navArrow = SKSpriteNode()
     private var navLabel = SKLabelNode()
@@ -530,6 +540,8 @@ final class ParkingScene: SKScene {
     // MARK: Level loading
 
     func load(level index: Int) {
+        let loadStarted = CACurrentMediaTime()
+        defer { levelLoadMilliseconds = (CACurrentMediaTime() - loadStarted) * 1000 }
         levelIndex = Levels.clamp(index)
         level = Levels.level(levelIndex)
         model?.results = nil
@@ -743,6 +755,75 @@ final class ParkingScene: SKScene {
         load(level: Levels.clamp(levelIndex + 1))
     }
 
+    // MARK: Benchmark
+
+    /// Drives along the route at full throttle, uses nitro, backs out when stuck, and measures
+    /// 20 seconds of frames once driving has settled.
+    private func runAutopilot(_ dt: CGFloat) {
+        autoControls = []
+        guard phase == .driving, !benchDone else { return }
+        benchClock += dt
+        if !benchRecording && benchClock > 2 {
+            benchRecording = true
+            FrameMonitor.shared.start()
+        }
+        if benchRecording && benchClock > 22 {
+            finishBenchmark()
+            return
+        }
+        if autoReverse > 0 {
+            autoReverse -= dt
+            autoControls = [.reverse, .left]
+            return
+        }
+        autoControls.insert(.forward)
+        var relative: CGFloat = 0
+        if route.count >= 2 {
+            let k = route.count > 2 && carPosition.distance(to: route[1]) < 95 ? 2 : 1
+            relative = CGFloat.angleDelta(heading, atan2(route[k].y - carPosition.y, route[k].x - carPosition.x))
+            if relative > 0.08 { autoControls.insert(.left) } else if relative < -0.08 { autoControls.insert(.right) }
+        }
+        stuckTime = abs(velocity) < 6 ? stuckTime + dt : 0
+        if stuckTime > 1.2 {
+            stuckTime = 0
+            autoReverse = 1.0
+        }
+        if nitro >= 1 && abs(relative) < 0.25 { fireNitro() }
+    }
+
+    private func finishBenchmark() {
+        benchDone = true
+        FrameMonitor.shared.stop()
+        let summary = FrameMonitor.shared.summary()
+        let stats = world.map { SceneStats.count($0.scene.rootNode) } ?? (0, 0, 0, 0)
+        let report: [String: Any] = [
+            "mode": PerfSettings.optimized ? "optimized" : "legacy",
+            "device": UIDevice.current.model, "screenScale": Double(UIScreen.main.scale),
+            "level": Levels.title(levelIndex), "bots": traffic?.bots.count ?? 0,
+            "parkedCars": level.obstacles.filter { $0.kind == .car }.count,
+            "frames": summary.frames, "seconds": (summary.seconds * 100).rounded() / 100,
+            "avgFPS": (summary.averageFPS * 10).rounded() / 10,
+            "onePercentLowFPS": (summary.onePercentLowFPS * 10).rounded() / 10,
+            "frameMsP50": (summary.p50 * 100).rounded() / 100, "frameMsP95": (summary.p95 * 100).rounded() / 100,
+            "frameMsP99": (summary.p99 * 100).rounded() / 100, "frameMsWorst": (summary.worst * 100).rounded() / 100,
+            "jankFramesOver25ms": summary.jankFrames,
+            "updateMsAvg": (summary.updateAverage * 1000).rounded() / 1000,
+            "updateMsP95": (summary.updateP95 * 1000).rounded() / 1000,
+            "sceneNodes": stats.0, "geometryNodes": stats.1, "drawCallsFullDetail": stats.2, "triangles": stats.3,
+            "levelLoadMs": (levelLoadMilliseconds * 10).rounded() / 10,
+            "hits": hits
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
+           let text = String(data: data, encoding: .utf8) {
+            print("PPBENCH " + text)
+            if let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                try? data.write(to: folder.appendingPathComponent("bench.json"))
+            }
+        }
+        fflush(stdout)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+    }
+
     // MARK: Nitro
 
     private func fireNitro() {
@@ -905,7 +986,7 @@ final class ParkingScene: SKScene {
     }
 
     private func isPressed(_ control: Control) -> Bool {
-        activeTouches.values.contains(control)
+        autoControls.contains(control) || activeTouches.values.contains(control)
     }
 
     private func refreshPedals() {
@@ -1012,10 +1093,17 @@ final class ParkingScene: SKScene {
     // MARK: Update loop
 
     override func update(_ currentTime: TimeInterval) {
+        let started = CACurrentMediaTime()
+        gameUpdate(currentTime)
+        FrameMonitor.shared.recordUpdate(milliseconds: (CACurrentMediaTime() - started) * 1000)
+    }
+
+    private func gameUpdate(_ currentTime: TimeInterval) {
         let rawDelta = lastUpdate == 0 ? 1.0 / 60.0 : currentTime - lastUpdate
         lastUpdate = currentTime
         guard builtSize != .zero else { return }
         let dt = CGFloat(min(max(rawDelta, 0), 1.0 / 30.0))
+        if benchmark { runAutopilot(dt) }
 
         let leftDown = isPressed(.left)
         let rightDown = isPressed(.right)
@@ -1046,7 +1134,7 @@ final class ParkingScene: SKScene {
                 elapsed += TimeInterval(dt)
                 stepCar(dt)
                 separateFromRemote(dt)
-                checkParking(dt)
+                if !benchmark { checkParking(dt) }
             }
         case .finished:
             braking = false
@@ -1217,11 +1305,20 @@ final class ParkingScene: SKScene {
             routeLine.glowWidth = 1
             minimap.addChild(routeLine)
             for _ in traffic?.bots ?? [] {
-                let dot = SKShapeNode(circleOfRadius: 1.8)
-                dot.fillColor = UIColor.white.withAlphaComponent(0.75)
-                dot.strokeColor = .clear
-                minimap.addChild(dot)
-                botDots.append(dot)
+                if PerfSettings.optimized {
+                    // Sprites with one shared texture are drawn in a single batch
+                    let dot = SKSpriteNode(texture: dotTexture)
+                    dot.size = CGSize(width: 5, height: 5)
+                    dot.alpha = 0.8
+                    minimap.addChild(dot)
+                    botDots.append(dot)
+                } else {
+                    let dot = SKShapeNode(circleOfRadius: 1.8)
+                    dot.fillColor = UIColor.white.withAlphaComponent(0.75)
+                    dot.strokeColor = .clear
+                    minimap.addChild(dot)
+                    botDots.append(dot)
+                }
             }
         } else {
             for obstacle in level.obstacles {
