@@ -124,11 +124,24 @@ enum GeometryMerger {
     }
 
     private static func elementIndices(_ element: SCNGeometryElement) -> [UInt32] {
-        let count = element.primitiveCount * 3
+        // Built-in geometries (boxes, shapes) let several elements share one index buffer and pick
+        // their own slice with `primitiveRange`.
+        var start = 0
+        var count = element.primitiveCount * 3
+        let range = element.primitiveRange
+        if range.location != NSNotFound && range.length > 0 {
+            start = range.location * 3
+            count = range.length * 3
+        }
+        let available = element.data.count / max(element.bytesPerIndex, 1)
+        if start + count > available {
+            start = 0
+            count = min(count, available)
+        }
         var result: [UInt32] = []
         result.reserveCapacity(count)
         element.data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-            for index in 0..<count {
+            for index in start..<(start + count) {
                 switch element.bytesPerIndex {
                 case 1: result.append(UInt32(raw.loadUnaligned(fromByteOffset: index, as: UInt8.self)))
                 case 2: result.append(UInt32(raw.loadUnaligned(fromByteOffset: index * 2, as: UInt16.self)))
@@ -149,12 +162,15 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
     private let lock = NSLock()
     private var renderTimes: [CFTimeInterval] = []
     private var updateCosts: [Double] = []
+    private var renderCosts: [Double] = []
+    private var renderStarted: CFTimeInterval = 0
     private(set) var recording = false
 
     func start() {
         lock.lock()
         renderTimes.removeAll()
         updateCosts.removeAll()
+        renderCosts.removeAll()
         recording = true
         lock.unlock()
     }
@@ -165,10 +181,17 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
         lock.unlock()
     }
 
+    func renderer(_ renderer: SCNSceneRenderer, willRenderScene scene: SCNScene, atTime time: TimeInterval) {
+        renderStarted = CACurrentMediaTime()
+    }
+
     func renderer(_ renderer: SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
         let now = CACurrentMediaTime()
         lock.lock()
-        if recording { renderTimes.append(now) }
+        if recording {
+            renderTimes.append(now)
+            if renderStarted > 0 { renderCosts.append((now - renderStarted) * 1000) }
+        }
         lock.unlock()
     }
 
@@ -190,12 +213,15 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
         let jankFrames: Int
         let updateAverage: Double
         let updateP95: Double
+        let renderCpuAverage: Double
+        let renderCpuP95: Double
     }
 
     func summary() -> Summary {
         lock.lock()
         let times = renderTimes
         let costs = updateCosts.sorted()
+        let renders = renderCosts.sorted()
         lock.unlock()
         var intervals: [Double] = []
         for index in 1..<max(times.count, 1) { intervals.append((times[index] - times[index - 1]) * 1000) }
@@ -213,7 +239,9 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
                        onePercentLowFPS: lowAverage > 0 ? 1000 / lowAverage : 0,
                        jankFrames: sorted.filter { $0 > 25 }.count,
                        updateAverage: costs.isEmpty ? 0 : costs.reduce(0, +) / Double(costs.count),
-                       updateP95: pick(costs, 0.95))
+                       updateP95: pick(costs, 0.95),
+                       renderCpuAverage: renders.isEmpty ? 0 : renders.reduce(0, +) / Double(renders.count),
+                       renderCpuP95: pick(renders, 0.95))
     }
 }
 
@@ -234,5 +262,27 @@ enum SceneStats {
             triangles += geometry.elements.reduce(0) { $0 + $1.primitiveCount }
         }
         return (nodes, geometryNodes, drawCalls, triangles)
+    }
+
+    /// Draw calls and triangles actually submitted at the current camera position, taking levels of
+    /// detail into account (ignores frustum culling).
+    static func effective(_ root: SCNNode, camera: SIMD3<Float>) -> (drawCalls: Int, triangles: Int) {
+        var drawCalls = 0
+        var triangles = 0
+        root.enumerateHierarchy { node, stop in
+            guard !node.isHidden, var geometry = node.geometry else { return }
+            if let levels = geometry.levelsOfDetail, !levels.isEmpty {
+                let (low, high) = node.boundingBox
+                let center = node.simdConvertPosition(SIMD3((low.x + high.x) / 2, (low.y + high.y) / 2, (low.z + high.z) / 2), to: nil)
+                let distance = CGFloat(simd_distance(center, camera))
+                var chosen: SCNGeometry? = geometry
+                for level in levels where distance >= level.worldSpaceDistance { chosen = level.geometry }
+                guard let picked = chosen else { return }
+                geometry = picked
+            }
+            drawCalls += geometry.elements.count
+            triangles += geometry.elements.reduce(0) { $0 + $1.primitiveCount }
+        }
+        return (drawCalls, triangles)
     }
 }

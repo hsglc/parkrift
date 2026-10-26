@@ -797,6 +797,7 @@ final class ParkingScene: SKScene {
         FrameMonitor.shared.stop()
         let summary = FrameMonitor.shared.summary()
         let stats = world.map { SceneStats.count($0.scene.rootNode) } ?? (0, 0, 0, 0)
+        let effective = world.map { SceneStats.effective($0.scene.rootNode, camera: $0.cameraNode.simdWorldPosition) } ?? (0, 0)
         let report: [String: Any] = [
             "mode": PerfSettings.optimized ? "optimized" : "legacy",
             "device": UIDevice.current.model, "screenScale": Double(UIScreen.main.scale),
@@ -810,6 +811,9 @@ final class ParkingScene: SKScene {
             "jankFramesOver25ms": summary.jankFrames,
             "updateMsAvg": (summary.updateAverage * 1000).rounded() / 1000,
             "updateMsP95": (summary.updateP95 * 1000).rounded() / 1000,
+            "renderCpuMsAvg": (summary.renderCpuAverage * 1000).rounded() / 1000,
+            "renderCpuMsP95": (summary.renderCpuP95 * 1000).rounded() / 1000,
+            "drawCallsAtCamera": effective.0, "trianglesAtCamera": effective.1,
             "sceneNodes": stats.0, "geometryNodes": stats.1, "drawCallsFullDetail": stats.2, "triangles": stats.3,
             "levelLoadMs": (levelLoadMilliseconds * 10).rounded() / 10,
             "hits": hits
@@ -822,7 +826,7 @@ final class ParkingScene: SKScene {
             }
         }
         fflush(stdout)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { exit(0) }
     }
 
     // MARK: Nitro
