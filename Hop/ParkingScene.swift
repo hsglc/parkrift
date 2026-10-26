@@ -144,6 +144,18 @@ final class ParkingScene: SKScene {
     private var remoteReversing = false
     private var remoteTarget: (CGPoint, CGFloat)?
 
+    /// Received states of the other car, timed by the sender's clock, played back slightly in
+    /// the past so there are always two states to blend between (smooth despite network jitter).
+    private struct RemoteSnapshot {
+        let time: TimeInterval
+        let position: CGPoint
+        let heading: CGFloat
+        let velocity: CGFloat
+    }
+    private var remoteSnapshots: [RemoteSnapshot] = []
+    private var clockOffset: TimeInterval?
+    private let interpolationDelay: TimeInterval = 0.14
+
     // MARK: Level state
 
     private var phase: Phase = .countdown
@@ -511,6 +523,7 @@ final class ParkingScene: SKScene {
         remoteBraking = false
         remoteReversing = false
         remoteTarget = nil
+        remoteSnapshots.removeAll()
 
         phase = .countdown
         countdown = 3
@@ -559,6 +572,18 @@ final class ParkingScene: SKScene {
                 remoteHeading = CGFloat(h)
             }
             remoteTarget = (target, CGFloat(h))
+            let now = CACurrentMediaTime()
+            let sentAt = message["ts"] as? Double ?? now
+            let offset = now - sentAt
+            if let current = clockOffset, offset >= current {
+                clockOffset = current + (offset - current) * 0.02
+            } else {
+                clockOffset = offset
+            }
+            if let last = remoteSnapshots.last, sentAt <= last.time { return }
+            remoteSnapshots.append(RemoteSnapshot(time: sentAt, position: target, heading: CGFloat(h),
+                                                  velocity: CGFloat(message["v"] as? Double ?? 0)))
+            if remoteSnapshots.count > 30 { remoteSnapshots.removeFirst(remoteSnapshots.count - 30) }
             remoteSteer = CGFloat(message["st"] as? Double ?? 0)
             remoteBraking = (message["b"] as? Int ?? 0) == 1
             remoteReversing = (message["r"] as? Int ?? 0) == 1
@@ -569,6 +594,7 @@ final class ParkingScene: SKScene {
             remoteHits = message["hits"] as? Int ?? 0
             if let x = message["x"] as? Double, let y = message["y"] as? Double, let h = message["h"] as? Double {
                 remoteTarget = (CGPoint(x: x, y: y), CGFloat(h))
+                remoteSnapshots.removeAll()
             }
             remoteSteer = 0
             remoteBraking = false
@@ -596,6 +622,51 @@ final class ParkingScene: SKScene {
         countdownLabel.fontColor = colors[text] ?? UIColor(red: 0.40, green: 1.0, blue: 0.55, alpha: 1)
         countdownLabel.fontSize = isNumber ? 110 : 72
         countdownShadow.fontSize = countdownLabel.fontSize
+    }
+
+    /// Plays the other car back `interpolationDelay` behind the newest state, blending between
+    /// the two states around that moment; extrapolates briefly if packets are late.
+    private func updateRemoteCar(_ dt: CGFloat) {
+        guard let target = remoteTarget else { return }
+        guard let offset = clockOffset, let newest = remoteSnapshots.last else {
+            // No timed states (parked or old version): ease to the last known pose
+            let k = min(1, dt * 10)
+            remotePosition = CGPoint(x: remotePosition.x + (target.0.x - remotePosition.x) * k,
+                                     y: remotePosition.y + (target.0.y - remotePosition.y) * k)
+            remoteHeading += CGFloat.angleDelta(remoteHeading, target.1) * k
+            return
+        }
+        let renderTime = CACurrentMediaTime() - offset - interpolationDelay
+        var pose: (CGPoint, CGFloat)
+        if renderTime >= newest.time {
+            let ahead = CGFloat(min(renderTime - newest.time, 0.35))
+            pose = (CGPoint(x: newest.position.x + cos(newest.heading) * newest.velocity * ahead,
+                            y: newest.position.y + sin(newest.heading) * newest.velocity * ahead), newest.heading)
+        } else if let first = remoteSnapshots.first, renderTime <= first.time {
+            pose = (first.position, first.heading)
+        } else {
+            var index = remoteSnapshots.count - 1
+            while index > 0 && remoteSnapshots[index - 1].time > renderTime { index -= 1 }
+            let a = remoteSnapshots[max(0, index - 1)]
+            let b = remoteSnapshots[index]
+            let span = max(b.time - a.time, 0.001)
+            let f = CGFloat(max(0, min(1, (renderTime - a.time) / span)))
+            pose = (CGPoint(x: a.position.x + (b.position.x - a.position.x) * f,
+                            y: a.position.y + (b.position.y - a.position.y) * f),
+                    a.heading + CGFloat.angleDelta(a.heading, b.heading) * f)
+            // Drop states that are no longer needed
+            if index > 2 { remoteSnapshots.removeFirst(index - 2) }
+        }
+        // Small smoothing on top hides extrapolation corrections
+        let k = min(1, dt * 20)
+        if remotePosition.distance(to: pose.0) > 120 {
+            remotePosition = pose.0
+            remoteHeading = pose.1
+        } else {
+            remotePosition = CGPoint(x: remotePosition.x + (pose.0.x - remotePosition.x) * k,
+                                     y: remotePosition.y + (pose.0.y - remotePosition.y) * k)
+            remoteHeading += CGFloat.angleDelta(remoteHeading, pose.1) * k
+        }
     }
 
     private func refreshLevelLabel() {
@@ -670,7 +741,7 @@ final class ParkingScene: SKScene {
     }
 
     private func sendState() {
-        model?.send(["t": "s", "l": levelIndex,
+        model?.send(["t": "s", "l": levelIndex, "ts": CACurrentMediaTime(),
                      "x": Double(carPosition.x), "y": Double(carPosition.y),
                      "h": Double(heading), "v": Double(velocity), "st": Double(steer),
                      "b": braking ? 1 : 0, "r": (gear == .reverse && velocity < -1) ? 1 : 0])
@@ -835,7 +906,7 @@ final class ParkingScene: SKScene {
 
         if online && friendPresent {
             sendClock += TimeInterval(dt)
-            if sendClock >= 1.0 / 15.0 && !localParked {
+            if sendClock >= 1.0 / 20.0 && !localParked {
                 sendClock = 0
                 sendState()
             }
@@ -864,12 +935,7 @@ final class ParkingScene: SKScene {
             if giveUp <= 0 { gaveUp() }
         }
 
-        if let target = remoteTarget {
-            let k = min(1, dt * 12)
-            remotePosition = CGPoint(x: remotePosition.x + (target.0.x - remotePosition.x) * k,
-                                     y: remotePosition.y + (target.0.y - remotePosition.y) * k)
-            remoteHeading += CGFloat.angleDelta(remoteHeading, target.1) * k
-        }
+        updateRemoteCar(dt)
 
         timerLabel.text = String(format: "%.1f", localParked ? localTime : elapsed)
         world?.follow(position: carPosition, heading: heading, dt: dt)
