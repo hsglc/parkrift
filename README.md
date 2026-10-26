@@ -4,7 +4,7 @@ Dokun-zıpla tarzı basit bir iOS oyunu (SwiftUI + SpriteKit). Amacı, GitHub Ac
 
 - **Oynanış:** Dokun → zıpla, havada tekrar dokun → çift zıpla. Engelleri geç, skor yap. Rekor cihazda saklanır.
 - **Dil:** Cihaz Türkçe ise Türkçe, değilse İngilizce.
-- **Gereksinimler (Ekim 2026):** Xcode 26 / iOS 26 SDK ile derlenir (`macos-26` runner), minimum iOS 17, privacy manifest (UserDefaults · `CA92.1`), `ITSAppUsesNonExemptEncryption = NO`, tek boyutlu 1024px ikon.
+- **Gereksinimler (Ekim 2026):** Xcode 26 / iOS 26 SDK ile derlenir (`macos-15` runner + Xcode 26.x seçilerek), minimum iOS 17, privacy manifest (UserDefaults · `CA92.1`), `ITSAppUsesNonExemptEncryption = NO`, tek boyutlu 1024px ikon.
 
 ## Proje yapısı
 
