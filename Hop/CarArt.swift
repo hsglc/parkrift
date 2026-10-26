@@ -1,37 +1,48 @@
 import SpriteKit
 import UIKit
 
-/// Procedurally drawn textures for the parking game (top-down view).
+/// Procedurally drawn textures for the parking game (top-down 2D with soft depth).
 enum CarArt {
 
     static let playerColors: [UIColor] = [
-        UIColor(red: 0.93, green: 0.28, blue: 0.24, alpha: 1),   // slot 0: red
-        UIColor(red: 0.20, green: 0.52, blue: 0.95, alpha: 1)    // slot 1: blue
+        UIColor(red: 0.95, green: 0.26, blue: 0.27, alpha: 1),   // slot 0: red
+        UIColor(red: 0.18, green: 0.53, blue: 0.98, alpha: 1)    // slot 1: blue
     ]
 
     static let parkedColors: [UIColor] = [
-        UIColor(red: 0.85, green: 0.86, blue: 0.88, alpha: 1),
-        UIColor(red: 0.30, green: 0.32, blue: 0.36, alpha: 1),
-        UIColor(red: 0.96, green: 0.78, blue: 0.24, alpha: 1),
-        UIColor(red: 0.26, green: 0.62, blue: 0.40, alpha: 1),
-        UIColor(red: 0.58, green: 0.42, blue: 0.80, alpha: 1),
-        UIColor(red: 0.95, green: 0.58, blue: 0.30, alpha: 1)
+        UIColor(red: 0.90, green: 0.91, blue: 0.93, alpha: 1),
+        UIColor(red: 0.24, green: 0.26, blue: 0.30, alpha: 1),
+        UIColor(red: 0.98, green: 0.78, blue: 0.22, alpha: 1),
+        UIColor(red: 0.20, green: 0.66, blue: 0.48, alpha: 1),
+        UIColor(red: 0.56, green: 0.40, blue: 0.86, alpha: 1),
+        UIColor(red: 0.98, green: 0.55, blue: 0.26, alpha: 1)
     ]
 
     // MARK: Helpers
 
-    private static func render(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> SKTexture {
+    static func image(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false
         if let scale = scale { format.scale = scale }
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        let image = renderer.image { context in draw(context.cgContext, size) }
-        return SKTexture(image: image)
+        return renderer.image { context in draw(context.cgContext, size) }
     }
 
-    private static func fill(_ context: CGContext, path: CGPath, colors: [UIColor], from start: CGPoint, to end: CGPoint) {
+    private static func render(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> SKTexture {
+        SKTexture(image: image(size, scale: scale, draw))
+    }
+
+    private static func gradient(_ colors: [UIColor], _ locations: [CGFloat]? = nil) -> CGGradient? {
         let cgColors = colors.map { $0.cgColor } as CFArray
-        guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: cgColors, locations: nil) else { return }
+        if let locations = locations {
+            return CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: cgColors, locations: locations)
+        }
+        return CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: cgColors, locations: nil)
+    }
+
+    private static func fill(_ context: CGContext, path: CGPath, colors: [UIColor], locations: [CGFloat]? = nil,
+                             from start: CGPoint, to end: CGPoint) {
+        guard let gradient = gradient(colors, locations) else { return }
         context.saveGState()
         context.addPath(path)
         context.clip()
@@ -40,100 +51,247 @@ enum CarArt {
         context.restoreGState()
     }
 
-    private static func polygon(_ context: CGContext, _ points: [CGPoint], color: UIColor) {
-        guard let first = points.first else { return }
+    private static func polygonPath(_ points: [CGPoint]) -> CGPath {
         let path = CGMutablePath()
-        path.move(to: first)
-        for point in points.dropFirst() { path.addLine(to: point) }
-        path.closeSubpath()
-        context.addPath(path)
-        context.setFillColor(color.cgColor)
-        context.fillPath()
+        if let first = points.first {
+            path.move(to: first)
+            for point in points.dropFirst() { path.addLine(to: point) }
+            path.closeSubpath()
+        }
+        return path
+    }
+
+    /// Fake gaussian blur: stacked, growing rounded rects with low alpha.
+    private static func softRect(_ context: CGContext, rect: CGRect, corner: CGFloat, spread: CGFloat, alpha: CGFloat) {
+        let steps = 8
+        for step in 0..<steps {
+            let t = CGFloat(step) / CGFloat(steps - 1)
+            let inset = -spread * t
+            let r = rect.insetBy(dx: inset, dy: inset)
+            let path = CGPath(roundedRect: r, cornerWidth: min(corner + spread * t, r.height / 2),
+                              cornerHeight: min(corner + spread * t, r.height / 2), transform: nil)
+            context.addPath(path)
+            context.setFillColor(UIColor.black.withAlphaComponent(alpha / CGFloat(steps)).cgColor)
+            context.fillPath()
+        }
     }
 
     // MARK: Cars (facing +x: front is on the right)
 
-    static func car(color: UIColor, size: CGSize = Levels.carSize) -> SKTexture {
-        render(CGSize(width: size.width + 4, height: size.height + 4)) { context, canvas in
-            let w = size.width
-            let h = size.height
-            context.translateBy(x: 2, y: 2)
+    static func carBody(color: UIColor, size: CGSize = Levels.carSize) -> SKTexture {
+        SKTexture(image: carImage(color: color, size: size))
+    }
 
-            // Soft shadow
-            context.setFillColor(UIColor.black.withAlphaComponent(0.28).cgColor)
-            let shadow = CGPath(roundedRect: CGRect(x: 1, y: 2, width: w - 1, height: h - 1),
-                                cornerWidth: h * 0.35, cornerHeight: h * 0.35, transform: nil)
-            context.addPath(shadow)
-            context.fillPath()
+    static func carImage(color: UIColor, size: CGSize = Levels.carSize) -> UIImage {
+        image(size) { context, s in
+            let w = s.width
+            let h = s.height
+            let bodyRect = CGRect(x: 0.5, y: 0.5, width: w - 1, height: h - 1)
+            let body = CGPath(roundedRect: bodyRect, cornerWidth: h * 0.40, cornerHeight: h * 0.40, transform: nil)
 
-            // Mirrors
-            context.setFillColor(color.darker(by: 0.25).cgColor)
-            context.fill(CGRect(x: w * 0.60, y: -1.5, width: 3, height: 3))
-            context.fill(CGRect(x: w * 0.60, y: h - 1.5, width: 3, height: 3))
-
-            // Body
-            let body = CGPath(roundedRect: CGRect(x: 0, y: 0, width: w, height: h),
-                              cornerWidth: h * 0.35, cornerHeight: h * 0.35, transform: nil)
-            fill(context, path: body, colors: [color.lighter(by: 0.14), color, color.darker(by: 0.18)],
+            // Rounded side shading: dark edges, bright spine
+            fill(context, path: body,
+                 colors: [color.darker(by: 0.26), color.lighter(by: 0.10), color.lighter(by: 0.18), color, color.darker(by: 0.30)],
+                 locations: [0, 0.28, 0.45, 0.70, 1],
                  from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: h))
+
+            // Bumpers: slightly darker ends
+            context.saveGState()
             context.addPath(body)
-            context.setStrokeColor(color.darker(by: 0.35).cgColor)
-            context.setLineWidth(1.2)
+            context.clip()
+            if let ends = gradient([UIColor.black.withAlphaComponent(0.25), UIColor.clear, UIColor.clear,
+                                    UIColor.black.withAlphaComponent(0.18)], [0, 0.12, 0.88, 1]) {
+                context.drawLinearGradient(ends, start: .zero, end: CGPoint(x: w, y: 0), options: [])
+            }
+            context.restoreGState()
+
+            // Hood creases
+            context.setStrokeColor(color.darker(by: 0.18).withAlphaComponent(0.6).cgColor)
+            context.setLineWidth(0.6)
+            context.move(to: CGPoint(x: w * 0.76, y: h * 0.30))
+            context.addLine(to: CGPoint(x: w * 0.95, y: h * 0.34))
+            context.move(to: CGPoint(x: w * 0.76, y: h * 0.70))
+            context.addLine(to: CGPoint(x: w * 0.95, y: h * 0.66))
             context.strokePath()
 
-            let glass = UIColor(red: 0.14, green: 0.20, blue: 0.30, alpha: 1)
-            // Windshield (front)
-            polygon(context, [CGPoint(x: w * 0.58, y: h * 0.20), CGPoint(x: w * 0.72, y: h * 0.12),
-                              CGPoint(x: w * 0.72, y: h * 0.88), CGPoint(x: w * 0.58, y: h * 0.80)], color: glass)
-            // Rear window
-            polygon(context, [CGPoint(x: w * 0.17, y: h * 0.16), CGPoint(x: w * 0.27, y: h * 0.22),
-                              CGPoint(x: w * 0.27, y: h * 0.78), CGPoint(x: w * 0.17, y: h * 0.84)], color: glass)
-            // Roof
-            let roof = CGPath(roundedRect: CGRect(x: w * 0.29, y: h * 0.18, width: w * 0.28, height: h * 0.64),
-                              cornerWidth: 3, cornerHeight: 3, transform: nil)
-            context.addPath(roof)
-            context.setFillColor(color.lighter(by: 0.06).cgColor)
+            // Windshield with reflection
+            let windshield = polygonPath([CGPoint(x: w * 0.58, y: h * 0.21), CGPoint(x: w * 0.73, y: h * 0.13),
+                                          CGPoint(x: w * 0.73, y: h * 0.87), CGPoint(x: w * 0.58, y: h * 0.79)])
+            fill(context, path: windshield,
+                 colors: [UIColor(red: 0.10, green: 0.15, blue: 0.24, alpha: 1), UIColor(red: 0.28, green: 0.40, blue: 0.56, alpha: 1)],
+                 from: CGPoint(x: w * 0.58, y: 0), to: CGPoint(x: w * 0.73, y: 0))
+            context.saveGState()
+            context.addPath(windshield)
+            context.clip()
+            context.setFillColor(UIColor.white.withAlphaComponent(0.22).cgColor)
+            context.addPath(polygonPath([CGPoint(x: w * 0.62, y: h * 0.10), CGPoint(x: w * 0.66, y: h * 0.10),
+                                         CGPoint(x: w * 0.61, y: h * 0.90), CGPoint(x: w * 0.57, y: h * 0.90)]))
             context.fillPath()
-            context.setFillColor(UIColor.white.withAlphaComponent(0.28).cgColor)
-            context.fill(CGRect(x: w * 0.32, y: h * 0.24, width: w * 0.18, height: h * 0.10))
+            context.restoreGState()
 
-            // Headlights and taillights
-            context.setFillColor(UIColor(red: 1.0, green: 0.97, blue: 0.80, alpha: 1).cgColor)
-            context.fillEllipse(in: CGRect(x: w - 4.5, y: h * 0.10, width: 3.5, height: 4))
-            context.fillEllipse(in: CGRect(x: w - 4.5, y: h * 0.90 - 4, width: 3.5, height: 4))
-            context.setFillColor(UIColor(red: 0.85, green: 0.10, blue: 0.12, alpha: 1).cgColor)
-            context.fill(CGRect(x: 0.8, y: h * 0.12, width: 2.2, height: 4))
-            context.fill(CGRect(x: 0.8, y: h * 0.88 - 4, width: 2.2, height: 4))
-            _ = canvas
+            // Rear window
+            let rear = polygonPath([CGPoint(x: w * 0.15, y: h * 0.17), CGPoint(x: w * 0.27, y: h * 0.23),
+                                    CGPoint(x: w * 0.27, y: h * 0.77), CGPoint(x: w * 0.15, y: h * 0.83)])
+            fill(context, path: rear,
+                 colors: [UIColor(red: 0.26, green: 0.36, blue: 0.50, alpha: 1), UIColor(red: 0.10, green: 0.14, blue: 0.22, alpha: 1)],
+                 from: CGPoint(x: w * 0.15, y: 0), to: CGPoint(x: w * 0.27, y: 0))
+
+            // Side windows
+            context.setStrokeColor(UIColor(red: 0.12, green: 0.17, blue: 0.26, alpha: 0.9).cgColor)
+            context.setLineWidth(1.4)
+            context.move(to: CGPoint(x: w * 0.29, y: h * 0.17))
+            context.addLine(to: CGPoint(x: w * 0.56, y: h * 0.17))
+            context.move(to: CGPoint(x: w * 0.29, y: h * 0.83))
+            context.addLine(to: CGPoint(x: w * 0.56, y: h * 0.83))
+            context.strokePath()
+
+            // Roof with soft highlight
+            let roofRect = CGRect(x: w * 0.28, y: h * 0.22, width: w * 0.29, height: h * 0.56)
+            let roof = CGPath(roundedRect: roofRect, cornerWidth: 3, cornerHeight: 3, transform: nil)
+            fill(context, path: roof, colors: [color.lighter(by: 0.22), color.lighter(by: 0.06), color.darker(by: 0.08)],
+                 from: CGPoint(x: 0, y: roofRect.minY), to: CGPoint(x: 0, y: roofRect.maxY))
+            context.setFillColor(UIColor.white.withAlphaComponent(0.30).cgColor)
+            let streak = CGPath(roundedRect: CGRect(x: w * 0.31, y: h * 0.27, width: w * 0.20, height: h * 0.07),
+                                cornerWidth: 1.5, cornerHeight: 1.5, transform: nil)
+            context.addPath(streak)
+            context.fillPath()
+
+            // Lights
+            context.setFillColor(UIColor(red: 1.0, green: 0.98, blue: 0.86, alpha: 1).cgColor)
+            context.addPath(CGPath(roundedRect: CGRect(x: w - 4, y: h * 0.10, width: 3, height: 4.5), cornerWidth: 1.2, cornerHeight: 1.2, transform: nil))
+            context.addPath(CGPath(roundedRect: CGRect(x: w - 4, y: h * 0.90 - 4.5, width: 3, height: 4.5), cornerWidth: 1.2, cornerHeight: 1.2, transform: nil))
+            context.fillPath()
+            context.setFillColor(UIColor(red: 0.92, green: 0.08, blue: 0.12, alpha: 1).cgColor)
+            context.addPath(CGPath(roundedRect: CGRect(x: 1, y: h * 0.10, width: 2.4, height: 4.5), cornerWidth: 1, cornerHeight: 1, transform: nil))
+            context.addPath(CGPath(roundedRect: CGRect(x: 1, y: h * 0.90 - 4.5, width: 2.4, height: 4.5), cornerWidth: 1, cornerHeight: 1, transform: nil))
+            context.fillPath()
+
+            // Outline
+            context.addPath(body)
+            context.setStrokeColor(color.darker(by: 0.40).cgColor)
+            context.setLineWidth(0.9)
+            context.strokePath()
         }
     }
 
-    // MARK: Ground and props
+    static func carShadow(size: CGSize = Levels.carSize) -> SKTexture {
+        let pad: CGFloat = 8
+        return render(CGSize(width: size.width + pad * 2, height: size.height + pad * 2)) { context, _ in
+            softRect(context, rect: CGRect(x: pad, y: pad, width: size.width, height: size.height),
+                     corner: size.height * 0.4, spread: 5, alpha: 0.55)
+        }
+    }
+
+    static func wheel() -> SKTexture {
+        render(CGSize(width: 10, height: 5)) { context, s in
+            let path = CGPath(roundedRect: CGRect(origin: .zero, size: s), cornerWidth: 2, cornerHeight: 2, transform: nil)
+            fill(context, path: path, colors: [UIColor(white: 0.25, alpha: 1), UIColor(white: 0.06, alpha: 1)],
+                 from: .zero, to: CGPoint(x: 0, y: s.height))
+            context.setStrokeColor(UIColor(white: 0.35, alpha: 1).cgColor)
+            context.setLineWidth(0.6)
+            for x in stride(from: 2.0, to: Double(s.width), by: 2.0) {
+                context.move(to: CGPoint(x: x, y: 0.6))
+                context.addLine(to: CGPoint(x: x, y: s.height - 0.6))
+            }
+            context.strokePath()
+        }
+    }
+
+    static func headlightBeam() -> SKTexture {
+        render(CGSize(width: 90, height: 60)) { context, s in
+            let cone = polygonPath([CGPoint(x: 0, y: s.height * 0.38), CGPoint(x: s.width, y: 0),
+                                    CGPoint(x: s.width, y: s.height), CGPoint(x: 0, y: s.height * 0.62)])
+            fill(context, path: cone,
+                 colors: [UIColor(red: 1, green: 0.95, blue: 0.75, alpha: 0.45), UIColor(red: 1, green: 0.95, blue: 0.75, alpha: 0)],
+                 from: .zero, to: CGPoint(x: s.width, y: 0))
+        }
+    }
+
+    // MARK: Ground and scenery
 
     static func asphalt(size: CGSize) -> SKTexture {
         render(size, scale: 2) { context, s in
-            context.setFillColor(UIColor(red: 0.29, green: 0.31, blue: 0.35, alpha: 1).cgColor)
-            context.fill(CGRect(origin: .zero, size: s))
-            // Grain
+            let full = CGRect(origin: .zero, size: s)
+            fill(context, path: CGPath(rect: full, transform: nil),
+                 colors: [UIColor(red: 0.27, green: 0.29, blue: 0.33, alpha: 1), UIColor(red: 0.22, green: 0.24, blue: 0.28, alpha: 1)],
+                 from: .zero, to: CGPoint(x: s.width, y: s.height))
+
             var generator = SystemRandomNumberGenerator()
-            for _ in 0..<1600 {
+            // Patches of older asphalt
+            for _ in 0..<14 {
+                let r = CGFloat.random(in: 40...110, using: &generator)
+                let x = CGFloat.random(in: 0...s.width, using: &generator)
+                let y = CGFloat.random(in: 0...s.height, using: &generator)
+                context.setFillColor(UIColor(white: 1, alpha: 0.025).cgColor)
+                context.fillEllipse(in: CGRect(x: x - r, y: y - r * 0.6, width: r * 2, height: r * 1.2))
+            }
+            // Oil stains
+            for _ in 0..<7 {
+                let r = CGFloat.random(in: 8...18, using: &generator)
+                let x = CGFloat.random(in: 40...(s.width - 40), using: &generator)
+                let y = CGFloat.random(in: 40...(s.height - 40), using: &generator)
+                context.setFillColor(UIColor(white: 0, alpha: 0.16).cgColor)
+                context.fillEllipse(in: CGRect(x: x - r, y: y - r * 0.7, width: r * 2, height: r * 1.4))
+            }
+            // Grain
+            for _ in 0..<2200 {
                 let x = CGFloat.random(in: 0...s.width, using: &generator)
                 let y = CGFloat.random(in: 0...s.height, using: &generator)
                 let light = Bool.random(using: &generator)
-                context.setFillColor((light ? UIColor.white : UIColor.black).withAlphaComponent(0.07).cgColor)
-                let r = CGFloat.random(in: 1...2.5, using: &generator)
+                context.setFillColor((light ? UIColor.white : UIColor.black).withAlphaComponent(0.06).cgColor)
+                let r = CGFloat.random(in: 0.8...2.2, using: &generator)
                 context.fillEllipse(in: CGRect(x: x, y: y, width: r, height: r))
             }
-            // Painted edge
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.55).cgColor)
+            // Old tire marks
+            context.setStrokeColor(UIColor(white: 0, alpha: 0.10).cgColor)
             context.setLineWidth(3)
-            context.stroke(CGRect(origin: .zero, size: s).insetBy(dx: 6, dy: 6))
-            // Lane arrows painted faintly
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.12).cgColor)
+            for _ in 0..<5 {
+                let cx = CGFloat.random(in: 150...(s.width - 150), using: &generator)
+                let cy = CGFloat.random(in: 120...(s.height - 120), using: &generator)
+                let r = CGFloat.random(in: 50...110, using: &generator)
+                let a = CGFloat.random(in: 0...(2 * CGFloat.pi), using: &generator)
+                context.addArc(center: CGPoint(x: cx, y: cy), radius: r, startAngle: a, endAngle: a + 1.2, clockwise: false)
+                context.strokePath()
+                context.addArc(center: CGPoint(x: cx, y: cy), radius: r + 9, startAngle: a, endAngle: a + 1.2, clockwise: false)
+                context.strokePath()
+            }
+            // Dashed centre line and arrows
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.16).cgColor)
             context.setLineWidth(2)
-            context.setLineDash(phase: 0, lengths: [18, 14])
-            context.move(to: CGPoint(x: 30, y: s.height / 2))
-            context.addLine(to: CGPoint(x: s.width - 30, y: s.height / 2))
+            context.setLineDash(phase: 0, lengths: [20, 16])
+            context.move(to: CGPoint(x: 40, y: s.height / 2))
+            context.addLine(to: CGPoint(x: s.width - 40, y: s.height / 2))
+            context.strokePath()
+            context.setLineDash(phase: 0, lengths: [])
+            context.setFillColor(UIColor.white.withAlphaComponent(0.14).cgColor)
+            for x in [s.width * 0.25, s.width * 0.75] {
+                context.addPath(polygonPath([CGPoint(x: x - 14, y: s.height / 2 - 26), CGPoint(x: x + 14, y: s.height / 2 - 34),
+                                             CGPoint(x: x - 14, y: s.height / 2 - 42)]))
+                context.fillPath()
+            }
+
+            // Curb around the lot: raised edge with light top and a shadow on the asphalt
+            let curb: CGFloat = 10
+            context.setFillColor(UIColor(red: 0.70, green: 0.71, blue: 0.73, alpha: 1).cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: s.width, height: curb))
+            context.fill(CGRect(x: 0, y: s.height - curb, width: s.width, height: curb))
+            context.fill(CGRect(x: 0, y: 0, width: curb, height: s.height))
+            context.fill(CGRect(x: s.width - curb, y: 0, width: curb, height: s.height))
+            context.setFillColor(UIColor.white.withAlphaComponent(0.35).cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: s.width, height: 2))
+            context.fill(CGRect(x: 0, y: 0, width: 2, height: s.height))
+            context.setFillColor(UIColor.black.withAlphaComponent(0.28).cgColor)
+            context.fill(CGRect(x: curb, y: curb, width: s.width - curb * 2, height: 3))
+            context.fill(CGRect(x: curb, y: curb, width: 3, height: s.height - curb * 2))
+            // Curb segment joints
+            context.setStrokeColor(UIColor.black.withAlphaComponent(0.18).cgColor)
+            context.setLineWidth(1)
+            var x: CGFloat = 40
+            while x < s.width {
+                context.move(to: CGPoint(x: x, y: 0)); context.addLine(to: CGPoint(x: x, y: curb))
+                context.move(to: CGPoint(x: x, y: s.height - curb)); context.addLine(to: CGPoint(x: x, y: s.height))
+                x += 40
+            }
             context.strokePath()
         }
     }
@@ -141,90 +299,274 @@ enum CarArt {
     static func spot(size: CGSize, color: UIColor) -> SKTexture {
         render(size) { context, s in
             let rect = CGRect(origin: .zero, size: s)
-            context.setFillColor(color.withAlphaComponent(0.22).cgColor)
-            context.fill(rect)
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.95).cgColor)
-            context.setLineWidth(3)
-            context.stroke(rect.insetBy(dx: 1.5, dy: 1.5))
-            context.setStrokeColor(color.cgColor)
-            context.setLineWidth(2)
-            context.setLineDash(phase: 0, lengths: [6, 4])
-            context.stroke(rect.insetBy(dx: 5, dy: 5))
-            context.setLineDash(phase: 0, lengths: [])
-            let fontSize = min(s.width, s.height) * 0.62
+            fill(context, path: CGPath(rect: rect, transform: nil),
+                 colors: [color.withAlphaComponent(0.10), color.withAlphaComponent(0.30)],
+                 from: .zero, to: CGPoint(x: s.width, y: 0))
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.92).cgColor)
+            context.setLineWidth(2.5)
+            context.stroke(rect.insetBy(dx: 1.25, dy: 1.25))
+            let fontSize = min(s.width, s.height) * 0.58
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: fontSize, weight: .heavy),
-                .foregroundColor: UIColor.white.withAlphaComponent(0.55)
+                .font: UIFont.systemFont(ofSize: fontSize, weight: .black),
+                .foregroundColor: UIColor.white.withAlphaComponent(0.42)
             ]
             let text = "P" as NSString
             let textSize = text.size(withAttributes: attributes)
-            text.draw(at: CGPoint(x: (s.width - textSize.width) / 2, y: (s.height - textSize.height) / 2),
-                      withAttributes: attributes)
+            text.draw(at: CGPoint(x: (s.width - textSize.width) / 2, y: (s.height - textSize.height) / 2), withAttributes: attributes)
         }
     }
 
+    /// Concrete block seen from above: light top face plus a darker visible side.
     static func wall(size: CGSize) -> SKTexture {
         render(size) { context, s in
             let rect = CGRect(origin: .zero, size: s)
-            let path = CGPath(roundedRect: rect, cornerWidth: 3, cornerHeight: 3, transform: nil)
-            fill(context, path: path,
-                 colors: [UIColor(red: 0.78, green: 0.78, blue: 0.80, alpha: 1),
-                          UIColor(red: 0.58, green: 0.58, blue: 0.62, alpha: 1)],
+            let side: CGFloat = min(5, min(s.width, s.height) * 0.3)
+            let sideRect = CGRect(x: 0, y: s.height - side, width: s.width, height: side)
+            context.setFillColor(UIColor(red: 0.42, green: 0.43, blue: 0.47, alpha: 1).cgColor)
+            context.fill(sideRect)
+            let top = CGRect(x: 0, y: 0, width: s.width, height: s.height - side)
+            let topPath = CGPath(roundedRect: top, cornerWidth: 2, cornerHeight: 2, transform: nil)
+            fill(context, path: topPath,
+                 colors: [UIColor(red: 0.86, green: 0.86, blue: 0.88, alpha: 1), UIColor(red: 0.68, green: 0.69, blue: 0.72, alpha: 1)],
                  from: .zero, to: CGPoint(x: s.width, y: s.height))
-            context.addPath(path)
-            context.setStrokeColor(UIColor(red: 0.42, green: 0.42, blue: 0.46, alpha: 1).cgColor)
-            context.setLineWidth(2)
-            context.strokePath()
-            // Hazard stripes
+            // Hazard tape near the ends of long walls
             context.saveGState()
-            context.addPath(path)
+            context.addPath(topPath)
             context.clip()
-            context.setFillColor(UIColor(red: 0.98, green: 0.80, blue: 0.20, alpha: 0.85).cgColor)
             let long = max(s.width, s.height)
-            var offset: CGFloat = -long
-            while offset < long * 2 {
-                let stripe = CGMutablePath()
-                stripe.move(to: CGPoint(x: offset, y: 0))
-                stripe.addLine(to: CGPoint(x: offset + 10, y: 0))
-                stripe.addLine(to: CGPoint(x: offset + 10 - long, y: long))
-                stripe.addLine(to: CGPoint(x: offset - long, y: long))
-                stripe.closeSubpath()
-                context.addPath(stripe)
-                offset += 28
+            let horizontal = s.width >= s.height
+            let band: CGFloat = min(40, long * 0.25)
+            let zones: [CGRect] = horizontal
+                ? [CGRect(x: 0, y: 0, width: band, height: s.height), CGRect(x: s.width - band, y: 0, width: band, height: s.height)]
+                : [CGRect(x: 0, y: 0, width: s.width, height: band), CGRect(x: 0, y: s.height - band, width: s.width, height: band)]
+            for zone in zones {
+                context.saveGState()
+                context.clip(to: zone)
+                context.setFillColor(UIColor(red: 0.16, green: 0.16, blue: 0.18, alpha: 1).cgColor)
+                context.fill(zone)
+                context.setFillColor(UIColor(red: 0.99, green: 0.80, blue: 0.18, alpha: 1).cgColor)
+                var offset: CGFloat = -long
+                while offset < long * 2 {
+                    context.addPath(polygonPath([CGPoint(x: offset, y: 0), CGPoint(x: offset + 7, y: 0),
+                                                 CGPoint(x: offset + 7 - long, y: long), CGPoint(x: offset - long, y: long)]))
+                    offset += 14
+                }
+                context.fillPath()
+                context.restoreGState()
             }
-            context.fillPath()
             context.restoreGState()
+            context.setStrokeColor(UIColor(red: 0.36, green: 0.37, blue: 0.40, alpha: 1).cgColor)
+            context.setLineWidth(1)
+            context.stroke(rect.insetBy(dx: 0.5, dy: 0.5))
+        }
+    }
+
+    static func blockShadow(size: CGSize) -> SKTexture {
+        let pad: CGFloat = 8
+        return render(CGSize(width: size.width + pad * 2, height: size.height + pad * 2)) { context, _ in
+            softRect(context, rect: CGRect(x: pad, y: pad, width: size.width, height: size.height), corner: 2, spread: 5, alpha: 0.5)
         }
     }
 
     static func cone(size: CGFloat) -> SKTexture {
         render(CGSize(width: size, height: size)) { context, s in
-            let base = CGPath(roundedRect: CGRect(origin: .zero, size: s).insetBy(dx: 0.5, dy: 0.5),
-                              cornerWidth: 2, cornerHeight: 2, transform: nil)
-            context.addPath(base)
-            context.setFillColor(UIColor(red: 0.20, green: 0.20, blue: 0.22, alpha: 1).cgColor)
-            context.fillPath()
-            context.setFillColor(UIColor(red: 1.0, green: 0.48, blue: 0.10, alpha: 1).cgColor)
-            context.fillEllipse(in: CGRect(origin: .zero, size: s).insetBy(dx: s.width * 0.14, dy: s.height * 0.14))
+            let rect = CGRect(origin: .zero, size: s)
+            let base = CGPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 2.5, cornerHeight: 2.5, transform: nil)
+            fill(context, path: base, colors: [UIColor(white: 0.30, alpha: 1), UIColor(white: 0.12, alpha: 1)],
+                 from: .zero, to: CGPoint(x: s.width, y: s.height))
+            let cone = CGPath(ellipseIn: rect.insetBy(dx: s.width * 0.14, dy: s.height * 0.14), transform: nil)
+            fill(context, path: cone,
+                 colors: [UIColor(red: 1.0, green: 0.66, blue: 0.30, alpha: 1), UIColor(red: 0.95, green: 0.36, blue: 0.06, alpha: 1)],
+                 from: .zero, to: CGPoint(x: s.width, y: s.height))
             context.setFillColor(UIColor.white.cgColor)
-            context.fillEllipse(in: CGRect(origin: .zero, size: s).insetBy(dx: s.width * 0.32, dy: s.height * 0.32))
-            context.setFillColor(UIColor(red: 1.0, green: 0.60, blue: 0.25, alpha: 1).cgColor)
-            context.fillEllipse(in: CGRect(origin: .zero, size: s).insetBy(dx: s.width * 0.42, dy: s.height * 0.42))
+            context.fillEllipse(in: rect.insetBy(dx: s.width * 0.31, dy: s.height * 0.31))
+            context.setFillColor(UIColor(red: 1.0, green: 0.55, blue: 0.20, alpha: 1).cgColor)
+            context.fillEllipse(in: rect.insetBy(dx: s.width * 0.40, dy: s.height * 0.40))
+            context.setFillColor(UIColor.white.withAlphaComponent(0.6).cgColor)
+            context.fillEllipse(in: CGRect(x: s.width * 0.30, y: s.height * 0.22, width: s.width * 0.14, height: s.height * 0.10))
+        }
+    }
+
+    static func tree(radius: CGFloat) -> SKTexture {
+        let side = radius * 2
+        return render(CGSize(width: side, height: side)) { context, s in
+            let blobs: [(CGFloat, CGFloat, CGFloat)] = [
+                (0.50, 0.50, 0.46), (0.32, 0.38, 0.30), (0.66, 0.36, 0.28), (0.36, 0.66, 0.28), (0.66, 0.66, 0.30)
+            ]
+            for blob in blobs {
+                let r = blob.2 * s.width
+                let center = CGPoint(x: blob.0 * s.width, y: blob.1 * s.height)
+                let circle = CGPath(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2), transform: nil)
+                context.saveGState()
+                context.addPath(circle)
+                context.clip()
+                if let shade = gradient([UIColor(red: 0.50, green: 0.78, blue: 0.40, alpha: 1),
+                                         UIColor(red: 0.22, green: 0.52, blue: 0.26, alpha: 1),
+                                         UIColor(red: 0.13, green: 0.36, blue: 0.18, alpha: 1)], [0, 0.6, 1]) {
+                    context.drawRadialGradient(shade, startCenter: CGPoint(x: center.x - r * 0.35, y: center.y - r * 0.35),
+                                               startRadius: 0, endCenter: center, endRadius: r, options: [])
+                }
+                context.restoreGState()
+            }
+        }
+    }
+
+    static func roundShadow(radius: CGFloat) -> SKTexture {
+        let side = radius * 2 + 16
+        return render(CGSize(width: side, height: side)) { context, s in
+            let center = CGPoint(x: s.width / 2, y: s.height / 2)
+            if let shade = gradient([UIColor.black.withAlphaComponent(0.40), UIColor.black.withAlphaComponent(0)], [0.55, 1]) {
+                context.drawRadialGradient(shade, startCenter: center, startRadius: 0, endCenter: center, endRadius: s.width / 2, options: [])
+            }
         }
     }
 
     static func grass(size: CGSize) -> SKTexture {
-        render(CGSize(width: 64, height: 64), scale: 1) { context, s in
-            context.setFillColor(UIColor(red: 0.30, green: 0.52, blue: 0.30, alpha: 1).cgColor)
-            context.fill(CGRect(origin: .zero, size: s))
+        render(size, scale: 1) { context, s in
+            fill(context, path: CGPath(rect: CGRect(origin: .zero, size: s), transform: nil),
+                 colors: [UIColor(red: 0.33, green: 0.56, blue: 0.32, alpha: 1), UIColor(red: 0.24, green: 0.45, blue: 0.27, alpha: 1)],
+                 from: .zero, to: CGPoint(x: s.width, y: s.height))
             var generator = SystemRandomNumberGenerator()
-            for _ in 0..<60 {
+            let count = Int(s.width * s.height / 90)
+            for _ in 0..<count {
                 let x = CGFloat.random(in: 0...s.width, using: &generator)
                 let y = CGFloat.random(in: 0...s.height, using: &generator)
-                context.setFillColor(UIColor(red: 0.38, green: 0.62, blue: 0.36, alpha: 0.8).cgColor)
-                context.fill(CGRect(x: x, y: y, width: 1.5, height: 3))
+                let light = Bool.random(using: &generator)
+                context.setFillColor((light ? UIColor(red: 0.48, green: 0.72, blue: 0.40, alpha: 0.6)
+                                            : UIColor(red: 0.16, green: 0.34, blue: 0.20, alpha: 0.5)).cgColor)
+                context.fill(CGRect(x: x, y: y, width: 1.4, height: 3.2))
             }
-            _ = size
+        }
+    }
+
+    static func vignette(size: CGSize) -> SKTexture {
+        render(size, scale: 1) { context, s in
+            let center = CGPoint(x: s.width / 2, y: s.height / 2)
+            let radius = hypot(s.width, s.height) / 2
+            if let shade = gradient([UIColor.black.withAlphaComponent(0), UIColor.black.withAlphaComponent(0.42)], [0.55, 1]) {
+                context.drawRadialGradient(shade, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius,
+                                           options: [.drawsAfterEndLocation])
+            }
+        }
+    }
+
+    static func dot() -> SKTexture {
+        render(CGSize(width: 16, height: 16)) { context, s in
+            let center = CGPoint(x: s.width / 2, y: s.height / 2)
+            if let soft = gradient([UIColor.white, UIColor.white.withAlphaComponent(0)], [0.3, 1]) {
+                context.drawRadialGradient(soft, startCenter: center, startRadius: 0, endCenter: center, endRadius: s.width / 2, options: [])
+            }
+        }
+    }
+
+    // MARK: UI
+
+    static func symbol(_ name: String, pointSize: CGFloat, color: UIColor, weight: UIImage.SymbolWeight = .bold) -> SKTexture {
+        let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+        guard let base = UIImage(systemName: name, withConfiguration: configuration) else { return SKTexture() }
+        let tinted = base.withTintColor(color, renderingMode: .alwaysOriginal)
+        return render(base.size) { _, s in
+            tinted.draw(in: CGRect(origin: .zero, size: s))
+        }
+    }
+
+    static func glass(size: CGSize, corner: CGFloat) -> SKTexture {
+        render(size) { context, s in
+            let rect = CGRect(origin: .zero, size: s).insetBy(dx: 1, dy: 1)
+            let path = CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil)
+            fill(context, path: path,
+                 colors: [UIColor(red: 0.20, green: 0.22, blue: 0.30, alpha: 0.78), UIColor(red: 0.08, green: 0.09, blue: 0.14, alpha: 0.82)],
+                 from: .zero, to: CGPoint(x: 0, y: s.height))
+            context.saveGState()
+            context.addPath(path)
+            context.clip()
+            context.setFillColor(UIColor.white.withAlphaComponent(0.08).cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: s.width, height: s.height * 0.45))
+            context.restoreGState()
+            context.addPath(path)
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.22).cgColor)
+            context.setLineWidth(1)
+            context.strokePath()
+        }
+    }
+
+    static func steeringWheel(diameter: CGFloat) -> SKTexture {
+        render(CGSize(width: diameter, height: diameter)) { context, s in
+            let center = CGPoint(x: s.width / 2, y: s.height / 2)
+            let outer = s.width / 2 - 2
+            let rimWidth = s.width * 0.11
+            // Rim
+            let rim = CGMutablePath()
+            rim.addEllipse(in: CGRect(x: center.x - outer, y: center.y - outer, width: outer * 2, height: outer * 2))
+            rim.addEllipse(in: CGRect(x: center.x - outer + rimWidth, y: center.y - outer + rimWidth,
+                                      width: (outer - rimWidth) * 2, height: (outer - rimWidth) * 2))
+            context.saveGState()
+            context.addPath(rim)
+            context.clip(using: .evenOdd)
+            if let shade = gradient([UIColor(white: 0.42, alpha: 0.95), UIColor(white: 0.10, alpha: 0.95)]) {
+                context.drawLinearGradient(shade, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: s.height), options: [])
+            }
+            context.restoreGState()
+            // Grip marks
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
+            context.setLineWidth(1)
+            for index in 0..<24 {
+                let angle = CGFloat(index) / 24 * 2 * CGFloat.pi
+                let r1 = outer - rimWidth * 0.8
+                let r2 = outer - rimWidth * 0.2
+                context.move(to: CGPoint(x: center.x + cos(angle) * r1, y: center.y + sin(angle) * r1))
+                context.addLine(to: CGPoint(x: center.x + cos(angle) * r2, y: center.y + sin(angle) * r2))
+            }
+            context.strokePath()
+            // Spokes
+            context.setStrokeColor(UIColor(white: 0.22, alpha: 0.95).cgColor)
+            context.setLineWidth(s.width * 0.08)
+            context.setLineCap(.round)
+            let spokeAngles: [CGFloat] = [CGFloat.pi, 0, CGFloat.pi / 2]
+            for angle in spokeAngles {
+                context.move(to: center)
+                context.addLine(to: CGPoint(x: center.x + cos(angle) * (outer - rimWidth), y: center.y + sin(angle) * (outer - rimWidth)))
+            }
+            context.strokePath()
+            // Hub
+            let hubR = s.width * 0.17
+            let hub = CGPath(ellipseIn: CGRect(x: center.x - hubR, y: center.y - hubR, width: hubR * 2, height: hubR * 2), transform: nil)
+            fill(context, path: hub, colors: [UIColor(white: 0.38, alpha: 1), UIColor(white: 0.14, alpha: 1)],
+                 from: CGPoint(x: 0, y: center.y - hubR), to: CGPoint(x: 0, y: center.y + hubR))
+            // Top marker
+            context.setFillColor(UIColor(red: 1.0, green: 0.55, blue: 0.20, alpha: 1).cgColor)
+            context.fill(CGRect(x: center.x - 3, y: center.y - outer, width: 6, height: rimWidth))
+        }
+    }
+
+    static func pedal(size: CGSize, accent: UIColor) -> SKTexture {
+        render(size) { context, s in
+            let rect = CGRect(origin: .zero, size: s).insetBy(dx: 2, dy: 2)
+            let path = CGPath(roundedRect: rect, cornerWidth: 14, cornerHeight: 14, transform: nil)
+            fill(context, path: path,
+                 colors: [UIColor(white: 0.36, alpha: 0.95), UIColor(white: 0.12, alpha: 0.95)],
+                 from: .zero, to: CGPoint(x: s.width, y: s.height))
+            // Ridges
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.16).cgColor)
+            context.setLineWidth(3)
+            context.setLineCap(.round)
+            var y = rect.minY + 26
+            while y < rect.maxY - 12 {
+                context.move(to: CGPoint(x: rect.minX + 12, y: y))
+                context.addLine(to: CGPoint(x: rect.maxX - 12, y: y))
+                y += 10
+            }
+            context.strokePath()
+            // Accent strip
+            let strip = CGPath(roundedRect: CGRect(x: rect.minX + 8, y: rect.minY + 7, width: rect.width - 16, height: 8),
+                               cornerWidth: 4, cornerHeight: 4, transform: nil)
+            context.addPath(strip)
+            context.setFillColor(accent.cgColor)
+            context.fillPath()
+            context.addPath(path)
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.35).cgColor)
+            context.setLineWidth(1.5)
+            context.strokePath()
         }
     }
 }

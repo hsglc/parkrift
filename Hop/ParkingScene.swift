@@ -1,11 +1,120 @@
 import SpriteKit
 import UIKit
 
+// MARK: - Car visuals
+
+/// Shared textures for every car on screen.
+private struct CarKit {
+    let wheel: SKTexture
+    let shadow: SKTexture
+    let glow: SKTexture
+    let beam: SKTexture
+}
+
+/// A car built from layers: soft shadow, four wheels (front ones steer), body,
+/// brake/reverse lights and optional headlight beams.
+private final class CarRig {
+    let root = SKNode()
+    let shadow: SKSpriteNode
+    let body: SKSpriteNode
+    private var frontWheels: [SKSpriteNode] = []
+    private var brakeLights: [SKSpriteNode] = []
+    private var reverseLights: [SKSpriteNode] = []
+    private var beam: SKSpriteNode?
+
+    init(color: UIColor, kit: CarKit, headlights: Bool) {
+        let size = Levels.carSize
+        shadow = SKSpriteNode(texture: kit.shadow)
+        shadow.size = CGSize(width: size.width + 16, height: size.height + 16)
+        shadow.alpha = 0.85
+
+        body = SKSpriteNode(texture: CarArt.carBody(color: color))
+        body.size = size
+        body.zPosition = 2
+
+        let wheelSize = CGSize(width: 10, height: 5)
+        let wheelSpots: [(CGFloat, CGFloat, Bool)] = [(13, 10.3, true), (13, -10.3, true), (-13, 10.3, false), (-13, -10.3, false)]
+        for spot in wheelSpots {
+            let wheel = SKSpriteNode(texture: kit.wheel)
+            wheel.size = wheelSize
+            wheel.position = CGPoint(x: spot.0, y: spot.1)
+            wheel.zPosition = 1
+            root.addChild(wheel)
+            if spot.2 { frontWheels.append(wheel) }
+        }
+        root.addChild(body)
+
+        for y: CGFloat in [7, -7] {
+            let brake = SKSpriteNode(texture: kit.glow)
+            brake.size = CGSize(width: 12, height: 9)
+            brake.color = UIColor(red: 1, green: 0.12, blue: 0.10, alpha: 1)
+            brake.colorBlendFactor = 1
+            brake.blendMode = .add
+            brake.position = CGPoint(x: -size.width / 2 + 1, y: y)
+            brake.zPosition = 3
+            brake.alpha = 0
+            root.addChild(brake)
+            brakeLights.append(brake)
+
+            let reverse = SKSpriteNode(texture: kit.glow)
+            reverse.size = CGSize(width: 8, height: 6)
+            reverse.blendMode = .add
+            reverse.position = CGPoint(x: -size.width / 2 + 1, y: y * 0.5)
+            reverse.zPosition = 3
+            reverse.alpha = 0
+            root.addChild(reverse)
+            reverseLights.append(reverse)
+        }
+
+        if headlights {
+            let light = SKSpriteNode(texture: kit.beam)
+            light.size = CGSize(width: 70, height: 46)
+            light.anchorPoint = CGPoint(x: 0, y: 0.5)
+            light.position = CGPoint(x: size.width / 2 - 1, y: 0)
+            light.blendMode = .add
+            light.alpha = 0.5
+            light.zPosition = 0
+            root.addChild(light)
+            beam = light
+        }
+    }
+
+    func add(to parent: SKNode, z: CGFloat) {
+        shadow.zPosition = z - 1
+        root.zPosition = z
+        parent.addChild(shadow)
+        parent.addChild(root)
+    }
+
+    func remove() {
+        shadow.removeFromParent()
+        root.removeFromParent()
+    }
+
+    var isHidden: Bool {
+        get { root.isHidden }
+        set { root.isHidden = newValue; shadow.isHidden = newValue }
+    }
+
+    func update(position: CGPoint, heading: CGFloat, steer: CGFloat,
+                lean: CGVector = .zero, braking: Bool = false, reversing: Bool = false) {
+        root.position = position
+        root.zRotation = heading
+        shadow.position = CGPoint(x: position.x + 3, y: position.y - 4)
+        shadow.zRotation = heading
+        for wheel in frontWheels { wheel.zRotation = steer }
+        body.position = CGPoint(x: lean.dx, y: lean.dy)
+        for light in brakeLights { light.alpha = braking ? 1 : 0 }
+        for light in reverseLights { light.alpha = reversing ? 0.9 : 0 }
+    }
+}
+
+// MARK: - Scene
+
 final class ParkingScene: SKScene {
 
     private enum Control: Hashable {
-        case left
-        case right
+        case wheel
         case forward
         case reverse
     }
@@ -14,6 +123,11 @@ final class ParkingScene: SKScene {
         case countdown
         case driving
         case finished
+    }
+
+    private enum Gear {
+        case drive
+        case reverse
     }
 
     // MARK: Configuration
@@ -30,7 +144,9 @@ final class ParkingScene: SKScene {
     // MARK: Layers
 
     private var builtSize: CGSize = .zero
+    private let backdrop = SKNode()
     private let mapNode = SKNode()
+    private let groundFX = SKNode()
     private let levelLayer = SKNode()
     private let hud = SKNode()
     private let controlsLayer = SKNode()
@@ -39,50 +155,68 @@ final class ParkingScene: SKScene {
 
     // MARK: Nodes
 
-    private var localCar = SKSpriteNode()
-    private var remoteCar = SKSpriteNode()
+    private var kit: CarKit?
+    private var localRig: CarRig?
+    private var remoteRig: CarRig?
+    private var parkedRigs: [CarRig] = []
     private var localTag = SKLabelNode()
     private var remoteTag = SKLabelNode()
-    private var localSpotGlow: SKSpriteNode?
-    private var remoteCheck = SKLabelNode()
+    private var remoteCheck = SKSpriteNode()
+    private var spotArrow = SKSpriteNode()
+    private var spotNeon: SKShapeNode?
+    private var holdRing = SKShapeNode()
     private var levelLabel = SKLabelNode()
     private var timerLabel = SKLabelNode()
     private var hitsLabel = SKLabelNode()
     private var statusLabel = SKLabelNode()
     private var codeLabel = SKLabelNode()
+    private var gearLabel = SKLabelNode()
+    private var countdownNode = SKNode()
     private var countdownLabel = SKLabelNode()
-    private var menuButton = SKShapeNode()
-    private var resetButton = SKShapeNode()
-    private var finalButton: SKShapeNode?
-    private var buttons: [Control: SKShapeNode] = [:]
-    private var buttonRadius: [Control: CGFloat] = [:]
+    private var menuButton = SKSpriteNode()
+    private var resetButton = SKSpriteNode()
+    private var finalButton: SKNode?
+    private var wheelSprite = SKSpriteNode()
+    private var gasPedal = SKSpriteNode()
+    private var reversePedal = SKSpriteNode()
     private var activeTouches: [UITouch: Control] = [:]
+    private var wheelStartX: [UITouch: CGFloat] = [:]
+    private var dotTexture = SKTexture()
 
-    // MARK: Textures
+    // MARK: Driving model (1 world unit ≈ 10 cm)
 
-    private var parkedCarTextures: [SKTexture] = []
-    private var coneTexture = SKTexture()
+    private let wheelBase: CGFloat = 26
+    private let maxSteer: CGFloat = 0.64
+    private let steerRate: CGFloat = 2.6
+    private let engineAccel: CGFloat = 150
+    private let reverseAccel: CGFloat = 95
+    private let brakeDecel: CGFloat = 360
+    private let rolling: CGFloat = 22
+    private let airDrag: CGFloat = 0.22
+    private let maxForward: CGFloat = 150
+    private let maxReverse: CGFloat = 70
+    private let creepSpeed: CGFloat = 12
 
-    // MARK: Car state (world units)
-
-    private let wheelBase: CGFloat = 28
-    private let maxSteer: CGFloat = 0.62
-    private let steerRate: CGFloat = 3.2
-    private let acceleration: CGFloat = 230
-    private let reverseAcceleration: CGFloat = 170
-    private let brakeForce: CGFloat = 520
-    private let coastDrag: CGFloat = 200
-    private let maxForward: CGFloat = 210
-    private let maxReverse: CGFloat = 110
-
-    private var position0 = CGPoint.zero
+    private var carPosition = CGPoint.zero
     private var heading: CGFloat = 0
-    private var speed0: CGFloat = 0
+    private var velocity: CGFloat = 0
     private var steer: CGFloat = 0
+    private var wheelInput: CGFloat = 0
+    private var gear: Gear = .drive
+    private var engaged = false
+    private var braking = false
+    private var longitudinalAccel: CGFloat = 0
+    private var lateralAccel: CGFloat = 0
+    private var skidClock: CGFloat = 0
+    private var smokeClock: CGFloat = 0
     private var obstacleBoxes: [OBB] = []
 
+    // Remote car
     private var remotePosition = CGPoint.zero
     private var remoteHeading: CGFloat = 0
+    private var remoteSteer: CGFloat = 0
+    private var remoteBraking = false
+    private var remoteReversing = false
     private var remoteTarget: (CGPoint, CGFloat)?
 
     // MARK: Level state
@@ -122,7 +256,7 @@ final class ParkingScene: SKScene {
 
     override func didMove(to view: SKView) {
         view.isMultipleTouchEnabled = true
-        backgroundColor = UIColor(red: 0.27, green: 0.47, blue: 0.29, alpha: 1)
+        backgroundColor = UIColor(red: 0.24, green: 0.44, blue: 0.27, alpha: 1)
         buildIfNeeded()
     }
 
@@ -141,19 +275,20 @@ final class ParkingScene: SKScene {
 
     private func build() {
         removeAllChildren()
-        mapNode.removeAllChildren()
-        levelLayer.removeAllChildren()
-        hud.removeAllChildren()
-        controlsLayer.removeAllChildren()
-        overlay.removeAllChildren()
-        buttons.removeAll()
-        buttonRadius.removeAll()
+        for layer in [backdrop, mapNode, groundFX, levelLayer, hud, controlsLayer, overlay] {
+            layer.removeAllChildren()
+            layer.removeAllActions()
+        }
+        parkedRigs.removeAll()
         activeTouches.removeAll()
+        wheelStartX.removeAll()
 
+        addChild(backdrop)
         addChild(mapNode)
         addChild(hud)
         addChild(controlsLayer)
         addChild(overlay)
+        backdrop.zPosition = -100
         hud.zPosition = 100
         controlsLayer.zPosition = 110
         overlay.zPosition = 200
@@ -168,47 +303,110 @@ final class ParkingScene: SKScene {
         let mapWidth = world.width * mapScale
         let mapHeight = world.height * mapScale
         mapNode.setScale(mapScale)
-        mapNode.position = CGPoint(x: left + (availableWidth - mapWidth) / 2, y: (size.height - mapHeight) / 2)
+        let mapOrigin = CGPoint(x: left + (availableWidth - mapWidth) / 2, y: (size.height - mapHeight) / 2)
+        mapNode.position = mapOrigin
+        let mapRect = CGRect(origin: mapOrigin, size: CGSize(width: mapWidth, height: mapHeight))
 
+        buildBackdrop(around: mapRect)
+
+        // Lot
+        let lotShadow = SKSpriteNode(texture: CarArt.blockShadow(size: world))
+        lotShadow.size = CGSize(width: world.width + 16, height: world.height + 16)
+        lotShadow.position = CGPoint(x: world.width / 2 + 4, y: world.height / 2 - 6)
+        lotShadow.zPosition = -1
+        mapNode.addChild(lotShadow)
         let asphalt = SKSpriteNode(texture: CarArt.asphalt(size: world))
         asphalt.anchorPoint = .zero
         asphalt.size = world
         asphalt.zPosition = 0
         mapNode.addChild(asphalt)
-        levelLayer.zPosition = 1
+        groundFX.zPosition = 1
+        mapNode.addChild(groundFX)
+        levelLayer.zPosition = 2
         mapNode.addChild(levelLayer)
 
-        parkedCarTextures = CarArt.parkedColors.map { CarArt.car(color: $0) }
-        coneTexture = CarArt.cone(size: 14)
+        // Shared textures
+        dotTexture = CarArt.dot()
+        let carKit = CarKit(wheel: CarArt.wheel(), shadow: CarArt.carShadow(), glow: dotTexture, beam: CarArt.headlightBeam())
+        kit = carKit
 
-        let carTextureSize = CGSize(width: Levels.carSize.width + 4, height: Levels.carSize.height + 4)
-        localCar = SKSpriteNode(texture: CarArt.car(color: CarArt.playerColors[slot]))
-        localCar.size = carTextureSize
-        localCar.zPosition = 12
-        mapNode.addChild(localCar)
+        let local = CarRig(color: CarArt.playerColors[slot], kit: carKit, headlights: true)
+        local.add(to: mapNode, z: 30)
+        localRig = local
+        let remote = CarRig(color: CarArt.playerColors[otherSlot], kit: carKit, headlights: true)
+        remote.add(to: mapNode, z: 28)
+        remoteRig = remote
 
-        remoteCar = SKSpriteNode(texture: CarArt.car(color: CarArt.playerColors[otherSlot]))
-        remoteCar.size = carTextureSize
-        remoteCar.zPosition = 11
-        mapNode.addChild(remoteCar)
-
-        localTag = makeLabel(Strings.you, size: 13, color: CarArt.playerColors[slot].lighter(by: 0.25))
-        localTag.zPosition = 20
+        localTag = makeLabel(Strings.you, size: 12, color: .white)
+        localTag.zPosition = 40
         mapNode.addChild(localTag)
-        remoteTag = makeLabel(Strings.friend, size: 13, color: CarArt.playerColors[otherSlot].lighter(by: 0.25))
-        remoteTag.zPosition = 20
+        remoteTag = makeLabel(Strings.friend, size: 12, color: UIColor.white.withAlphaComponent(0.85))
+        remoteTag.zPosition = 40
         mapNode.addChild(remoteTag)
-        remoteCheck = makeLabel("✓", size: 22, color: .white)
-        remoteCheck.zPosition = 21
+        remoteCheck = SKSpriteNode(texture: CarArt.symbol("checkmark.circle.fill", pointSize: 28, color: .white))
+        remoteCheck.size = CGSize(width: 22, height: 22)
+        remoteCheck.zPosition = 41
         mapNode.addChild(remoteCheck)
+
+        spotArrow = SKSpriteNode(texture: CarArt.symbol("arrowtriangle.down.fill", pointSize: 40, color: CarArt.playerColors[slot].lighter(by: 0.2)))
+        spotArrow.size = CGSize(width: 22, height: 18)
+        spotArrow.zPosition = 45
+        mapNode.addChild(spotArrow)
+
+        holdRing = SKShapeNode()
+        holdRing.strokeColor = UIColor(red: 0.35, green: 0.95, blue: 0.55, alpha: 1)
+        holdRing.lineWidth = 3.5
+        holdRing.lineCap = .round
+        holdRing.glowWidth = 2
+        holdRing.zPosition = 42
+        mapNode.addChild(holdRing)
+
+        // Vignette above the map, below the HUD
+        let vignette = SKSpriteNode(texture: CarArt.vignette(size: size))
+        vignette.size = size
+        vignette.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        vignette.zPosition = 90
+        addChild(vignette)
 
         buildHUD()
         buildControls()
         load(level: levelIndex)
     }
 
-    private func makeLabel(_ text: String, size fontSize: CGFloat, color: UIColor) -> SKLabelNode {
-        let label = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+    private func buildBackdrop(around mapRect: CGRect) {
+        let grass = SKSpriteNode(texture: CarArt.grass(size: size))
+        grass.size = size
+        grass.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        backdrop.addChild(grass)
+
+        // Trees in the margins left and right of the lot
+        var generator = SystemRandomNumberGenerator()
+        let treeTextures = [CarArt.tree(radius: 30), CarArt.tree(radius: 22)]
+        let leftSpace = mapRect.minX
+        let rightSpace = size.width - mapRect.maxX
+        for (space, isLeft) in [(leftSpace, true), (rightSpace, false)] where space > 26 {
+            var y: CGFloat = CGFloat.random(in: 10...40, using: &generator)
+            while y < size.height {
+                let radius = CGFloat.random(in: 18...min(30, space * 0.75), using: &generator)
+                let x = isLeft ? mapRect.minX - radius * 0.65 : mapRect.maxX + radius * 0.65
+                let shadow = SKSpriteNode(texture: CarArt.roundShadow(radius: radius))
+                shadow.size = CGSize(width: radius * 2 + 16, height: radius * 2 + 16)
+                shadow.position = CGPoint(x: x + 5, y: y - 7)
+                shadow.zPosition = 1
+                backdrop.addChild(shadow)
+                let tree = SKSpriteNode(texture: treeTextures[Int.random(in: 0..<2, using: &generator)])
+                tree.size = CGSize(width: radius * 2, height: radius * 2)
+                tree.position = CGPoint(x: x, y: y)
+                tree.zRotation = CGFloat.random(in: 0...(2 * CGFloat.pi), using: &generator)
+                tree.zPosition = 2
+                backdrop.addChild(tree)
+                y += radius * 2 + CGFloat.random(in: 6...30, using: &generator)
+            }
+        }
+    }
+
+    private func makeLabel(_ text: String, size fontSize: CGFloat, color: UIColor, font: String = "AvenirNext-Heavy") -> SKLabelNode {
+        let label = SKLabelNode(fontNamed: font)
         label.text = text
         label.fontSize = fontSize
         label.fontColor = color
@@ -217,102 +415,136 @@ final class ParkingScene: SKScene {
         return label
     }
 
-    private func makePill(width: CGFloat, height: CGFloat) -> SKShapeNode {
-        let pill = SKShapeNode(rectOf: CGSize(width: width, height: height), cornerRadius: height / 2)
-        pill.fillColor = UIColor.black.withAlphaComponent(0.45)
-        pill.strokeColor = UIColor.white.withAlphaComponent(0.15)
-        pill.lineWidth = 1
-        return pill
+    private func makeGlass(width: CGFloat, height: CGFloat, corner: CGFloat? = nil) -> SKSpriteNode {
+        let glass = SKSpriteNode(texture: CarArt.glass(size: CGSize(width: width, height: height), corner: corner ?? height / 2))
+        glass.size = CGSize(width: width, height: height)
+        return glass
+    }
+
+    private func makeIcon(_ name: String, size: CGFloat, color: UIColor = .white) -> SKSpriteNode {
+        let texture = CarArt.symbol(name, pointSize: size * 1.6, color: color)
+        let icon = SKSpriteNode(texture: texture)
+        let aspect = texture.size().height > 0 ? texture.size().width / texture.size().height : 1
+        icon.size = CGSize(width: size * aspect, height: size)
+        return icon
     }
 
     private func buildHUD() {
-        let top = size.height - 22
+        let top = size.height - 24
         let left = max(insets.left, 10)
         let right = max(insets.right, 10)
 
-        menuButton = makePill(width: 40, height: 32)
-        menuButton.position = CGPoint(x: left + 26, y: top)
-        menuButton.addChild(makeLabel("✕", size: 16, color: .white))
+        menuButton = makeGlass(width: 40, height: 40)
+        menuButton.position = CGPoint(x: left + 24, y: top)
+        menuButton.addChild(makeIcon("xmark", size: 15))
         hud.addChild(menuButton)
 
-        resetButton = makePill(width: 40, height: 32)
+        resetButton = makeGlass(width: 40, height: 40)
         resetButton.position = CGPoint(x: left + 72, y: top)
-        resetButton.addChild(makeLabel("↻", size: 20, color: .white))
+        resetButton.addChild(makeIcon("arrow.counterclockwise", size: 17))
         hud.addChild(resetButton)
 
-        let centerPill = makePill(width: 300, height: 32)
-        centerPill.position = CGPoint(x: size.width / 2, y: top)
-        hud.addChild(centerPill)
-        levelLabel = makeLabel("", size: 14, color: .white)
-        levelLabel.position = CGPoint(x: -40, y: 0)
-        centerPill.addChild(levelLabel)
-        timerLabel = makeLabel("0.0", size: 16, color: UIColor(red: 1, green: 0.85, blue: 0.4, alpha: 1))
-        timerLabel.position = CGPoint(x: 112, y: 0)
-        centerPill.addChild(timerLabel)
+        let center = makeGlass(width: 330, height: 38)
+        center.position = CGPoint(x: size.width / 2, y: top)
+        hud.addChild(center)
+        levelLabel = makeLabel("", size: 14, color: .white, font: "AvenirNext-Bold")
+        levelLabel.horizontalAlignmentMode = .left
+        levelLabel.position = CGPoint(x: -150, y: 0)
+        center.addChild(levelLabel)
+        let stopwatch = makeIcon("stopwatch.fill", size: 15, color: UIColor(red: 1, green: 0.82, blue: 0.36, alpha: 1))
+        stopwatch.position = CGPoint(x: 92, y: 0)
+        center.addChild(stopwatch)
+        timerLabel = makeLabel("0.0", size: 16, color: UIColor(red: 1, green: 0.86, blue: 0.45, alpha: 1))
+        timerLabel.horizontalAlignmentMode = .left
+        timerLabel.position = CGPoint(x: 104, y: 0)
+        center.addChild(timerLabel)
 
-        let hitsPill = makePill(width: 110, height: 32)
-        hitsPill.position = CGPoint(x: size.width - right - 60, y: top)
-        hud.addChild(hitsPill)
-        hitsLabel = makeLabel(Strings.hits(0), size: 14, color: .white)
-        hitsPill.addChild(hitsLabel)
+        let bumps = makeGlass(width: 84, height: 38)
+        bumps.position = CGPoint(x: size.width - right - 46, y: top)
+        hud.addChild(bumps)
+        let warning = makeIcon("exclamationmark.triangle.fill", size: 15, color: UIColor(red: 1, green: 0.62, blue: 0.30, alpha: 1))
+        warning.position = CGPoint(x: -18, y: 0)
+        bumps.addChild(warning)
+        hitsLabel = makeLabel("0", size: 17, color: .white)
+        hitsLabel.position = CGPoint(x: 12, y: 0)
+        bumps.addChild(hitsLabel)
 
-        codeLabel = makeLabel("", size: 12, color: UIColor.white.withAlphaComponent(0.7))
-        codeLabel.position = CGPoint(x: size.width - right - 60, y: top - 28)
+        codeLabel = makeLabel("", size: 11, color: UIColor.white.withAlphaComponent(0.75), font: "AvenirNext-Bold")
+        codeLabel.position = CGPoint(x: size.width - right - 46, y: top - 30)
         hud.addChild(codeLabel)
 
         statusLabel = makeLabel("", size: 16, color: .white)
-        statusLabel.position = CGPoint(x: size.width / 2, y: top - 34)
+        statusLabel.position = CGPoint(x: size.width / 2, y: top - 38)
         hud.addChild(statusLabel)
 
-        countdownLabel = makeLabel("", size: 80, color: .white)
-        countdownLabel.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        countdownLabel.zPosition = 5
-        hud.addChild(countdownLabel)
+        countdownNode = SKNode()
+        countdownNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        countdownNode.zPosition = 5
+        let disc = makeGlass(width: 120, height: 120)
+        countdownNode.addChild(disc)
+        countdownLabel = makeLabel("3", size: 60, color: .white, font: "AvenirNext-Heavy")
+        countdownNode.addChild(countdownLabel)
+        hud.addChild(countdownNode)
     }
 
     private func buildControls() {
         let left = max(insets.left, 12)
         let right = max(insets.right, 12)
-        addControl(.left, symbol: "◀", caption: nil, radius: 38, at: CGPoint(x: left + 48, y: 60))
-        addControl(.right, symbol: "▶", caption: nil, radius: 38, at: CGPoint(x: left + 136, y: 60))
-        addControl(.reverse, symbol: "▼", caption: Strings.reverse, radius: 36, at: CGPoint(x: size.width - right - 140, y: 56))
-        addControl(.forward, symbol: "▲", caption: Strings.forward, radius: 42, at: CGPoint(x: size.width - right - 52, y: 70))
-    }
 
-    private func addControl(_ control: Control, symbol: String, caption: String?, radius: CGFloat, at point: CGPoint) {
-        let button = SKShapeNode(circleOfRadius: radius)
-        button.fillColor = UIColor.black.withAlphaComponent(0.25)
-        button.strokeColor = UIColor.white.withAlphaComponent(0.75)
-        button.lineWidth = 3
-        button.position = point
-        let icon = makeLabel(symbol, size: 26, color: .white)
-        icon.position = CGPoint(x: 0, y: caption == nil ? 0 : 6)
-        button.addChild(icon)
-        if let caption = caption {
-            let text = makeLabel(caption, size: 10, color: UIColor.white.withAlphaComponent(0.85))
-            text.position = CGPoint(x: 0, y: -16)
-            button.addChild(text)
-        }
-        controlsLayer.addChild(button)
-        buttons[control] = button
-        buttonRadius[control] = radius
+        let wheelDiameter: CGFloat = 124
+        wheelSprite = SKSpriteNode(texture: CarArt.steeringWheel(diameter: wheelDiameter))
+        wheelSprite.size = CGSize(width: wheelDiameter, height: wheelDiameter)
+        wheelSprite.position = CGPoint(x: left + wheelDiameter / 2 + 6, y: wheelDiameter / 2 + 12)
+        wheelSprite.alpha = 0.92
+        controlsLayer.addChild(wheelSprite)
+
+        let gasSize = CGSize(width: 68, height: 116)
+        gasPedal = SKSpriteNode(texture: CarArt.pedal(size: gasSize, accent: UIColor(red: 0.30, green: 0.85, blue: 0.50, alpha: 1)))
+        gasPedal.size = gasSize
+        gasPedal.position = CGPoint(x: size.width - right - gasSize.width / 2 - 6, y: gasSize.height / 2 + 14)
+        controlsLayer.addChild(gasPedal)
+        let gasIcon = makeIcon("arrow.up", size: 18)
+        gasIcon.position = CGPoint(x: 0, y: 6)
+        gasPedal.addChild(gasIcon)
+        let gasText = makeLabel(Strings.forward, size: 10, color: UIColor.white.withAlphaComponent(0.85))
+        gasText.position = CGPoint(x: 0, y: -18)
+        gasPedal.addChild(gasText)
+
+        let reverseSize = CGSize(width: 68, height: 84)
+        reversePedal = SKSpriteNode(texture: CarArt.pedal(size: reverseSize, accent: UIColor(red: 1.0, green: 0.38, blue: 0.32, alpha: 1)))
+        reversePedal.size = reverseSize
+        reversePedal.position = CGPoint(x: gasPedal.position.x - gasSize.width / 2 - reverseSize.width / 2 - 12,
+                                        y: reverseSize.height / 2 + 14)
+        controlsLayer.addChild(reversePedal)
+        let reverseIcon = makeIcon("arrow.down", size: 16)
+        reverseIcon.position = CGPoint(x: 0, y: 2)
+        reversePedal.addChild(reverseIcon)
+        let reverseText = makeLabel(Strings.reverse, size: 10, color: UIColor.white.withAlphaComponent(0.85))
+        reverseText.position = CGPoint(x: 0, y: -20)
+        reversePedal.addChild(reverseText)
+
+        let gearDisc = makeGlass(width: 36, height: 36)
+        gearDisc.position = CGPoint(x: reversePedal.position.x, y: reversePedal.position.y + reverseSize.height / 2 + 26)
+        controlsLayer.addChild(gearDisc)
+        gearLabel = makeLabel("D", size: 18, color: UIColor(red: 0.45, green: 0.95, blue: 0.6, alpha: 1))
+        gearDisc.addChild(gearLabel)
     }
 
     // MARK: Level loading
 
     func load(level index: Int) {
-        guard builtSize != .zero else {
-            levelIndex = max(0, min(index, Levels.all.count - 1))
-            return
-        }
         levelIndex = max(0, min(index, Levels.all.count - 1))
+        guard builtSize != .zero, let kit = kit else { return }
         levelLayer.removeAllChildren()
+        groundFX.removeAllChildren()
         overlay.removeAllChildren()
+        for rig in parkedRigs { rig.remove() }
+        parkedRigs.removeAll()
         finalButton = nil
         obstacleBoxes = level.obstacles.map { $0.box }
 
         // Spots
-        localSpotGlow = nil
+        spotNeon = nil
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         for spotSlot in spotSlots {
             let def = level.spots[spotSlot]
@@ -323,46 +555,81 @@ final class ParkingScene: SKScene {
             spotNode.zRotation = def.angle
             spotNode.zPosition = 1
             levelLayer.addChild(spotNode)
+
+            let neon = SKShapeNode(rectOf: CGSize(width: def.size.width - 3, height: def.size.height - 3), cornerRadius: 3)
+            neon.strokeColor = color.lighter(by: 0.15)
+            neon.lineWidth = 2
+            neon.glowWidth = spotSlot == slot ? 5 : 2
+            neon.fillColor = .clear
+            neon.position = def.center
+            neon.zRotation = def.angle
+            neon.zPosition = 2
+            levelLayer.addChild(neon)
             if spotSlot == slot {
-                let glow = SKSpriteNode(color: color, size: def.size)
-                glow.alpha = 0
-                glow.zPosition = 1
-                spotNode.addChild(glow)
-                localSpotGlow = glow
-                spotNode.run(.repeatForever(.sequence([.fadeAlpha(to: 0.7, duration: 0.6), .fadeAlpha(to: 1.0, duration: 0.6)])))
+                neon.run(.repeatForever(.sequence([.fadeAlpha(to: 0.45, duration: 0.7), .fadeAlpha(to: 1.0, duration: 0.7)])))
+                spotNeon = neon
+            } else {
+                neon.alpha = 0.6
             }
         }
+        let mySpot = level.spots[slot]
+        spotArrow.removeAllActions()
+        spotArrow.isHidden = false
+        spotArrow.position = CGPoint(x: mySpot.center.x, y: mySpot.center.y + 44)
+        spotArrow.run(.repeatForever(.sequence([.moveBy(x: 0, y: 8, duration: 0.45), .moveBy(x: 0, y: -8, duration: 0.45)])))
 
         // Obstacles
         for obstacle in level.obstacles {
-            let node: SKSpriteNode
             switch obstacle.kind {
-            case .wall:
-                node = SKSpriteNode(texture: CarArt.wall(size: obstacle.size))
-                node.size = obstacle.size
             case .car:
-                let texture = parkedCarTextures[obstacle.tint % parkedCarTextures.count]
-                node = SKSpriteNode(texture: texture)
-                node.size = CGSize(width: obstacle.size.width + 4, height: obstacle.size.height + 4)
+                let color = CarArt.parkedColors[obstacle.tint % CarArt.parkedColors.count]
+                let rig = CarRig(color: color, kit: kit, headlights: false)
+                rig.add(to: levelLayer, z: 6)
+                rig.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
+                parkedRigs.append(rig)
+            case .wall:
+                let shadow = SKSpriteNode(texture: CarArt.blockShadow(size: obstacle.size))
+                shadow.size = CGSize(width: obstacle.size.width + 16, height: obstacle.size.height + 16)
+                shadow.position = CGPoint(x: obstacle.center.x + 4, y: obstacle.center.y - 6)
+                shadow.zPosition = 4
+                levelLayer.addChild(shadow)
+                let wall = SKSpriteNode(texture: CarArt.wall(size: obstacle.size))
+                wall.size = obstacle.size
+                wall.position = obstacle.center
+                wall.zPosition = 7
+                levelLayer.addChild(wall)
             case .cone:
-                node = SKSpriteNode(texture: coneTexture)
-                node.size = obstacle.size
+                let shadow = SKSpriteNode(texture: CarArt.roundShadow(radius: obstacle.size.width / 2))
+                shadow.size = CGSize(width: obstacle.size.width + 16, height: obstacle.size.height + 16)
+                shadow.position = CGPoint(x: obstacle.center.x + 2, y: obstacle.center.y - 3)
+                shadow.zPosition = 4
+                levelLayer.addChild(shadow)
+                let cone = SKSpriteNode(texture: CarArt.cone(size: obstacle.size.width))
+                cone.size = obstacle.size
+                cone.position = obstacle.center
+                cone.zPosition = 7
+                levelLayer.addChild(cone)
             }
-            node.position = obstacle.center
-            node.zRotation = obstacle.angle
-            node.zPosition = 5
-            levelLayer.addChild(node)
         }
 
         // Cars
         let start = level.starts[slot]
-        position0 = start.position
+        carPosition = start.position
         heading = start.heading
-        speed0 = 0
+        velocity = 0
         steer = 0
+        wheelInput = 0
+        gear = .drive
+        engaged = false
+        braking = false
+        longitudinalAccel = 0
+        lateralAccel = 0
         let remoteStart = level.starts[otherSlot]
         remotePosition = remoteStart.position
         remoteHeading = remoteStart.heading
+        remoteSteer = 0
+        remoteBraking = false
+        remoteReversing = false
         remoteTarget = nil
 
         // State
@@ -381,12 +648,14 @@ final class ParkingScene: SKScene {
         advanceScheduled = false
         statusLabel.text = ""
         countdownLabel.text = "3"
-        countdownLabel.alpha = 1
-        hitsLabel.text = Strings.hits(0)
+        countdownNode.alpha = 1
+        countdownNode.setScale(1)
+        hitsLabel.text = "0"
+        gearLabel.text = "D"
         levelLabel.text = Strings.level(levelIndex + 1, of: Levels.all.count) + " · " + level.name
         codeLabel.text = online ? "\(Strings.roomCode): \(model?.roomCode ?? "")" : ""
-        localCar.alpha = 1
         remoteCheck.isHidden = true
+        holdRing.path = nil
         updateCarNodes()
         tickHaptic.impactOccurred()
     }
@@ -406,6 +675,9 @@ final class ParkingScene: SKScene {
                 remoteHeading = CGFloat(h)
             }
             remoteTarget = (target, CGFloat(h))
+            remoteSteer = CGFloat(message["st"] as? Double ?? 0)
+            remoteBraking = (message["b"] as? Int ?? 0) == 1
+            remoteReversing = (message["r"] as? Int ?? 0) == 1
         case "p":
             guard messageLevel == levelIndex else { return }
             remoteParked = true
@@ -414,6 +686,9 @@ final class ParkingScene: SKScene {
             if let x = message["x"] as? Double, let y = message["y"] as? Double, let h = message["h"] as? Double {
                 remoteTarget = (CGPoint(x: x, y: y), CGFloat(h))
             }
+            remoteSteer = 0
+            remoteBraking = false
+            remoteReversing = false
             remoteCheck.isHidden = false
             notifyHaptic.notificationOccurred(.warning)
             checkLevelDone()
@@ -437,34 +712,33 @@ final class ParkingScene: SKScene {
 
     private func sendState() {
         model?.send(["t": "s", "l": levelIndex,
-                     "x": Double(position0.x), "y": Double(position0.y),
-                     "h": Double(heading), "v": Double(speed0)])
+                     "x": Double(carPosition.x), "y": Double(carPosition.y),
+                     "h": Double(heading), "v": Double(velocity), "st": Double(steer),
+                     "b": braking ? 1 : 0, "r": (gear == .reverse && velocity < -1) ? 1 : 0])
     }
 
     // MARK: Input
 
-    private func control(at point: CGPoint) -> Control? {
-        var best: (Control, CGFloat)?
-        for (control, button) in buttons {
-            let radius = (buttonRadius[control] ?? 40) * 1.3
-            let distance = hypot(point.x - button.position.x, point.y - button.position.y)
-            if distance < radius, best == nil || distance < best!.1 {
-                best = (control, distance)
-            }
+    private func hitControl(at point: CGPoint) -> Control? {
+        if hypot(point.x - wheelSprite.position.x, point.y - wheelSprite.position.y) < wheelSprite.size.width * 0.75 {
+            return .wheel
         }
-        return best?.0
+        if gasPedal.frame.insetBy(dx: -14, dy: -14).contains(point) { return .forward }
+        if reversePedal.frame.insetBy(dx: -14, dy: -14).contains(point) { return .reverse }
+        return nil
     }
 
     private func isPressed(_ control: Control) -> Bool {
         activeTouches.values.contains(control)
     }
 
-    private func refreshButtons() {
-        for (control, button) in buttons {
-            button.fillColor = isPressed(control)
-                ? UIColor.white.withAlphaComponent(0.4)
-                : UIColor.black.withAlphaComponent(0.25)
-        }
+    private func refreshPedals() {
+        let gasDown = isPressed(.forward)
+        let reverseDown = isPressed(.reverse)
+        gasPedal.setScale(gasDown ? 0.93 : 1)
+        gasPedal.alpha = gasDown ? 1 : 0.88
+        reversePedal.setScale(reverseDown ? 0.93 : 1)
+        reversePedal.alpha = reverseDown ? 1 : 0.88
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -482,42 +756,61 @@ final class ParkingScene: SKScene {
                 resetCar()
                 continue
             }
-            if let control = control(at: point) {
+            if let control = hitControl(at: point) {
+                if control == .wheel && isPressed(.wheel) { continue }
                 activeTouches[touch] = control
-                tickHaptic.impactOccurred(intensity: 0.4)
+                if control == .wheel {
+                    wheelStartX[touch] = point.x + wheelInput * 80
+                } else {
+                    tickHaptic.impactOccurred(intensity: 0.5)
+                }
             }
         }
-        refreshButtons()
+        refreshPedals()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches where activeTouches[touch] != nil {
-            if let control = control(at: touch.location(in: self)) {
-                activeTouches[touch] = control
-            } else {
-                activeTouches[touch] = nil
+        for touch in touches {
+            guard let control = activeTouches[touch] else { continue }
+            let point = touch.location(in: self)
+            switch control {
+            case .wheel:
+                let startX = wheelStartX[touch] ?? point.x
+                wheelInput = max(-1, min(1, -(point.x - startX) / 80))
+            case .forward, .reverse:
+                if let now = hitControl(at: point), now != .wheel {
+                    activeTouches[touch] = now
+                }
             }
         }
-        refreshButtons()
+        refreshPedals()
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches { activeTouches[touch] = nil }
-        refreshButtons()
+        releaseTouches(touches)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches { activeTouches[touch] = nil }
-        refreshButtons()
+        releaseTouches(touches)
+    }
+
+    private func releaseTouches(_ touches: Set<UITouch>) {
+        for touch in touches {
+            activeTouches[touch] = nil
+            wheelStartX[touch] = nil
+        }
+        refreshPedals()
     }
 
     private func resetCar() {
         guard phase == .driving, !localParked else { return }
         let start = level.starts[slot]
-        position0 = start.position
+        carPosition = start.position
         heading = start.heading
-        speed0 = 0
+        velocity = 0
         steer = 0
+        gear = .drive
+        engaged = false
         parkHold = 0
         tickHaptic.impactOccurred()
         updateCarNodes()
@@ -531,6 +824,13 @@ final class ParkingScene: SKScene {
         guard builtSize != .zero else { return }
         let dt = CGFloat(min(max(rawDelta, 0), 1.0 / 30.0))
 
+        // Steering wheel self-centres when released
+        if !isPressed(.wheel) {
+            let back = 4.0 * dt
+            if abs(wheelInput) <= back { wheelInput = 0 } else { wheelInput -= back * (wheelInput > 0 ? 1 : -1) }
+        }
+        wheelSprite.zRotation = wheelInput * 1.7
+
         switch phase {
         case .countdown:
             let before = Int(ceil(countdown))
@@ -539,10 +839,15 @@ final class ParkingScene: SKScene {
             if countdown <= 0 {
                 phase = .driving
                 countdownLabel.text = Strings.go
-                countdownLabel.run(.sequence([.wait(forDuration: 0.4), .fadeOut(withDuration: 0.3)]))
+                countdownLabel.fontSize = 34
+                countdownNode.run(.sequence([.scale(to: 1.25, duration: 0.15), .wait(forDuration: 0.3),
+                                             .group([.fadeOut(withDuration: 0.25), .scale(to: 1.6, duration: 0.25)])]))
                 tickHaptic.impactOccurred(intensity: 1.0)
             } else if after != before {
                 countdownLabel.text = "\(after)"
+                countdownLabel.fontSize = 60
+                countdownNode.setScale(1.25)
+                countdownNode.run(.scale(to: 1.0, duration: 0.2))
                 tickHaptic.impactOccurred()
             }
         case .driving:
@@ -552,7 +857,7 @@ final class ParkingScene: SKScene {
                 checkParking(dt)
             }
         case .finished:
-            break
+            braking = false
         }
 
         if online && friendPresent {
@@ -575,69 +880,179 @@ final class ParkingScene: SKScene {
     }
 
     private func updateCarNodes() {
-        localCar.position = position0
-        localCar.zRotation = heading
-        localTag.position = CGPoint(x: position0.x, y: position0.y + 30)
+        // Body weight transfer: nose dips when braking, squats when accelerating, leans in turns
+        let pitch = max(-1.8, min(1.8, -longitudinalAccel * 0.006))
+        let roll = max(-1.6, min(1.6, -lateralAccel * 0.0035))
+        let reversing = gear == .reverse && velocity < -1
+        localRig?.update(position: carPosition, heading: heading, steer: steer,
+                         lean: CGVector(dx: pitch, dy: roll), braking: braking, reversing: reversing)
+        localTag.position = CGPoint(x: carPosition.x, y: carPosition.y + 30)
 
         let showRemote = friendPresent
-        remoteCar.isHidden = !showRemote
+        remoteRig?.isHidden = !showRemote
         remoteTag.isHidden = !showRemote
-        remoteCar.position = remotePosition
-        remoteCar.zRotation = remoteHeading
+        remoteRig?.update(position: remotePosition, heading: remoteHeading, steer: remoteSteer,
+                          braking: remoteBraking, reversing: remoteReversing)
         remoteTag.position = CGPoint(x: remotePosition.x, y: remotePosition.y + 30)
-        remoteCheck.position = remotePosition
+        remoteCheck.position = CGPoint(x: remotePosition.x, y: remotePosition.y)
         if !showRemote { remoteCheck.isHidden = true }
     }
 
     // MARK: Driving
 
     private func stepCar(_ dt: CGFloat) {
-        let forward = isPressed(.forward)
-        let reverse = isPressed(.reverse)
+        let gasDown = isPressed(.forward)
+        let reverseDown = isPressed(.reverse)
+        let previousVelocity = velocity
+        braking = false
+        if gasDown || reverseDown { engaged = true }
 
-        if forward && !reverse {
-            speed0 += (speed0 < 0 ? brakeForce : acceleration) * dt
-        } else if reverse && !forward {
-            speed0 -= (speed0 > 0 ? brakeForce : reverseAcceleration) * dt
+        // Automatic gearbox: the opposite pedal brakes first, then selects the other gear
+        if gasDown && reverseDown {
+            braking = true
+            velocity = approach(velocity, 0, brakeDecel * dt)
+        } else if gasDown {
+            if gear == .reverse && velocity < -2 {
+                braking = true
+                velocity = approach(velocity, 0, brakeDecel * dt)
+            } else {
+                gear = .drive
+                let headroom = max(0, 1 - velocity / maxForward)
+                velocity += engineAccel * pow(headroom, 0.7) * dt
+            }
+        } else if reverseDown {
+            if gear == .drive && velocity > 2 {
+                braking = true
+                velocity = approach(velocity, 0, brakeDecel * dt)
+            } else {
+                gear = .reverse
+                let headroom = max(0, 1 - (-velocity) / maxReverse)
+                velocity -= reverseAccel * pow(headroom, 0.7) * dt
+            }
         } else {
-            let drag = coastDrag * dt
-            if abs(speed0) <= drag { speed0 = 0 } else { speed0 -= drag * (speed0 > 0 ? 1 : -1) }
+            // Idle creep towards a walking pace in the selected gear, otherwise coast down
+            let creep = engaged ? (gear == .drive ? creepSpeed : -creepSpeed) : 0
+            if abs(velocity) < creepSpeed && engaged {
+                velocity = approach(velocity, creep, 30 * dt)
+            } else {
+                let resistance = (rolling + airDrag * velocity * velocity * 0.01) * dt
+                velocity = approach(velocity, creep, resistance)
+            }
         }
-        speed0 = max(-maxReverse, min(maxForward, speed0))
+        velocity = max(-maxReverse, min(maxForward, velocity))
 
-        var steerInput: CGFloat = 0
-        if isPressed(.left) { steerInput += 1 }
-        if isPressed(.right) { steerInput -= 1 }
-        let target = steerInput * maxSteer
-        let delta = max(-steerRate * dt, min(steerRate * dt, target - steer))
-        steer += delta
+        // Steering: less lock at speed, rate-limited like a real rack
+        let speedFactor = 1 - 0.4 * min(1, abs(velocity) / maxForward)
+        let targetSteer = wheelInput * maxSteer * speedFactor
+        steer = approach(steer, targetSteer, steerRate * dt)
 
-        let newHeading = heading + speed0 / wheelBase * tan(steer) * dt
-        let newPosition = CGPoint(x: position0.x + cos(newHeading) * speed0 * dt,
-                                  y: position0.y + sin(newHeading) * speed0 * dt)
+        let yawRate = velocity / wheelBase * tan(steer)
+        let newHeading = heading + yawRate * dt
+        let newPosition = CGPoint(x: carPosition.x + cos(newHeading) * velocity * dt,
+                                  y: carPosition.y + sin(newHeading) * velocity * dt)
+
+        // Smoothed accelerations drive the body lean
+        let longitudinal = (velocity - previousVelocity) / max(dt, 0.001)
+        longitudinalAccel += (longitudinal - longitudinalAccel) * min(1, dt * 8)
+        lateralAccel += (velocity * yawRate - lateralAccel) * min(1, dt * 8)
+
         let box = OBB(center: newPosition, size: Levels.carSize, angle: newHeading)
         if collides(box) {
-            if lastUpdate - lastHitAt > 0.6 && abs(speed0) > 15 {
+            let impact = abs(velocity)
+            if lastUpdate - lastHitAt > 0.6 && impact > 18 {
                 lastHitAt = lastUpdate
                 hits += 1
-                hitsLabel.text = Strings.hits(hits)
-                bumpHaptic.impactOccurred()
-                localCar.run(.sequence([.colorize(with: .white, colorBlendFactor: 0.6, duration: 0.05),
-                                        .colorize(withColorBlendFactor: 0, duration: 0.2)]))
-                mapNode.run(.sequence([.moveBy(x: 4, y: 0, duration: 0.03), .moveBy(x: -8, y: 0, duration: 0.03),
-                                       .moveBy(x: 4, y: 0, duration: 0.03)]))
+                hitsLabel.text = "\(hits)"
+                bumpHaptic.impactOccurred(intensity: min(1, impact / 120 + 0.4))
+                localRig?.body.run(.sequence([.colorize(with: .white, colorBlendFactor: 0.55, duration: 0.05),
+                                              .colorize(withColorBlendFactor: 0, duration: 0.25)]))
+                let shake = min(6, impact / 20)
+                mapNode.run(.sequence([.moveBy(x: shake, y: 0, duration: 0.03), .moveBy(x: -shake * 2, y: 0, duration: 0.03),
+                                       .moveBy(x: shake, y: 0, duration: 0.03)]))
+                dust(at: CGPoint(x: carPosition.x + cos(heading) * 22 * (velocity >= 0 ? 1 : -1),
+                                 y: carPosition.y + sin(heading) * 22 * (velocity >= 0 ? 1 : -1)))
             }
-            speed0 = -speed0 * 0.25
+            velocity = abs(velocity) < 6 ? 0 : -velocity * 0.22
+            longitudinalAccel = -longitudinalAccel
         } else {
-            position0 = newPosition
+            carPosition = newPosition
             heading = newHeading
+        }
+
+        gearLabel.text = gear == .drive ? "D" : "R"
+        gearLabel.fontColor = gear == .drive ? UIColor(red: 0.45, green: 0.95, blue: 0.6, alpha: 1)
+                                             : UIColor(red: 1.0, green: 0.55, blue: 0.45, alpha: 1)
+        tyreEffects(dt, accelerating: gasDown || reverseDown)
+    }
+
+    private func approach(_ value: CGFloat, _ target: CGFloat, _ step: CGFloat) -> CGFloat {
+        if value < target { return min(value + step, target) }
+        return max(value - step, target)
+    }
+
+    private func tyreEffects(_ dt: CGFloat, accelerating: Bool) {
+        // Skid marks under the rear wheels when cornering or braking hard
+        let cornering = abs(lateralAccel) > 150 && abs(velocity) > 50
+        let hardBrake = braking && abs(velocity) > 60
+        skidClock += dt
+        if (cornering || hardBrake) && skidClock > 0.025 {
+            skidClock = 0
+            for side: CGFloat in [10.3, -10.3] {
+                let local = CGPoint(x: -13, y: side)
+                let world = CGPoint(x: carPosition.x + local.x * cos(heading) - local.y * sin(heading),
+                                    y: carPosition.y + local.x * sin(heading) + local.y * cos(heading))
+                let mark = SKSpriteNode(color: UIColor(white: 0.05, alpha: 1), size: CGSize(width: 4, height: 3.5))
+                mark.position = world
+                mark.zRotation = heading
+                mark.alpha = 0.45
+                groundFX.addChild(mark)
+                mark.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 2), .removeFromParent()]))
+            }
+        }
+
+        // Tyre smoke on a hard launch
+        smokeClock += dt
+        if accelerating && abs(velocity) < 45 && abs(longitudinalAccel) > 90 && smokeClock > 0.06 {
+            smokeClock = 0
+            let back: CGFloat = velocity >= 0 ? -1 : 1
+            let point = CGPoint(x: carPosition.x + cos(heading) * 20 * back, y: carPosition.y + sin(heading) * 20 * back)
+            let puff = SKSpriteNode(texture: dotTexture)
+            puff.size = CGSize(width: 10, height: 10)
+            puff.position = point
+            puff.alpha = 0.35
+            puff.zPosition = 25
+            mapNode.addChild(puff)
+            puff.run(.sequence([
+                .group([.scale(to: 3.2, duration: 0.7), .fadeOut(withDuration: 0.7),
+                        .moveBy(x: CGFloat.random(in: -10...10), y: CGFloat.random(in: -6...10), duration: 0.7)]),
+                .removeFromParent()
+            ]))
+        }
+    }
+
+    private func dust(at point: CGPoint) {
+        for _ in 0..<7 {
+            let puff = SKSpriteNode(texture: dotTexture)
+            puff.size = CGSize(width: 8, height: 8)
+            puff.color = UIColor(red: 0.85, green: 0.80, blue: 0.70, alpha: 1)
+            puff.colorBlendFactor = 1
+            puff.position = point
+            puff.alpha = 0.6
+            puff.zPosition = 35
+            mapNode.addChild(puff)
+            puff.run(.sequence([
+                .group([.moveBy(x: CGFloat.random(in: -18...18), y: CGFloat.random(in: -18...18), duration: 0.45),
+                        .scale(to: 2.2, duration: 0.45), .fadeOut(withDuration: 0.45)]),
+                .removeFromParent()
+            ]))
         }
     }
 
     private func collides(_ box: OBB) -> Bool {
         let world = Levels.world
+        let curb: CGFloat = 11
         for corner in box.corners {
-            if corner.x < 4 || corner.y < 4 || corner.x > world.width - 4 || corner.y > world.height - 4 {
+            if corner.x < curb || corner.y < curb || corner.x > world.width - curb || corner.y > world.height - curb {
                 return true
             }
         }
@@ -661,20 +1076,30 @@ final class ParkingScene: SKScene {
     private func checkParking(_ dt: CGFloat) {
         let spot = level.spots[slot]
         let spotBox = spot.box
-        let carBox = OBB(center: position0, size: Levels.carSize, angle: heading)
+        let carBox = OBB(center: carPosition, size: Levels.carSize, angle: heading)
         let inside = carBox.corners.allSatisfy { spotBox.contains($0) }
         let misalignment = abs((heading - spot.angle).remainder(dividingBy: CGFloat.pi))
         let aligned = misalignment < 0.21
-        let slowEnough = abs(speed0) < 8
+        let slowEnough = abs(velocity) < 14 && !isPressed(.forward) && !isPressed(.reverse)
 
         if inside && aligned && slowEnough {
             parkHold += dt
+            velocity = approach(velocity, 0, 60 * dt)
             statusLabel.text = Strings.hold
         } else {
             parkHold = max(0, parkHold - dt * 2)
             if statusLabel.text == Strings.hold { statusLabel.text = "" }
         }
-        localSpotGlow?.alpha = min(parkHold, 1) * 0.6
+
+        if parkHold > 0.01 {
+            let progress = min(parkHold, 1)
+            let path = CGMutablePath()
+            path.addArc(center: carPosition, radius: 30, startAngle: CGFloat.pi / 2,
+                        endAngle: CGFloat.pi / 2 - progress * 2 * CGFloat.pi, clockwise: true)
+            holdRing.path = path
+        } else {
+            holdRing.path = nil
+        }
 
         if parkHold >= 1.0 {
             parked()
@@ -684,29 +1109,40 @@ final class ParkingScene: SKScene {
     private func parked() {
         localParked = true
         localTime = elapsed
-        speed0 = 0
+        velocity = 0
+        braking = false
+        longitudinalAccel = 0
+        lateralAccel = 0
         phase = .finished
+        holdRing.path = nil
+        spotArrow.isHidden = true
+        spotNeon?.removeAllActions()
+        spotNeon?.alpha = 1
+        spotNeon?.strokeColor = UIColor(red: 0.40, green: 1.0, blue: 0.60, alpha: 1)
         notifyHaptic.notificationOccurred(.success)
         statusLabel.text = Strings.parked
-        burst(at: position0)
+        confetti(at: carPosition)
         model?.send(["t": "p", "l": levelIndex, "time": localTime, "hits": hits,
-                     "x": Double(position0.x), "y": Double(position0.y), "h": Double(heading)])
+                     "x": Double(carPosition.x), "y": Double(carPosition.y), "h": Double(heading)])
         model?.levelCompleted(levelIndex)
         checkLevelDone()
     }
 
-    private func burst(at point: CGPoint) {
-        for index in 0..<12 {
-            let star = makeLabel("★", size: CGFloat.random(in: 12...20),
-                                 color: UIColor(red: 1, green: 0.88, blue: 0.35, alpha: 1))
-            star.position = point
-            star.zPosition = 30
-            mapNode.addChild(star)
-            let angle = CGFloat(index) / 12 * 2 * CGFloat.pi
-            let distance = CGFloat.random(in: 40...70)
-            star.run(.sequence([
-                .group([.moveBy(x: cos(angle) * distance, y: sin(angle) * distance, duration: 0.5),
-                        .fadeOut(withDuration: 0.5)]),
+    private func confetti(at point: CGPoint) {
+        let colors: [UIColor] = [CarArt.playerColors[0], CarArt.playerColors[1],
+                                 UIColor(red: 1, green: 0.85, blue: 0.3, alpha: 1), UIColor(red: 0.4, green: 1, blue: 0.6, alpha: 1)]
+        for index in 0..<24 {
+            let piece = SKSpriteNode(color: colors[index % colors.count], size: CGSize(width: 5, height: 3))
+            piece.position = point
+            piece.zPosition = 60
+            piece.zRotation = CGFloat.random(in: 0...CGFloat.pi)
+            mapNode.addChild(piece)
+            let angle = CGFloat(index) / 24 * 2 * CGFloat.pi + CGFloat.random(in: -0.2...0.2)
+            let distance = CGFloat.random(in: 40...90)
+            piece.run(.sequence([
+                .group([.moveBy(x: cos(angle) * distance, y: sin(angle) * distance, duration: 0.7),
+                        .rotate(byAngle: CGFloat.random(in: -6...6), duration: 0.7),
+                        .sequence([.wait(forDuration: 0.4), .fadeOut(withDuration: 0.3)])]),
                 .removeFromParent()
             ]))
         }
@@ -755,75 +1191,83 @@ final class ParkingScene: SKScene {
 
     private func showResults() {
         overlay.removeAllChildren()
-        let panelWidth: CGFloat = 340
+        let panelWidth: CGFloat = 360
         let rows = (online && friendPresent) || remoteParked ? 2 : 1
-        let panelHeight: CGFloat = 96 + CGFloat(rows) * 38
-        let panel = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 22)
-        panel.fillColor = UIColor(red: 0.10, green: 0.12, blue: 0.18, alpha: 0.92)
-        panel.strokeColor = UIColor.white.withAlphaComponent(0.25)
-        panel.lineWidth = 2
+        let panelHeight: CGFloat = 100 + CGFloat(rows) * 40
+        let panel = makeGlass(width: panelWidth, height: panelHeight, corner: 22)
         panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 20)
         overlay.addChild(panel)
 
-        let title = makeLabel(Strings.parked, size: 26, color: .white)
-        title.position = CGPoint(x: 0, y: panelHeight / 2 - 30)
+        let badge = makeIcon("checkmark.seal.fill", size: 26, color: UIColor(red: 0.40, green: 1.0, blue: 0.60, alpha: 1))
+        badge.position = CGPoint(x: -panelWidth / 2 + 32, y: panelHeight / 2 - 32)
+        panel.addChild(badge)
+        let title = makeLabel(Strings.parked, size: 24, color: .white)
+        title.horizontalAlignmentMode = .left
+        title.position = CGPoint(x: -panelWidth / 2 + 56, y: panelHeight / 2 - 30)
         panel.addChild(title)
-        let subtitle = makeLabel(level.name, size: 14, color: UIColor.white.withAlphaComponent(0.6))
-        subtitle.position = CGPoint(x: 0, y: panelHeight / 2 - 56)
+        let subtitle = makeLabel(level.name, size: 13, color: UIColor.white.withAlphaComponent(0.6), font: "AvenirNext-Bold")
+        subtitle.horizontalAlignmentMode = .left
+        subtitle.position = CGPoint(x: -panelWidth / 2 + 56, y: panelHeight / 2 - 54)
         panel.addChild(subtitle)
 
         var entries: [(String, UIColor, Double?, Int)] = [(Strings.you, CarArt.playerColors[slot], localTime, hits)]
         if rows == 2 {
             entries.append((Strings.friend, CarArt.playerColors[otherSlot], remoteParked ? remoteTime : nil, remoteHits))
         }
-        let parkedTimes = entries.compactMap { $0.2 }
-        let bestTime = parkedTimes.min()
+        let bestTime = entries.compactMap { $0.2 }.min()
 
         for (index, entry) in entries.enumerated() {
-            let y = panelHeight / 2 - 92 - CGFloat(index) * 38
-            let name = makeLabel(entry.0, size: 16, color: entry.1.lighter(by: 0.2))
+            let y = panelHeight / 2 - 92 - CGFloat(index) * 40
+            let row = SKShapeNode(rectOf: CGSize(width: panelWidth - 28, height: 34), cornerRadius: 10)
+            row.fillColor = UIColor.white.withAlphaComponent(0.06)
+            row.strokeColor = .clear
+            row.position = CGPoint(x: 0, y: y)
+            panel.addChild(row)
+            let chip = SKShapeNode(circleOfRadius: 6)
+            chip.fillColor = entry.1
+            chip.strokeColor = .clear
+            chip.position = CGPoint(x: -panelWidth / 2 + 32, y: y)
+            panel.addChild(chip)
+            let name = makeLabel(entry.0, size: 15, color: .white)
             name.horizontalAlignmentMode = .left
-            name.position = CGPoint(x: -panelWidth / 2 + 24, y: y)
+            name.position = CGPoint(x: -panelWidth / 2 + 46, y: y)
             panel.addChild(name)
             let timeText = entry.2.map { formatTime($0) } ?? Strings.notParked
-            let time = makeLabel(timeText, size: 16, color: .white)
-            time.position = CGPoint(x: 10, y: y)
+            let time = makeLabel(timeText, size: 15, color: UIColor(red: 1, green: 0.86, blue: 0.45, alpha: 1))
+            time.position = CGPoint(x: 18, y: y)
             panel.addChild(time)
-            let bumps = makeLabel(Strings.hits(entry.3), size: 13, color: UIColor.white.withAlphaComponent(0.7))
+            let bumps = makeLabel(Strings.hits(entry.3), size: 12, color: UIColor.white.withAlphaComponent(0.7), font: "AvenirNext-Bold")
             bumps.horizontalAlignmentMode = .right
-            bumps.position = CGPoint(x: panelWidth / 2 - 44, y: y)
+            bumps.position = CGPoint(x: panelWidth / 2 - 46, y: y)
             panel.addChild(bumps)
             if rows == 2, let time = entry.2, let best = bestTime, time == best {
-                let crown = makeLabel("👑", size: 20, color: .white)
-                crown.position = CGPoint(x: panelWidth / 2 - 22, y: y)
+                let crown = makeIcon("crown.fill", size: 16, color: UIColor(red: 1, green: 0.82, blue: 0.3, alpha: 1))
+                crown.position = CGPoint(x: panelWidth / 2 - 26, y: y)
                 panel.addChild(crown)
             }
         }
 
-        panel.setScale(0.7)
+        panel.setScale(0.8)
         panel.alpha = 0
-        panel.run(.group([.fadeIn(withDuration: 0.2), .scale(to: 1, duration: 0.2)]))
+        panel.run(.group([.fadeIn(withDuration: 0.2), .scale(to: 1, duration: 0.25)]))
     }
 
     private func showFinal() {
         overlay.removeAllChildren()
-        let panel = SKShapeNode(rectOf: CGSize(width: 360, height: 180), cornerRadius: 24)
-        panel.fillColor = UIColor(red: 0.10, green: 0.12, blue: 0.18, alpha: 0.95)
-        panel.strokeColor = UIColor(red: 1, green: 0.85, blue: 0.4, alpha: 0.8)
-        panel.lineWidth = 3
+        let panel = makeGlass(width: 360, height: 190, corner: 24)
         panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
         overlay.addChild(panel)
 
-        let trophy = makeLabel("🏆", size: 40, color: .white)
-        trophy.position = CGPoint(x: 0, y: 46)
+        let trophy = makeIcon("trophy.fill", size: 40, color: UIColor(red: 1, green: 0.82, blue: 0.3, alpha: 1))
+        trophy.position = CGPoint(x: 0, y: 50)
         panel.addChild(trophy)
         let title = makeLabel(Strings.allDone, size: 22, color: .white)
-        title.position = CGPoint(x: 0, y: 2)
+        title.position = CGPoint(x: 0, y: 6)
         panel.addChild(title)
 
-        let button = SKShapeNode(rectOf: CGSize(width: 200, height: 44), cornerRadius: 14)
-        button.fillColor = UIColor(red: 0.25, green: 0.70, blue: 0.45, alpha: 1)
-        button.strokeColor = .clear
+        let button = SKShapeNode(rectOf: CGSize(width: 210, height: 46), cornerRadius: 23)
+        button.fillColor = UIColor(red: 0.25, green: 0.72, blue: 0.48, alpha: 1)
+        button.strokeColor = UIColor.white.withAlphaComponent(0.3)
         button.position = CGPoint(x: size.width / 2, y: size.height / 2 - 52)
         button.addChild(makeLabel(Strings.backToMenu, size: 16, color: .white))
         overlay.addChild(button)

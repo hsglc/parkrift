@@ -197,46 +197,102 @@ struct RootView: View {
 
 private struct MenuBackground: View {
     var body: some View {
-        LinearGradient(colors: [Color(red: 0.16, green: 0.20, blue: 0.30), Color(red: 0.08, green: 0.10, blue: 0.16)],
-                       startPoint: .top, endPoint: .bottom)
-            .overlay(
-                GeometryReader { proxy in
-                    Path { path in
-                        let step: CGFloat = 70
-                        var x: CGFloat = -proxy.size.height
-                        while x < proxy.size.width {
-                            path.move(to: CGPoint(x: x, y: proxy.size.height))
-                            path.addLine(to: CGPoint(x: x + proxy.size.height * 0.5, y: 0))
-                            x += step
-                        }
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.10, green: 0.12, blue: 0.20), Color(red: 0.04, green: 0.05, blue: 0.09)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Circle()
+                .fill(Color(red: 0.95, green: 0.26, blue: 0.27).opacity(0.55))
+                .frame(width: 360, height: 360)
+                .blur(radius: 90)
+                .offset(x: -260, y: -120)
+            Circle()
+                .fill(Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.55))
+                .frame(width: 380, height: 380)
+                .blur(radius: 100)
+                .offset(x: 280, y: 130)
+            Circle()
+                .fill(Color(red: 0.98, green: 0.78, blue: 0.22).opacity(0.18))
+                .frame(width: 260, height: 260)
+                .blur(radius: 80)
+                .offset(x: 60, y: -160)
+            GeometryReader { proxy in
+                Path { path in
+                    let step: CGFloat = 46
+                    var x: CGFloat = 0
+                    while x < proxy.size.width {
+                        path.move(to: CGPoint(x: x, y: proxy.size.height * 0.78))
+                        path.addLine(to: CGPoint(x: x, y: proxy.size.height))
+                        x += step
                     }
-                    .stroke(Color.white.opacity(0.05), lineWidth: 2)
                 }
-            )
-            .ignoresSafeArea()
+                .stroke(Color.white.opacity(0.06), lineWidth: 3)
+            }
+        }
+        .ignoresSafeArea()
     }
+}
+
+private struct GlassCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(20)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 1))
+            .shadow(color: .black.opacity(0.35), radius: 24, y: 12)
+    }
+}
+
+extension View {
+    fileprivate func glassCard() -> some View { modifier(GlassCard()) }
 }
 
 private struct BigButton: View {
     let title: String
     let systemImage: String
-    let color: Color
+    let colors: [Color]
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .bold))
+                    .frame(width: 34, height: 34)
+                    .background(Circle().fill(Color.white.opacity(0.18)))
                 Text(title)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .opacity(0.7)
             }
-            .font(.system(size: 20, weight: .heavy, design: .rounded))
+            .font(.system(size: 18, weight: .heavy, design: .rounded))
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(RoundedRectangle(cornerRadius: 16).fill(color.gradient))
-            .shadow(color: color.opacity(0.4), radius: 8, y: 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            )
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.22), lineWidth: 1))
+            .shadow(color: (colors.first ?? .black).opacity(0.45), radius: 12, y: 6)
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct CarPreview: View {
+    var body: some View {
+        ZStack {
+            Image(uiImage: CarArt.carImage(color: CarArt.playerColors[0], size: CGSize(width: 72, height: 36)))
+                .rotationEffect(.degrees(-90))
+                .offset(x: -20, y: 4)
+                .shadow(color: .black.opacity(0.5), radius: 8, x: 4, y: 8)
+            Image(uiImage: CarArt.carImage(color: CarArt.playerColors[1], size: CGSize(width: 72, height: 36)))
+                .rotationEffect(.degrees(-80))
+                .offset(x: 22, y: -2)
+                .shadow(color: .black.opacity(0.5), radius: 8, x: 4, y: 8)
+        }
+        .frame(width: 96, height: 80)
     }
 }
 
@@ -248,30 +304,42 @@ struct MenuView: View {
     var body: some View {
         ZStack {
             MenuBackground()
-            HStack(spacing: 36) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Text("Park")
-                            .foregroundStyle(Color(red: 0.98, green: 0.36, blue: 0.30))
-                        Text("Park")
-                            .foregroundStyle(Color(red: 0.30, green: 0.62, blue: 1.0))
+            HStack(alignment: .center, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .center, spacing: 2) {
+                        HStack(spacing: 2) {
+                            Text("Park")
+                                .foregroundStyle(LinearGradient(colors: [Color(red: 1.0, green: 0.52, blue: 0.42), Color(red: 0.92, green: 0.22, blue: 0.24)],
+                                                                startPoint: .top, endPoint: .bottom))
+                            Text("Park")
+                                .foregroundStyle(LinearGradient(colors: [Color(red: 0.50, green: 0.76, blue: 1.0), Color(red: 0.16, green: 0.48, blue: 0.96)],
+                                                                startPoint: .top, endPoint: .bottom))
+                        }
+                        .font(.system(size: 38, weight: .black, design: .rounded))
+                        .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                        CarPreview()
                     }
-                    .font(.system(size: 56, weight: .black, design: .rounded))
                     Text(Strings.tagline)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
-
-                    Text(Strings.levels)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .padding(.top, 10)
+                    HStack(spacing: 6) {
+                        Image(systemName: "flag.checkered")
+                        Text(Strings.levels)
+                    }
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.top, 6)
                     LevelPicker()
                 }
-                .frame(maxWidth: 360, alignment: .leading)
+                .frame(maxWidth: 320, alignment: .leading)
+                .glassCard()
 
                 VStack(spacing: 12) {
                     if showJoin {
+                        Text(Strings.joinRoom)
+                            .font(.system(size: 17, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.white)
                         HStack(spacing: 10) {
                             TextField(Strings.codePlaceholder, text: $code)
                                 .textInputAutocapitalization(.characters)
@@ -279,29 +347,35 @@ struct MenuView: View {
                                 .font(.system(size: 26, weight: .heavy, design: .monospaced))
                                 .multilineTextAlignment(.center)
                                 .padding(.vertical, 10)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.12)))
+                                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.12)))
                                 .foregroundStyle(.white)
                                 .onChange(of: code) { _, newValue in
                                     let filtered = String(newValue.uppercased().filter { $0.isLetter && $0.isASCII }.prefix(4))
                                     if filtered != newValue { code = filtered }
                                 }
-                            Button(Strings.join) { model.joinRoom(code: code) }
-                                .font(.system(size: 18, weight: .heavy, design: .rounded))
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 14)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(Color.green.gradient))
-                                .foregroundStyle(.white)
-                                .disabled(code.count != 4 || model.connecting)
+                            Button {
+                                model.joinRoom(code: code)
+                            } label: {
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 20, weight: .heavy))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 52, height: 50)
+                                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(code.count == 4 ? Color.green.gradient : Color.gray.gradient))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(code.count != 4 || model.connecting)
                         }
                         Button(Strings.back) { showJoin = false }
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
                             .foregroundStyle(.white.opacity(0.7))
                     } else {
                         BigButton(title: Strings.playSolo, systemImage: "car.fill",
-                                  color: Color(red: 0.98, green: 0.45, blue: 0.25)) { model.playSolo() }
+                                  colors: [Color(red: 1.0, green: 0.55, blue: 0.32), Color(red: 0.92, green: 0.28, blue: 0.24)]) { model.playSolo() }
                         BigButton(title: Strings.createRoom, systemImage: "person.2.fill",
-                                  color: Color(red: 0.25, green: 0.55, blue: 0.98)) { model.createRoom() }
+                                  colors: [Color(red: 0.36, green: 0.66, blue: 1.0), Color(red: 0.16, green: 0.42, blue: 0.92)]) { model.createRoom() }
                         BigButton(title: Strings.joinRoom, systemImage: "number",
-                                  color: Color(red: 0.30, green: 0.70, blue: 0.45)) { showJoin = true }
+                                  colors: [Color(red: 0.36, green: 0.82, blue: 0.56), Color(red: 0.14, green: 0.58, blue: 0.40)]) { showJoin = true }
                     }
                     if model.connecting {
                         ProgressView(Strings.connecting)
@@ -309,14 +383,15 @@ struct MenuView: View {
                             .foregroundStyle(.white)
                     }
                     if let error = model.errorText {
-                        Text(error)
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.5))
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.55))
                     }
                 }
-                .frame(width: 280)
+                .frame(width: 236)
+                .glassCard()
             }
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 16)
         }
     }
 }
@@ -333,8 +408,10 @@ struct LevelPicker: View {
                     model.selectedLevel = index
                 } label: {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(model.selectedLevel == index ? Color.white : Color.white.opacity(unlocked ? 0.14 : 0.05))
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.white.opacity(unlocked ? 0.22 : 0.08), lineWidth: 1)
                         if unlocked {
                             Text("\(index + 1)")
                                 .font(.system(size: 18, weight: .heavy, design: .rounded))
@@ -407,6 +484,8 @@ struct LobbyView: View {
                     .foregroundStyle(.white.opacity(0.7))
                     .padding(.top, 4)
             }
+            .frame(minWidth: 380)
+            .glassCard()
         }
     }
 }

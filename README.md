@@ -5,8 +5,9 @@ Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SpriteKit
 - **Oynanış:** Kuşbakışı otoparkta arabanı kendi renginde işaretli yere park et. Araba tamamen çizgilerin içinde, yönü hizalı ve durmuş halde 1 saniye kalınca park sayılır. 10 bölüm, kolaydan zora: düz park, dik park, araba arası, açılı park, etrafından dolaşma, paralel park, labirent, dar yerler, sıkı paralel, final garaj.
 - **Online:** "Oda Kur" 4 harfli kod üretir, arkadaşın "Odaya Katıl" ile kodu girer. İkiniz aynı haritada, herkesin kendi park yeri var; ikiniz de park edince bölüm geçilir, önce park eden 👑 alır. Süre ve çarpma sayısı karşılaştırılır.
 - **Tek başına:** Aynı bölümler, sadece kendi yerin.
-- **Kontroller:** Sol alt ◀ ▶ direksiyon, sağ alt ▲ İLERİ / ▼ GERİ (ileri giderken GERİ fren yapar). Üstte ✕ menü, ↻ arabayı başa alır.
-- **Grafik:** Tüm dokular kodla çiziliyor (`Hop/CarArt.swift`).
+- **Kontroller:** Sol altta sürüklenerek çevrilen direksiyon (bırakınca ortalanır), sağ altta İLERİ ve GERİ pedalları. Otomatik vites (D/R): ters pedal önce fren yapar, durunca vites değişir; pedal bırakılınca araba yavaşça süzülür. Üstte ✕ menü, ↻ arabayı başa alır.
+- **Sürüş modeli:** Bisiklet modeli + hıza bağlı direksiyon açısı, azalan motor ivmesi, yuvarlanma ve hava direnci, frende/gazda/virajda gövde yatması, stop ve geri lambaları, fren izi, lastik dumanı, çarpınca seken geri tepme.
+- **Grafik:** Tüm dokular kodla çiziliyor (`Hop/CarArt.swift`): katmanlı arabalar (gölge, tekerlek, gövde, ışık), kaldırımlı asfalt, ağaçlar, vinyet, neon park yerleri, cam efektli HUD/menü.
 - **Dil:** Cihaz Türkçe ise Türkçe, değilse İngilizce.
 - **Gereksinimler (Ekim 2026):** Xcode 26 / iOS 26 SDK ile derlenir (`macos-15` runner + Xcode 26.x), minimum iOS 17, privacy manifest (UserDefaults · `CA92.1`), `ITSAppUsesNonExemptEncryption = NO` (yalnızca sistemin standart TLS'i kullanılıyor), tek boyutlu 1024px ikon.
 
