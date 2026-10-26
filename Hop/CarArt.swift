@@ -95,6 +95,36 @@ enum CarArt {
         }
     }
 
+    static func squareParticle() -> UIImage {
+        image(CGSize(width: 8, height: 8), scale: 1) { context, s in
+            context.setFillColor(UIColor.white.cgColor)
+            context.fill(CGRect(x: 0, y: 1, width: s.width, height: s.height - 2))
+        }
+    }
+
+    static func glowParticle() -> UIImage {
+        image(CGSize(width: 32, height: 32), scale: 1) { context, s in
+            let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+                let c = CGPoint(x: s.width / 2, y: s.height / 2)
+                context.drawRadialGradient(gradient, startCenter: c, startRadius: 0, endCenter: c, endRadius: s.width / 2, options: [])
+            }
+        }
+    }
+
+    /// Strip of 16 x 2 checker cells for the finish banners.
+    static func checkerStrip() -> SKTexture {
+        SKTexture(image: image(CGSize(width: 512, height: 64), scale: 1) { context, s in
+            let cell = s.height / 2
+            for row in 0..<2 {
+                for col in 0..<Int(s.width / cell) {
+                    context.setFillColor(((row + col) % 2 == 0 ? UIColor(white: 0.97, alpha: 1) : UIColor(white: 0.08, alpha: 1)).cgColor)
+                    context.fill(CGRect(x: CGFloat(col) * cell, y: CGFloat(row) * cell, width: cell, height: cell))
+                }
+            }
+        })
+    }
+
     static func image(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false

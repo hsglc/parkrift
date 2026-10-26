@@ -94,6 +94,7 @@ final class ParkingScene: SKScene {
     private var benchRecording = false
     private var benchDone = false
     var levelLoadMilliseconds: Double = 0
+    private var finishAnimating = false
     private var navNode = SKNode()
     private var navArrow = SKSpriteNode()
     private var navLabel = SKLabelNode()
@@ -1138,6 +1139,17 @@ final class ParkingScene: SKScene {
             }
         case .finished:
             braking = false
+            // Roll on past the finish line and slow down
+            if level.race && abs(velocity) > 0.5 {
+                velocity = approach(velocity, 0, 55 * dt)
+                let next = CGPoint(x: carPosition.x + cos(heading) * velocity * dt, y: carPosition.y + sin(heading) * velocity * dt)
+                if contacts(OBB(center: next, size: Levels.carSize, angle: heading)).isEmpty {
+                    carPosition = next
+                } else {
+                    velocity = 0
+                }
+                braking = true
+            }
         }
 
         let throttle: Float = (isPressed(.forward) || isPressed(.reverse)) && phase == .driving && !localParked ? 1 : 0
@@ -1707,7 +1719,7 @@ final class ParkingScene: SKScene {
     private func parked() {
         localParked = true
         localTime = elapsed
-        velocity = 0
+        if !level.race { velocity = 0 }
         braking = false
         longitudinalAccel = 0
         lateralAccel = 0
@@ -1716,15 +1728,87 @@ final class ParkingScene: SKScene {
         world?.markParked()
         notifyHaptic.notificationOccurred(.success)
         audio.play("park", volume: 0.9)
-        statusLabel.text = level.race ? Strings.finished : Strings.parked
-        confetti(at: carPosition)
+        statusLabel.text = level.race ? "" : Strings.parked
+        if !level.race { confetti(at: carPosition) }
         model?.send(["t": "p", "l": levelIndex, "time": localTime, "hits": hits,
                      "x": Double(carPosition.x), "y": Double(carPosition.y), "h": Double(heading)])
         if !isCity {
             model?.levelCompleted(levelIndex)
             newBest = model?.record(level: levelIndex, time: localTime, hits: hits) ?? false
         }
-        checkLevelDone()
+        if level.race {
+            playFinishSequence()
+        } else {
+            checkLevelDone()
+        }
+    }
+
+    /// Finish line moment: camera swing, fireworks, flash, checkered bands and a big FINISH.
+    private func playFinishSequence() {
+        finishAnimating = true
+        world?.startFinishCinematic(at: carPosition, heading: heading, finishLine: level.spots[slot].center)
+        audio.play("nitro", volume: 0.5)
+        notifyHaptic.notificationOccurred(.success)
+
+        let layer = SKNode()
+        layer.zPosition = 300
+        addChild(layer)
+
+        let flash = SKSpriteNode(color: .white, size: size)
+        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        flash.alpha = 0.85
+        layer.addChild(flash)
+        flash.run(.sequence([.fadeOut(withDuration: 0.35), .removeFromParent()]))
+
+        let strip = CarArt.checkerStrip()
+        let bandWidth = size.width * 1.4
+        for (index, y) in [size.height * 0.70, size.height * 0.30].enumerated() {
+            let band = SKSpriteNode(texture: strip)
+            band.size = CGSize(width: bandWidth, height: 40)
+            band.zRotation = -0.06
+            let fromLeft = index == 0
+            band.position = CGPoint(x: fromLeft ? -bandWidth / 2 : size.width + bandWidth / 2, y: y)
+            layer.addChild(band)
+            let slideIn = SKAction.moveTo(x: size.width / 2, duration: 0.35)
+            slideIn.timingMode = .easeOut
+            let slideOut = SKAction.moveTo(x: fromLeft ? size.width + bandWidth / 2 : -bandWidth / 2, duration: 0.35)
+            slideOut.timingMode = .easeIn
+            band.run(.sequence([.wait(forDuration: 0.1 + Double(index) * 0.08), slideIn, .wait(forDuration: 2.0), slideOut]))
+        }
+
+        let title = SKNode()
+        title.position = CGPoint(x: size.width / 2, y: size.height / 2 + 14)
+        layer.addChild(title)
+        let shadow = makeLabel(Strings.finishBig, size: 76, color: UIColor.black.withAlphaComponent(0.45))
+        shadow.position = CGPoint(x: 0, y: -6)
+        title.addChild(shadow)
+        let text = makeLabel(Strings.finishBig, size: 76, color: UIColor(red: 1.0, green: 0.84, blue: 0.22, alpha: 1))
+        title.addChild(text)
+        title.setScale(3)
+        title.alpha = 0
+        let pop = SKAction.group([.fadeIn(withDuration: 0.18), .scale(to: 1.0, duration: 0.22)])
+        pop.timingMode = .easeOut
+        title.run(.sequence([.wait(forDuration: 0.2), pop,
+                             .repeat(.sequence([.scale(to: 1.06, duration: 0.25), .scale(to: 1.0, duration: 0.25)]), count: 4),
+                             .group([.fadeOut(withDuration: 0.3), .scale(to: 1.4, duration: 0.3)])]))
+
+        var detail = String(format: "%.1f s", localTime)
+        if online && friendPresent {
+            let place = remoteParked && remoteTime >= 0 ? 2 : 1
+            detail = Strings.place(place) + "  ·  " + detail
+        }
+        let sub = makeLabel(detail, size: 22, color: .white)
+        sub.position = CGPoint(x: size.width / 2, y: size.height / 2 - 46)
+        sub.alpha = 0
+        layer.addChild(sub)
+        sub.run(.sequence([.wait(forDuration: 0.5), .fadeIn(withDuration: 0.2), .wait(forDuration: 1.8), .fadeOut(withDuration: 0.3)]))
+
+        layer.run(.sequence([.wait(forDuration: 2.9), .removeFromParent()]))
+        run(.wait(forDuration: 2.8)) { [weak self] in
+            guard let self = self else { return }
+            self.finishAnimating = false
+            self.checkLevelDone()
+        }
     }
 
     private func confetti(at point: CGPoint) {
@@ -1750,7 +1834,7 @@ final class ParkingScene: SKScene {
     // MARK: Level flow
 
     private func checkLevelDone() {
-        guard localParked, !resultsShown else { return }
+        guard localParked, !resultsShown, !finishAnimating else { return }
         let together = online && friendPresent
         if together && !remoteParked {
             statusLabel.text = Strings.waitingFriendPark

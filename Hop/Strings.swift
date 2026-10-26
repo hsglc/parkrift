@@ -88,4 +88,6 @@ enum Strings {
     static var mode: String { t("MOD", "MODE") }
     static var nitro: String { t("NİTRO", "NITRO") }
     static var nitroGo: String { t("NİTRO!", "NITRO!") }
+    static var finishBig: String { t("FİNİŞ!", "FINISH!") }
+    static func place(_ n: Int) -> String { t("\(n). sırada", "Place \(n)") }
 }

@@ -65,11 +65,13 @@ jobs:
             local label=$1; shift
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
-            ( timeout 90 xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark "$@" > "results/$label.log" 2>&1 ) &
+            xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark "$@" > "results/$label.log" 2>&1 &
             local pid=$!
             sleep 16
             xcrun simctl io "$UDID" screenshot "results/$label.png" || true
-            wait $pid || true
+            for i in $(seq 1 80); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+            kill $pid 2>/dev/null || true
+            xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             local line=$(grep -a "PPBENCH" "results/$label.log" | tail -1 | sed 's/.*PPBENCH //')
             if [ -n "$line" ]; then
               echo "$line" > "results/$label.json"

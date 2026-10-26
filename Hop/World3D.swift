@@ -728,9 +728,92 @@ final class World3D {
     }
 
     /// Third-person camera behind the car, looking the way the car points.
+    // MARK: Finish cinematic
+
+    private var cinematicAngle: Float = 0
+    private var cinematicTime: Float = 0
+    private var cinematicActive = false
+
+    /// Camera swings around the car while confetti and fireworks go off at the finish line.
+    func startFinishCinematic(at position: CGPoint, heading: CGFloat, finishLine: CGPoint) {
+        cinematicActive = true
+        cinematicTime = 0
+        cinematicAngle = Float(heading) + Float.pi * 1.15
+        let finish = World3D.vec(finishLine, y: 6.4)
+        let confetti = SCNParticleSystem()
+        confetti.birthRate = 900
+        confetti.emissionDuration = 0.35
+        confetti.loops = false
+        confetti.particleLifeSpan = 3.2
+        confetti.particleLifeSpanVariation = 0.8
+        confetti.particleVelocity = 11
+        confetti.particleVelocityVariation = 6
+        confetti.emittingDirection = SCNVector3(0, 1, 0)
+        confetti.spreadingAngle = 75
+        confetti.acceleration = SCNVector3(0, -7, 0)
+        confetti.dampingFactor = 1.2
+        confetti.particleSize = 0.14
+        confetti.particleSizeVariation = 0.06
+        confetti.particleColor = UIColor(red: 1.0, green: 0.3, blue: 0.3, alpha: 1)
+        confetti.particleColorVariation = SCNVector4(1, 0.4, 0.2, 0)
+        confetti.particleAngularVelocity = 400
+        confetti.particleAngularVelocityVariation = 300
+        confetti.particleImage = CarArt.squareParticle()
+        let confettiNode = SCNNode()
+        confettiNode.position = finish
+        confettiNode.addParticleSystem(confetti)
+        fxRoot.addChildNode(confettiNode)
+
+        // Three firework bursts above the finish line
+        for (index, offset) in [SIMD3<Float>(-5, 9, 0), SIMD3<Float>(4, 11, 2), SIMD3<Float>(0, 13, -3)].enumerated() {
+            let burst = SCNParticleSystem()
+            burst.birthRate = 1400
+            burst.emissionDuration = 0.08
+            burst.loops = false
+            burst.particleLifeSpan = 1.3
+            burst.particleLifeSpanVariation = 0.4
+            burst.particleVelocity = 9
+            burst.particleVelocityVariation = 2
+            burst.spreadingAngle = 180
+            burst.acceleration = SCNVector3(0, -3, 0)
+            burst.dampingFactor = 1.5
+            burst.particleSize = 0.22
+            burst.blendMode = .additive
+            burst.particleColor = [UIColor(red: 1, green: 0.82, blue: 0.2, alpha: 1),
+                                   UIColor(red: 0.3, green: 0.85, blue: 1, alpha: 1),
+                                   UIColor(red: 1, green: 0.35, blue: 0.6, alpha: 1)][index]
+            burst.particleColorVariation = SCNVector4(0.05, 0.1, 0.1, 0)
+            burst.particleImage = CarArt.glowParticle()
+            let propertyAnimation = CAKeyframeAnimation()
+            propertyAnimation.values = [1.0, 1.0, 0.0]
+            propertyAnimation.keyTimes = [0, 0.6, 1]
+            let controller = SCNParticlePropertyController(animation: propertyAnimation)
+            burst.propertyControllers = [.opacity: controller]
+            let node = SCNNode()
+            node.position = SCNVector3(finish.x + offset.x, offset.y, finish.z + offset.z)
+            fxRoot.addChildNode(node)
+            node.runAction(.sequence([.wait(duration: 0.25 + Double(index) * 0.45), .run { $0.addParticleSystem(burst) }]))
+        }
+    }
+
+    func stopCinematic() {
+        cinematicActive = false
+    }
+
     func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
         let carPoint = World3D.vec(position)
         let focus = SIMD3<Float>(carPoint.x, carPoint.y, carPoint.z)
+        if cinematicActive && !snap {
+            cinematicTime += Float(dt)
+            cinematicAngle += Float(dt) * (0.9 - min(cinematicTime, 2.5) * 0.25)
+            cameraFocus += (focus - cameraFocus) * min(1, Float(dt) * 8)
+            let radius = 10 - min(cinematicTime, 2) * 1.6
+            let height = 2.2 + sin(min(cinematicTime, 3) * 0.6) * 1.6
+            let eye = cameraFocus + SIMD3<Float>(cos(cinematicAngle) * radius, height, -sin(cinematicAngle) * radius)
+            cameraNode.simdPosition = eye
+            cameraNode.simdLook(at: cameraFocus + SIMD3<Float>(0, 0.9, 0), up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+            return
+        }
         let yaw = Float(heading)
         if snap || !cameraReady {
             cameraYaw = yaw
@@ -790,6 +873,7 @@ final class World3D {
         levelRoot.childNodes.forEach { $0.removeFromParentNode() }
         fxRoot.childNodes.forEach { $0.removeFromParentNode() }
         myNeon = nil
+        cinematicActive = false
         arrowNode = nil
         lotRoot.isHidden = level.city != nil
         if let city = level.city {
