@@ -509,49 +509,68 @@ enum CarArt {
     static func steeringWheel(diameter: CGFloat) -> SKTexture {
         render(CGSize(width: diameter, height: diameter)) { context, s in
             let center = CGPoint(x: s.width / 2, y: s.height / 2)
-            let outer = s.width / 2 - 2
-            let rimWidth = s.width * 0.11
-            // Rim
-            let rim = CGMutablePath()
-            rim.addEllipse(in: CGRect(x: center.x - outer, y: center.y - outer, width: outer * 2, height: outer * 2))
-            rim.addEllipse(in: CGRect(x: center.x - outer + rimWidth, y: center.y - outer + rimWidth,
-                                      width: (outer - rimWidth) * 2, height: (outer - rimWidth) * 2))
+            let outer = s.width / 2 - 3
+            let rimWidth = s.width * 0.13
+            let inner = outer - rimWidth
+            func ring(_ r1: CGFloat, _ r2: CGFloat) -> CGMutablePath {
+                let path = CGMutablePath()
+                path.addEllipse(in: CGRect(x: center.x - r1, y: center.y - r1, width: r1 * 2, height: r1 * 2))
+                path.addEllipse(in: CGRect(x: center.x - r2, y: center.y - r2, width: r2 * 2, height: r2 * 2))
+                return path
+            }
+            // Dark disc behind so the wheel reads on any background
+            context.setFillColor(UIColor(white: 0, alpha: 0.28).cgColor)
+            context.fillEllipse(in: CGRect(x: center.x - outer, y: center.y - outer, width: outer * 2, height: outer * 2))
+            // Rim: bright, thick
             context.saveGState()
-            context.addPath(rim)
+            context.addPath(ring(outer, inner))
             context.clip(using: .evenOdd)
-            if let shade = gradient([UIColor(white: 0.42, alpha: 0.95), UIColor(white: 0.10, alpha: 0.95)]) {
+            if let shade = gradient([UIColor(white: 0.98, alpha: 1), UIColor(white: 0.62, alpha: 1)]) {
                 context.drawLinearGradient(shade, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: s.height), options: [])
             }
             context.restoreGState()
-            // Grip marks
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
-            context.setLineWidth(1)
-            for index in 0..<24 {
-                let angle = CGFloat(index) / 24 * 2 * CGFloat.pi
-                let r1 = outer - rimWidth * 0.8
-                let r2 = outer - rimWidth * 0.2
-                context.move(to: CGPoint(x: center.x + cos(angle) * r1, y: center.y + sin(angle) * r1))
-                context.addLine(to: CGPoint(x: center.x + cos(angle) * r2, y: center.y + sin(angle) * r2))
-            }
+            // Rim outline
+            context.setStrokeColor(UIColor(white: 0.1, alpha: 0.9).cgColor)
+            context.setLineWidth(2)
+            context.addPath(ring(outer, inner))
             context.strokePath()
-            // Spokes
-            context.setStrokeColor(UIColor(white: 0.22, alpha: 0.95).cgColor)
-            context.setLineWidth(s.width * 0.08)
+            // Spokes (T shape: left, right, bottom)
             context.setLineCap(.round)
-            let spokeAngles: [CGFloat] = [CGFloat.pi, 0, CGFloat.pi / 2]
-            for angle in spokeAngles {
-                context.move(to: center)
-                context.addLine(to: CGPoint(x: center.x + cos(angle) * (outer - rimWidth), y: center.y + sin(angle) * (outer - rimWidth)))
+            for (width, color) in [(s.width * 0.12, UIColor(white: 0.1, alpha: 0.9)), (s.width * 0.08, UIColor(white: 0.88, alpha: 1))] {
+                context.setStrokeColor(color.cgColor)
+                context.setLineWidth(width)
+                for angle in [CGFloat.pi, 0, CGFloat.pi / 2] {
+                    context.move(to: center)
+                    context.addLine(to: CGPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
+                }
+                context.strokePath()
             }
-            context.strokePath()
             // Hub
-            let hubR = s.width * 0.17
+            let hubR = s.width * 0.16
             let hub = CGPath(ellipseIn: CGRect(x: center.x - hubR, y: center.y - hubR, width: hubR * 2, height: hubR * 2), transform: nil)
-            fill(context, path: hub, colors: [UIColor(white: 0.38, alpha: 1), UIColor(white: 0.14, alpha: 1)],
+            fill(context, path: hub, colors: [UIColor(white: 0.35, alpha: 1), UIColor(white: 0.10, alpha: 1)],
                  from: CGPoint(x: 0, y: center.y - hubR), to: CGPoint(x: 0, y: center.y + hubR))
-            // Top marker
-            context.setFillColor(UIColor(red: 1.0, green: 0.55, blue: 0.20, alpha: 1).cgColor)
-            context.fill(CGRect(x: center.x - 3, y: center.y - outer, width: 6, height: rimWidth))
+            // Big top marker so the rotation is obvious
+            let marker = CGMutablePath()
+            marker.addArc(center: center, radius: outer + 1, startAngle: -CGFloat.pi / 2 - 0.30, endAngle: -CGFloat.pi / 2 + 0.30, clockwise: false)
+            marker.addArc(center: center, radius: inner - 1, startAngle: -CGFloat.pi / 2 + 0.30, endAngle: -CGFloat.pi / 2 - 0.30, clockwise: true)
+            marker.closeSubpath()
+            context.setFillColor(UIColor(red: 1.0, green: 0.78, blue: 0.10, alpha: 1).cgColor)
+            context.addPath(marker)
+            context.fillPath()
+            context.setStrokeColor(UIColor(white: 0.1, alpha: 0.9).cgColor)
+            context.setLineWidth(2)
+            context.addPath(marker)
+            context.strokePath()
+            // Arrow on the hub pointing up (the car's nose)
+            let arrow = CGMutablePath()
+            arrow.move(to: CGPoint(x: center.x, y: center.y - hubR * 0.65))
+            arrow.addLine(to: CGPoint(x: center.x + hubR * 0.5, y: center.y + hubR * 0.35))
+            arrow.addLine(to: CGPoint(x: center.x - hubR * 0.5, y: center.y + hubR * 0.35))
+            arrow.closeSubpath()
+            context.setFillColor(UIColor(red: 1.0, green: 0.78, blue: 0.10, alpha: 1).cgColor)
+            context.addPath(arrow)
+            context.fillPath()
         }
     }
 

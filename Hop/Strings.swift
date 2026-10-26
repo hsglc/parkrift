@@ -27,6 +27,8 @@ enum Strings {
     static var connectionLost: String { t("Bağlantı koptu.", "Connection lost.") }
     static var friendLeft: String { t("Arkadaşın ayrıldı", "Your friend left") }
     static var leave: String { t("Ayrıl", "Leave") }
+    static var left: String { t("SOL", "LEFT") }
+    static var right: String { t("SAĞ", "RIGHT") }
     static var levels: String { t("Bölümler", "Levels") }
 
     static func level(_ n: Int, of total: Int) -> String { t("Bölüm \(n)/\(total)", "Level \(n)/\(total)") }

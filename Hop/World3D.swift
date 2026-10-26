@@ -132,7 +132,7 @@ final class Car3D {
 
 // MARK: - World
 
-/// The 3D parking lot: tilted orthographic camera, sun with shadows, lot, scenery and level props.
+/// The 3D parking lot: chase camera behind the player's car, sun with shadows, lot, scenery and level props.
 final class World3D {
     let scene = SCNScene()
     let cameraNode = SCNNode()
@@ -140,10 +140,7 @@ final class World3D {
     private let fxRoot = SCNNode()
     private(set) var arrowNode: SCNNode?
     private var myNeon: SCNNode?
-    private let elevation: CGFloat = 58 * CGFloat.pi / 180
-    private var pointsPerMeter: CGFloat = 7
     private var viewSize = CGSize(width: 852, height: 393)
-    private var target = SCNVector3Zero
     private let skidGeometry: SCNPlane
 
     /// World units (1000 x 500, y up) -> scene meters (x right, z towards the camera).
@@ -159,7 +156,10 @@ final class World3D {
         skidMaterial.writesToDepthBuffer = false
         skidGeometry.materials = [skidMaterial]
 
-        scene.background.contents = UIColor(red: 0.30, green: 0.50, blue: 0.30, alpha: 1)
+        scene.background.contents = CarArt.skyImage()
+        scene.fogColor = UIColor(red: 0.84, green: 0.90, blue: 0.97, alpha: 1)
+        scene.fogStartDistance = 70
+        scene.fogEndDistance = 200
         scene.lightingEnvironment.contents = CarArt.skyImage()
         scene.lightingEnvironment.intensity = 1.1
         buildLights()
@@ -169,12 +169,13 @@ final class World3D {
         scene.rootNode.addChildNode(fxRoot)
 
         let camera = SCNCamera()
-        camera.usesOrthographicProjection = true
-        camera.zNear = 1
-        camera.zFar = 400
+        camera.fieldOfView = fieldOfView
+        camera.projectionDirection = .vertical
+        camera.zNear = 0.3
+        camera.zFar = 260
         cameraNode.camera = camera
         scene.rootNode.addChildNode(cameraNode)
-        fit(size: viewSize, insets: .zero, topReserved: 50)
+        follow(position: CGPoint(x: 500, y: 250), heading: 0, dt: 0, snap: true)
     }
 
     private func buildLights() {
@@ -190,6 +191,7 @@ final class World3D {
         sun.shadowMapSize = CGSize(width: 2048, height: 2048)
         sun.orthographicScale = 60
         sun.automaticallyAdjustsShadowProjection = true
+        sun.maximumShadowDistance = 60
         let sunNode = SCNNode()
         sunNode.light = sun
         sunNode.eulerAngles = SCNVector3(-0.95, 0.6, 0)
@@ -254,11 +256,11 @@ final class World3D {
         var generator = SystemRandomNumberGenerator()
         var placed = 0
         var attempts = 0
-        while placed < 46 && attempts < 600 {
+        while placed < 90 && attempts < 1500 {
             attempts += 1
-            let x = Float.random(in: -72...72, using: &generator)
-            let z = Float.random(in: -46...42, using: &generator)
-            if abs(x) < 54 && abs(z) < 29 { continue }
+            let x = Float.random(in: -95...95, using: &generator)
+            let z = Float.random(in: -70...70, using: &generator)
+            if abs(x) < 62 && abs(z) < 37 { continue }
             let tree = SCNNode()
             tree.position = SCNVector3(x, 0, z)
             let scale = Float.random(in: 0.8...1.4, using: &generator)
@@ -295,51 +297,65 @@ final class World3D {
 
     // MARK: Camera
 
-    /// Fits the 100 x 50 m lot into the view below a reserved HUD strip.
+    /// Chase camera settings (meters / degrees).
+    private let chaseDistance: Float = 8.6
+    private let chaseHeight: Float = 4.4
+    private let lookAhead: Float = 5.5
+    private let lookHeight: Float = 0.6
+    private let fieldOfView: CGFloat = 56
+    private var cameraYaw: Float = 0
+    private var cameraFocus = SIMD3<Float>(0, 0, 0)
+    private var cameraReady = false
+    private var shakeAmount: Float = 0
+
+    /// Keeps the projection in sync with the view size.
     func fit(size: CGSize, insets: UIEdgeInsets, topReserved: CGFloat) {
         viewSize = size
-        let left = max(insets.left, 6)
-        let right = max(insets.right, 6)
-        let availableWidth = size.width - left - right
-        let bottom: CGFloat = 4
-        let availableHeight = size.height - topReserved - bottom
-        let projectedDepth = 50 * sin(elevation) + 2.0 * cos(elevation)
-        pointsPerMeter = min(availableWidth / 100, availableHeight / projectedDepth)
-
-        let desiredX = left + availableWidth / 2
-        let desiredY = bottom + availableHeight / 2
-        let targetX = (size.width / 2 - desiredX) / pointsPerMeter
-        let targetZ = (desiredY - size.height / 2) / (pointsPerMeter * sin(elevation))
-        target = SCNVector3(Float(targetX), 0, Float(targetZ))
-
-        cameraNode.camera?.orthographicScale = Double(size.height / 2 / pointsPerMeter)
-        let distance: CGFloat = 120
-        cameraNode.position = SCNVector3(target.x,
-                                         Float(sin(elevation) * distance),
-                                         target.z + Float(cos(elevation) * distance))
-        cameraNode.eulerAngles = SCNVector3(-Float(elevation), 0, 0)
     }
 
-    /// Screen position (SpriteKit coordinates) of a world point at a height in meters.
+    /// Third-person camera behind the car, looking the way the car points.
+    func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
+        let carPoint = World3D.vec(position)
+        let focus = SIMD3<Float>(carPoint.x, carPoint.y, carPoint.z)
+        let yaw = Float(heading)
+        if snap || !cameraReady {
+            cameraYaw = yaw
+            cameraFocus = focus
+            cameraReady = true
+        } else {
+            let k = 1 - exp(-Float(dt) * 4.5)
+            cameraYaw += Float(CGFloat.angleDelta(CGFloat(cameraYaw), CGFloat(yaw))) * k
+            let p = 1 - exp(-Float(dt) * 14)
+            cameraFocus += (focus - cameraFocus) * p
+        }
+        // Car forward in scene space: world (cos h, sin h) -> scene (cos h, 0, -sin h)
+        let forward = SIMD3<Float>(cos(cameraYaw), 0, -sin(cameraYaw))
+        let side = SIMD3<Float>(sin(cameraYaw), 0, cos(cameraYaw))
+        var eye = cameraFocus - forward * chaseDistance + SIMD3<Float>(0, chaseHeight, 0)
+        if shakeAmount > 0.001 {
+            eye += side * Float.random(in: -shakeAmount...shakeAmount)
+            eye.y += Float.random(in: -shakeAmount...shakeAmount) * 0.5
+            shakeAmount *= exp(-Float(dt) * 14)
+        }
+        let target = cameraFocus + forward * lookAhead + SIMD3<Float>(0, lookHeight, 0)
+        cameraNode.simdPosition = eye
+        cameraNode.simdLook(at: target, up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+    }
+
+    /// Screen position (SpriteKit coordinates, origin bottom-left) of a world point at a height in meters.
+    /// Points behind the camera are returned far off-screen.
     func project(_ point: CGPoint, height: CGFloat = 0) -> CGPoint {
         let p = World3D.vec(point, y: height)
-        let rx = CGFloat(p.x - target.x)
-        let ry = CGFloat(p.y - target.y)
-        let rz = CGFloat(p.z - target.z)
-        let sx = rx * pointsPerMeter + viewSize.width / 2
-        let sy = (ry * cos(elevation) - rz * sin(elevation)) * pointsPerMeter + viewSize.height / 2
-        return CGPoint(x: sx, y: sy)
+        let c = cameraNode.simdWorldTransform.inverse * SIMD4<Float>(p.x, p.y, p.z, 1)
+        guard c.z < -0.1 else { return CGPoint(x: -10000, y: -10000) }
+        let focal = (viewSize.height / 2) / tan(fieldOfView * CGFloat.pi / 360)
+        let depth = CGFloat(-c.z)
+        return CGPoint(x: viewSize.width / 2 + CGFloat(c.x) / depth * focal,
+                       y: viewSize.height / 2 + CGFloat(c.y) / depth * focal)
     }
 
-    var metersToPoints: CGFloat { pointsPerMeter }
-
     func shake(strength: CGFloat) {
-        let s = Float(strength) * 0.08
-        cameraNode.runAction(.sequence([
-            .moveBy(x: CGFloat(s), y: 0, z: 0, duration: 0.03),
-            .moveBy(x: CGFloat(-2 * s), y: 0, z: 0, duration: 0.03),
-            .moveBy(x: CGFloat(s), y: 0, z: 0, duration: 0.03)
-        ]))
+        shakeAmount = max(shakeAmount, Float(strength) * 0.05)
     }
 
     // MARK: Level

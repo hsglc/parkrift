@@ -71,6 +71,12 @@ final class ParkingScene: SKScene {
     private var soundIcon = SKSpriteNode()
     private var finalButton: SKNode?
     private var wheelSprite = SKSpriteNode()
+    private var steerArc = SKShapeNode()
+    private var steerLabel = SKLabelNode()
+    private let minimap = SKNode()
+    private var mapScale: CGFloat = 0.168
+    private var myMarker = SKShapeNode()
+    private var friendMarker = SKShapeNode()
     private var gasPedal = SKSpriteNode()
     private var reversePedal = SKSpriteNode()
     private var activeTouches: [UITouch: Control] = [:]
@@ -208,6 +214,7 @@ final class ParkingScene: SKScene {
         addChild(vignette)
 
         localTag = makeLabel(Strings.you, size: 12, color: .white)
+        localTag.isHidden = true
         fxLayer.addChild(localTag)
         remoteTag = makeLabel(Strings.friend, size: 12, color: UIColor.white.withAlphaComponent(0.85))
         fxLayer.addChild(remoteTag)
@@ -306,6 +313,10 @@ final class ParkingScene: SKScene {
         statusLabel.position = CGPoint(x: size.width / 2, y: top - 40)
         hud.addChild(statusLabel)
 
+        minimap.removeAllChildren()
+        minimap.position = CGPoint(x: left + 6, y: size.height - 80 - Levels.world.height * mapScale)
+        hud.addChild(minimap)
+
         countdownNode = SKNode()
         countdownNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
         countdownNode.zPosition = 5
@@ -325,12 +336,30 @@ final class ParkingScene: SKScene {
         let left = max(insets.left, 12)
         let right = max(insets.right, 12)
 
-        let wheelDiameter: CGFloat = 124
+        let wheelDiameter: CGFloat = 136
         wheelSprite = SKSpriteNode(texture: CarArt.steeringWheel(diameter: wheelDiameter))
         wheelSprite.size = CGSize(width: wheelDiameter, height: wheelDiameter)
-        wheelSprite.position = CGPoint(x: left + wheelDiameter / 2 + 6, y: wheelDiameter / 2 + 12)
-        wheelSprite.alpha = 0.92
+        wheelSprite.position = CGPoint(x: left + wheelDiameter / 2 + 10, y: wheelDiameter / 2 + 14)
         controlsLayer.addChild(wheelSprite)
+
+        // Track + live arc around the wheel showing how far the front wheels are turned
+        let trackRadius = wheelDiameter / 2 + 9
+        let track = SKShapeNode(circleOfRadius: trackRadius)
+        track.strokeColor = UIColor.white.withAlphaComponent(0.22)
+        track.lineWidth = 5
+        track.fillColor = .clear
+        track.position = wheelSprite.position
+        controlsLayer.addChild(track)
+        steerArc = SKShapeNode()
+        steerArc.strokeColor = UIColor(red: 1.0, green: 0.78, blue: 0.10, alpha: 1)
+        steerArc.lineWidth = 6
+        steerArc.lineCap = .round
+        steerArc.glowWidth = 1.5
+        steerArc.position = wheelSprite.position
+        controlsLayer.addChild(steerArc)
+        steerLabel = makeLabel("", size: 14, color: UIColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1))
+        steerLabel.position = CGPoint(x: wheelSprite.position.x, y: wheelSprite.position.y + trackRadius + 16)
+        controlsLayer.addChild(steerLabel)
 
         let gasSize = CGSize(width: 68, height: 116)
         gasPedal = SKSpriteNode(texture: CarArt.pedal(size: gasSize, accent: UIColor(red: 0.30, green: 0.85, blue: 0.50, alpha: 1)))
@@ -419,6 +448,8 @@ final class ParkingScene: SKScene {
         codeLabel.text = online ? "\(Strings.roomCode): \(model?.roomCode ?? "")" : ""
         remoteCheck.isHidden = true
         holdRing.path = nil
+        world.follow(position: carPosition, heading: heading, dt: 0, snap: true)
+        buildMinimap()
         updateCarNodes()
         tickHaptic.impactOccurred()
         audio.play("beep", volume: 0.6)
@@ -586,6 +617,7 @@ final class ParkingScene: SKScene {
         engaged = false
         parkHold = 0
         tickHaptic.impactOccurred()
+        world?.follow(position: carPosition, heading: heading, dt: 0, snap: true)
         updateCarNodes()
     }
 
@@ -600,7 +632,7 @@ final class ParkingScene: SKScene {
         if !isPressed(.wheel) {
             wheelInput = approach(wheelInput, 0, 4.0 * dt)
         }
-        wheelSprite.zRotation = wheelInput * 1.7
+        wheelSprite.zRotation = wheelInput * 2.4
 
         switch phase {
         case .countdown:
@@ -653,7 +685,99 @@ final class ParkingScene: SKScene {
         }
 
         timerLabel.text = String(format: "%.1f", localParked ? localTime : elapsed)
+        world?.follow(position: carPosition, heading: heading, dt: dt)
         updateCarNodes()
+        updateSteerGauge()
+    }
+
+    private func updateSteerGauge() {
+        let amount = max(-1, min(1, steer / maxSteer))
+        if abs(amount) < 0.03 {
+            steerArc.path = nil
+            steerLabel.text = ""
+            return
+        }
+        let radius = wheelSprite.size.width / 2 + 9
+        let start = CGFloat.pi / 2
+        let end = start + amount * 2.2
+        let path = CGMutablePath()
+        path.addArc(center: .zero, radius: radius, startAngle: start, endAngle: end, clockwise: amount < 0)
+        steerArc.path = path
+        steerLabel.text = abs(amount) < 0.12 ? "" : (amount > 0 ? "◀ " + Strings.left : Strings.right + " ▶")
+    }
+
+    // MARK: Minimap
+
+    private func buildMinimap() {
+        minimap.removeAllChildren()
+        let mapSize = CGSize(width: Levels.world.width * mapScale, height: Levels.world.height * mapScale)
+        let background = SKShapeNode(rect: CGRect(origin: .zero, size: mapSize).insetBy(dx: -3, dy: -3), cornerRadius: 8)
+        background.fillColor = UIColor(white: 0.05, alpha: 0.55)
+        background.strokeColor = UIColor.white.withAlphaComponent(0.3)
+        background.lineWidth = 1
+        minimap.addChild(background)
+
+        func shape(center: CGPoint, size: CGSize, angle: CGFloat) -> SKShapeNode {
+            let node = SKShapeNode(rectOf: CGSize(width: max(2, size.width * mapScale), height: max(2, size.height * mapScale)),
+                                   cornerRadius: 1)
+            node.position = CGPoint(x: center.x * mapScale, y: center.y * mapScale)
+            node.zRotation = angle
+            node.strokeColor = .clear
+            return node
+        }
+
+        for obstacle in level.obstacles {
+            let node = shape(center: obstacle.center, size: obstacle.size, angle: obstacle.angle)
+            switch obstacle.kind {
+            case .wall: node.fillColor = UIColor(white: 0.78, alpha: 0.9)
+            case .car: node.fillColor = UIColor(white: 0.55, alpha: 0.9)
+            case .cone: node.fillColor = UIColor(red: 1.0, green: 0.5, blue: 0.15, alpha: 1)
+            }
+            minimap.addChild(node)
+        }
+
+        let spotSlots = friendPresent ? [otherSlot, slot] : [slot]
+        for spotSlot in spotSlots {
+            let def = level.spots[spotSlot]
+            let node = shape(center: def.center, size: def.size, angle: def.angle)
+            let color = CarArt.playerColors[spotSlot]
+            node.fillColor = color.withAlphaComponent(0.35)
+            node.strokeColor = color.lighter(by: 0.3)
+            node.lineWidth = 1.5
+            if spotSlot == slot {
+                node.glowWidth = 2
+                node.run(.repeatForever(.sequence([.fadeAlpha(to: 0.4, duration: 0.5), .fadeAlpha(to: 1, duration: 0.5)])))
+            }
+            minimap.addChild(node)
+        }
+
+        func marker(_ color: UIColor) -> SKShapeNode {
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: 7, y: 0))
+            path.addLine(to: CGPoint(x: -5, y: 4.5))
+            path.addLine(to: CGPoint(x: -3, y: 0))
+            path.addLine(to: CGPoint(x: -5, y: -4.5))
+            path.closeSubpath()
+            let node = SKShapeNode(path: path)
+            node.fillColor = color
+            node.strokeColor = .white
+            node.lineWidth = 1.2
+            return node
+        }
+        friendMarker = marker(CarArt.playerColors[otherSlot])
+        minimap.addChild(friendMarker)
+        myMarker = marker(CarArt.playerColors[slot])
+        myMarker.setScale(1.15)
+        minimap.addChild(myMarker)
+        updateMinimap()
+    }
+
+    private func updateMinimap() {
+        myMarker.position = CGPoint(x: carPosition.x * mapScale, y: carPosition.y * mapScale)
+        myMarker.zRotation = heading
+        friendMarker.isHidden = !friendPresent
+        friendMarker.position = CGPoint(x: remotePosition.x * mapScale, y: remotePosition.y * mapScale)
+        friendMarker.zRotation = remoteHeading
     }
 
     private func updateCarNodes() {
@@ -673,6 +797,7 @@ final class ParkingScene: SKScene {
         remoteTag.position = world.project(remotePosition, height: 2.6)
         remoteCheck.position = world.project(remotePosition, height: 4.0)
         if !showRemote { remoteCheck.isHidden = true }
+        updateMinimap()
     }
 
     // MARK: Driving
@@ -907,7 +1032,7 @@ final class ParkingScene: SKScene {
 
         if parkHold > 0.01, let world = world {
             let progress = min(parkHold, 1)
-            let radius = 3.4 * world.metersToPoints
+            let radius: CGFloat = 58
             let path = CGMutablePath()
             path.addArc(center: world.project(carPosition, height: 0.1), radius: radius, startAngle: CGFloat.pi / 2,
                         endAngle: CGFloat.pi / 2 - progress * 2 * CGFloat.pi, clockwise: true)
