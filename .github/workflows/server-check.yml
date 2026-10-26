@@ -1,0 +1,27 @@
+name: Room server check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/server-check.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Two-player room test
+        run: |
+          set +e
+          node server/test-rooms.mjs > result.txt 2>&1
+          status=$?
+          cat result.txt
+          while IFS= read -r line; do echo "::notice::$line"; done < result.txt
+          exit $status
