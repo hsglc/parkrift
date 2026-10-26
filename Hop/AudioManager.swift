@@ -43,7 +43,7 @@ final class AudioManager {
         guard !prepared else { return }
         prepared = true
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.ambient, options: [.mixWithOthers])
+        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try? session.setActive(true)
 
         buffers["music"] = load("music", ext: "m4a")

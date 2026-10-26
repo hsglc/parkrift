@@ -6,7 +6,8 @@ import UIKit
 final class ParkingScene: SKScene {
 
     private enum Control: Hashable {
-        case wheel
+        case left
+        case right
         case forward
         case reverse
     }
@@ -73,7 +74,8 @@ final class ParkingScene: SKScene {
     private var soundButton = SKSpriteNode()
     private var soundIcon = SKSpriteNode()
     private var finalButton: SKNode?
-    private var wheelSprite = SKSpriteNode()
+    private var leftButton = SKSpriteNode()
+    private var rightButton = SKSpriteNode()
     private var steerArc = SKShapeNode()
     private var steerLabel = SKLabelNode()
     private let minimap = SKNode()
@@ -380,29 +382,42 @@ final class ParkingScene: SKScene {
         let left = max(insets.left, 12)
         let right = max(insets.right, 12)
 
-        let wheelDiameter: CGFloat = 136
-        wheelSprite = SKSpriteNode(texture: CarArt.steeringWheel(diameter: wheelDiameter))
-        wheelSprite.size = CGSize(width: wheelDiameter, height: wheelDiameter)
-        wheelSprite.position = CGPoint(x: left + wheelDiameter / 2 + 10, y: wheelDiameter / 2 + 14)
-        controlsLayer.addChild(wheelSprite)
+        let steerSize = CGSize(width: 82, height: 82)
+        let steerAccent = UIColor(red: 0.26, green: 0.52, blue: 0.96, alpha: 1)
+        leftButton = SKSpriteNode(texture: CarArt.pedal(size: steerSize, accent: steerAccent))
+        leftButton.size = steerSize
+        leftButton.position = CGPoint(x: left + steerSize.width / 2 + 8, y: steerSize.height / 2 + 14)
+        controlsLayer.addChild(leftButton)
+        let leftIcon = makeIcon("arrowtriangle.left.fill", size: 28)
+        leftIcon.position = CGPoint(x: -2, y: 4)
+        leftButton.addChild(leftIcon)
+        rightButton = SKSpriteNode(texture: CarArt.pedal(size: steerSize, accent: steerAccent))
+        rightButton.size = steerSize
+        rightButton.position = CGPoint(x: leftButton.position.x + steerSize.width + 12, y: leftButton.position.y)
+        controlsLayer.addChild(rightButton)
+        let rightIcon = makeIcon("arrowtriangle.right.fill", size: 28)
+        rightIcon.position = CGPoint(x: 2, y: 4)
+        rightButton.addChild(rightIcon)
 
-        // Track + live arc around the wheel showing how far the front wheels are turned
-        let trackRadius = wheelDiameter / 2 + 9
-        let track = SKShapeNode(circleOfRadius: trackRadius)
-        track.strokeColor = UIColor.white.withAlphaComponent(0.22)
-        track.lineWidth = 5
-        track.fillColor = .clear
-        track.position = wheelSprite.position
+        // Bar above the buttons showing how far the front wheels are turned
+        let barCenter = CGPoint(x: (leftButton.position.x + rightButton.position.x) / 2, y: leftButton.position.y + steerSize.height / 2 + 16)
+        let track = SKShapeNode(rect: CGRect(x: -80, y: -3.5, width: 160, height: 7), cornerRadius: 3.5)
+        track.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.55)
+        track.strokeColor = UIColor.white.withAlphaComponent(0.2)
+        track.position = barCenter
         controlsLayer.addChild(track)
+        let tick = SKShapeNode(rect: CGRect(x: -1, y: -6, width: 2, height: 12))
+        tick.fillColor = UIColor.white.withAlphaComponent(0.6)
+        tick.strokeColor = .clear
+        tick.position = barCenter
+        controlsLayer.addChild(tick)
         steerArc = SKShapeNode()
-        steerArc.strokeColor = UIColor(red: 1.0, green: 0.78, blue: 0.10, alpha: 1)
-        steerArc.lineWidth = 6
-        steerArc.lineCap = .round
-        steerArc.glowWidth = 1.5
-        steerArc.position = wheelSprite.position
+        steerArc.fillColor = UIColor(red: 1.0, green: 0.78, blue: 0.10, alpha: 1)
+        steerArc.strokeColor = .clear
+        steerArc.position = barCenter
         controlsLayer.addChild(steerArc)
-        steerLabel = makeLabel("", size: 14, color: UIColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1))
-        steerLabel.position = CGPoint(x: wheelSprite.position.x, y: wheelSprite.position.y + trackRadius + 16)
+        steerLabel = makeLabel("", size: 12, color: UIColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1))
+        steerLabel.position = CGPoint(x: barCenter.x, y: barCenter.y + 16)
         controlsLayer.addChild(steerLabel)
 
         let gasSize = CGSize(width: 68, height: 116)
@@ -617,8 +632,8 @@ final class ParkingScene: SKScene {
     private func remoteHonk() {
         guard friendPresent else { return }
         let distance = hypot(remotePosition.x - carPosition.x, remotePosition.y - carPosition.y)
-        audio.play("horn", volume: Float(max(0.25, min(0.55, 0.6 - distance / 2000))))
-        tickHaptic.impactOccurred(intensity: 0.5)
+        audio.play("horn", volume: Float(max(0.45, min(0.8, 0.85 - distance / 2500))))
+        bumpHaptic.impactOccurred(intensity: 0.6)
 
         var point = world?.project(remotePosition, height: 3.2) ?? CGPoint(x: -10000, y: 0)
         point.x = max(70, min(size.width - 70, point.x))
@@ -664,9 +679,8 @@ final class ParkingScene: SKScene {
     // MARK: Input
 
     private func hitControl(at point: CGPoint) -> Control? {
-        if hypot(point.x - wheelSprite.position.x, point.y - wheelSprite.position.y) < wheelSprite.size.width * 0.75 {
-            return .wheel
-        }
+        if leftButton.frame.insetBy(dx: -8, dy: -14).contains(point) { return .left }
+        if rightButton.frame.insetBy(dx: -8, dy: -14).contains(point) { return .right }
         if gasPedal.frame.insetBy(dx: -14, dy: -14).contains(point) { return .forward }
         if reversePedal.frame.insetBy(dx: -14, dy: -14).contains(point) { return .reverse }
         return nil
@@ -683,6 +697,12 @@ final class ParkingScene: SKScene {
         gasPedal.alpha = gasDown ? 1 : 0.88
         reversePedal.setScale(reverseDown ? 0.93 : 1)
         reversePedal.alpha = reverseDown ? 1 : 0.88
+        let leftDown = isPressed(.left)
+        let rightDown = isPressed(.right)
+        leftButton.setScale(leftDown ? 0.92 : 1)
+        leftButton.alpha = leftDown ? 1 : 0.88
+        rightButton.setScale(rightDown ? 0.92 : 1)
+        rightButton.alpha = rightDown ? 1 : 0.88
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -714,13 +734,8 @@ final class ParkingScene: SKScene {
                 continue
             }
             if let control = hitControl(at: point) {
-                if control == .wheel && isPressed(.wheel) { continue }
                 activeTouches[touch] = control
-                if control == .wheel {
-                    wheelStartX[touch] = point.x + wheelInput * 80
-                } else {
-                    tickHaptic.impactOccurred(intensity: 0.5)
-                }
+                tickHaptic.impactOccurred(intensity: 0.5)
             }
         }
         refreshPedals()
@@ -730,12 +745,10 @@ final class ParkingScene: SKScene {
         for touch in touches {
             guard let control = activeTouches[touch] else { continue }
             let point = touch.location(in: self)
-            switch control {
-            case .wheel:
-                let startX = wheelStartX[touch] ?? point.x
-                wheelInput = max(-1, min(1, -(point.x - startX) / 80))
-            case .forward, .reverse:
-                if let now = hitControl(at: point), now != .wheel {
+            // Sliding a finger between neighbouring buttons switches to the new one
+            if let now = hitControl(at: point), now != control {
+                let steering: Set<Control> = [.left, .right]
+                if steering.contains(now) == steering.contains(control) {
                     activeTouches[touch] = now
                 }
             }
@@ -782,10 +795,10 @@ final class ParkingScene: SKScene {
         guard builtSize != .zero else { return }
         let dt = CGFloat(min(max(rawDelta, 0), 1.0 / 30.0))
 
-        if !isPressed(.wheel) {
-            wheelInput = approach(wheelInput, 0, 4.0 * dt)
-        }
-        wheelSprite.zRotation = wheelInput * 2.4
+        let leftDown = isPressed(.left)
+        let rightDown = isPressed(.right)
+        let steerTarget: CGFloat = leftDown == rightDown ? 0 : (leftDown ? 1 : -1)
+        wheelInput = approach(wheelInput, steerTarget, (steerTarget == 0 ? 4.0 : 2.6) * dt)
 
         switch phase {
         case .countdown:
@@ -871,12 +884,10 @@ final class ParkingScene: SKScene {
             steerLabel.text = ""
             return
         }
-        let radius = wheelSprite.size.width / 2 + 9
-        let start = CGFloat.pi / 2
-        let end = start + amount * 2.2
-        let path = CGMutablePath()
-        path.addArc(center: .zero, radius: radius, startAngle: start, endAngle: end, clockwise: amount < 0)
-        steerArc.path = path
+        // Left fills toward the left side of the bar
+        let width = abs(amount) * 80
+        let rect = amount > 0 ? CGRect(x: -width, y: -3.5, width: width, height: 7) : CGRect(x: 0, y: -3.5, width: width, height: 7)
+        steerArc.path = CGPath(roundedRect: rect, cornerWidth: 3.5, cornerHeight: 3.5, transform: nil)
         steerLabel.text = abs(amount) < 0.12 ? "" : (amount > 0 ? "◀ " + Strings.left : Strings.right + " ▶")
     }
 
@@ -1140,7 +1151,33 @@ final class ParkingScene: SKScene {
         longitudinalAccel += (longitudinal - longitudinalAccel) * min(1, dt * 8)
         lateralAccel += (velocity * yawRate - lateralAccel) * min(1, dt * 8)
 
+        // Scraping along a curb, wall or parked car: keep the free axis instead of stopping dead
+        var slid = false
+        var lostSpeed = abs(velocity)
         if blocked(moving: OBB(center: newPosition, size: Levels.carSize, angle: newHeading), to: newPosition) {
+            let candidates = [(CGPoint(x: newPosition.x, y: carPosition.y), abs(sin(heading) * velocity)),
+                              (CGPoint(x: carPosition.x, y: newPosition.y), abs(cos(heading) * velocity))]
+            for (candidate, lost) in candidates.sorted(by: { $0.1 < $1.1 }) where candidate.distance(to: carPosition) > 0.05 {
+                if !blocked(moving: OBB(center: candidate, size: Levels.carSize, angle: heading), to: candidate) {
+                    carPosition = candidate
+                    lostSpeed = lost
+                    slid = true
+                    break
+                }
+            }
+        }
+        if slid {
+            velocity *= 0.94
+            if lostSpeed > 45 && lastUpdate - lastHitAt > 0.6 {
+                lastHitAt = lastUpdate
+                hits += 1
+                hitsLabel.text = "\(hits)"
+                bumpHaptic.impactOccurred(intensity: 0.5)
+                audio.play("bump", volume: 0.5)
+            } else if lostSpeed > 8 {
+                tickHaptic.impactOccurred(intensity: 0.25)
+            }
+        } else if blocked(moving: OBB(center: newPosition, size: Levels.carSize, angle: newHeading), to: newPosition) {
             let impact = abs(velocity)
             if lastUpdate - lastHitAt > 0.6 && impact > 18 {
                 lastHitAt = lastUpdate
@@ -1178,7 +1215,7 @@ final class ParkingScene: SKScene {
     private func contacts(_ box: OBB, includeRemote: Bool = true) -> Set<Contact> {
         var result = Set<Contact>()
         let world = level.world
-        let curb: CGFloat = 11
+        let curb: CGFloat = isCity ? 4 : 8
         for corner in box.corners {
             if corner.x < curb || corner.y < curb || corner.x > world.width - curb || corner.y > world.height - curb {
                 result.insert(.bounds)
