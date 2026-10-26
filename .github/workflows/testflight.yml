@@ -16,14 +16,14 @@ jobs:
     env:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-      TEAM_ID: ${{ secrets.TEAM_ID }}
+      TEAM_ID: A88LG8CJV6
     steps:
       - uses: actions/checkout@v4
 
       - name: Check secrets
         run: |
           missing=0
-          for name in ASC_KEY_ID ASC_ISSUER_ID TEAM_ID; do
+          for name in ASC_KEY_ID ASC_ISSUER_ID; do
             if [ -z "${!name}" ]; then echo "::error::Missing secret $name"; missing=1; fi
           done
           if [ -z "${{ secrets.ASC_KEY_P8 }}" ]; then echo "::error::Missing secret ASC_KEY_P8"; missing=1; fi

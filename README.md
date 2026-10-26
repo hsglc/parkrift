@@ -24,11 +24,10 @@ Dokun-zıpla tarzı basit bir iOS oyunu (SwiftUI + SpriteKit). Amacı, GitHub Ac
 2. **Uygulama kaydı** — appstoreconnect.apple.com → Apps → **+** → New App → iOS, isim (mağazada benzersiz olmalı, ör. `Hop! HG`), dil, Bundle ID: `com.huseyingulcu.hop`, SKU: `hop-001`.
 3. **Yaş derecelendirmesi** — Uygulama → App Information → Age Rating → soruları yanıtla (bu oyun için hepsi "Hayır/Yok").
 4. **API anahtarı** — App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys → **Generate API Key**, erişim: **Admin** (otomatik imzalama için gerekli). `.p8` dosyasını indir (yalnızca bir kez indirilebilir), **Key ID** ve **Issuer ID**'yi not al.
-5. **Team ID** — developer.apple.com/account → Membership details → Team ID.
+5. **Team ID** — `A88LG8CJV6`, workflow dosyasına yazılı (gizli bilgi değil).
 6. **GitHub secrets** — repo → Settings → Secrets and variables → Actions → New repository secret:
    - `ASC_KEY_ID` → Key ID
    - `ASC_ISSUER_ID` → Issuer ID
-   - `TEAM_ID` → Team ID
    - `ASC_KEY_P8` → `.p8` dosyasının tüm içeriği (`-----BEGIN PRIVATE KEY-----` dahil). iPhone'da: Dosyalar uygulamasında dosyayı `.txt` olarak yeniden adlandırıp açarsan metni kopyalayabilirsin.
 
 ## Derleme
