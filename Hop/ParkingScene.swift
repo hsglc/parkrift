@@ -27,6 +27,7 @@ final class ParkingScene: SKScene {
         case bounds
         case obstacle(Int)
         case remoteCar
+        case bot(Int)
     }
 
     // MARK: Configuration
@@ -40,7 +41,8 @@ final class ParkingScene: SKScene {
     private var isHost = true
     private var friendPresent = false
     private var levelIndex = 0
-    private var level: LevelDef { Levels.all[levelIndex] }
+    private var level: LevelDef = Levels.all[0]
+    private var isCity: Bool { level.city != nil }
     private var otherSlot: Int { 1 - slot }
 
     // MARK: Layers
@@ -65,6 +67,7 @@ final class ParkingScene: SKScene {
     private var gearLabel = SKLabelNode()
     private var countdownNode = SKNode()
     private var countdownLabel = SKLabelNode()
+    private var countdownShadow = SKLabelNode()
     private var menuButton = SKSpriteNode()
     private var resetButton = SKSpriteNode()
     private var soundButton = SKSpriteNode()
@@ -76,6 +79,22 @@ final class ParkingScene: SKScene {
     private let minimap = SKNode()
     private var mapScale: CGFloat = 0.168
     private var myMarker = SKShapeNode()
+    private var hudLeft: CGFloat = 10
+    private var routeLine = SKShapeNode()
+    private var botDots: [SKShapeNode] = []
+    private var navNode = SKNode()
+    private var navArrow = SKSpriteNode()
+    private var navLabel = SKLabelNode()
+
+    // City traffic and race
+    private var traffic: Traffic?
+    private var botCars: [Car3D] = []
+    private var botSendClock: TimeInterval = 0
+    private var routeClock: CGFloat = 0
+    private var route: [CGPoint] = []
+    private var giveUp: CGFloat = 20
+    private var myWins = 0
+    private var friendWins = 0
     private var friendMarker = SKShapeNode()
     private var gasPedal = SKSpriteNode()
     private var hornButton = SKSpriteNode()
@@ -157,7 +176,7 @@ final class ParkingScene: SKScene {
         self.slot = online ? slot : 0
         self.isHost = isHost
         self.friendPresent = online
-        self.levelIndex = max(0, min(level, Levels.all.count - 1))
+        self.levelIndex = Levels.clamp(level)
         localCar = world.makeCar(color: CarArt.playerColors[self.slot])
         remoteCar = world.makeCar(color: CarArt.playerColors[1 - self.slot])
     }
@@ -314,18 +333,39 @@ final class ParkingScene: SKScene {
         hud.addChild(codeLabel)
 
         statusLabel = makeLabel("", size: 16, color: .white)
-        statusLabel.position = CGPoint(x: size.width / 2, y: top - 40)
+        statusLabel.position = CGPoint(x: size.width / 2 + 40, y: top - 86)
         hud.addChild(statusLabel)
 
         minimap.removeAllChildren()
-        minimap.position = CGPoint(x: left + 6, y: size.height - 80 - Levels.world.height * mapScale)
+        hudLeft = left
         hud.addChild(minimap)
+
+        navNode = SKNode()
+        navNode.position = CGPoint(x: size.width / 2 + 40, y: top - 46)
+        let navGlass = makeGlass(width: 210, height: 40)
+        navNode.addChild(navGlass)
+        let arrowDisc = SKShapeNode(circleOfRadius: 15)
+        arrowDisc.fillColor = UIColor(red: 1.0, green: 0.78, blue: 0.10, alpha: 1)
+        arrowDisc.strokeColor = .clear
+        arrowDisc.position = CGPoint(x: -84, y: 0)
+        navNode.addChild(arrowDisc)
+        navArrow = makeIcon("arrow.up", size: 18, color: UIColor(red: 0.08, green: 0.08, blue: 0.12, alpha: 1))
+        navArrow.position = arrowDisc.position
+        navNode.addChild(navArrow)
+        navLabel = makeLabel("", size: 15, color: .white)
+        navLabel.horizontalAlignmentMode = .left
+        navLabel.position = CGPoint(x: -62, y: 0)
+        navNode.addChild(navLabel)
+        navNode.isHidden = true
+        hud.addChild(navNode)
 
         countdownNode = SKNode()
         countdownNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
         countdownNode.zPosition = 5
-        countdownNode.addChild(makeGlass(width: 120, height: 120))
-        countdownLabel = makeLabel("3", size: 60, color: .white)
+        countdownShadow = makeLabel("3", size: 110, color: UIColor.black.withAlphaComponent(0.35))
+        countdownShadow.position = CGPoint(x: 0, y: -6)
+        countdownNode.addChild(countdownShadow)
+        countdownLabel = makeLabel("3", size: 110, color: .white)
         countdownNode.addChild(countdownLabel)
         hud.addChild(countdownNode)
     }
@@ -410,7 +450,8 @@ final class ParkingScene: SKScene {
     // MARK: Level loading
 
     func load(level index: Int) {
-        levelIndex = max(0, min(index, Levels.all.count - 1))
+        levelIndex = Levels.clamp(index)
+        level = Levels.level(levelIndex)
         model?.results = nil
         guard builtSize != .zero, let world = world else { return }
         overlay.removeAllChildren()
@@ -418,6 +459,24 @@ final class ParkingScene: SKScene {
         obstacleBoxes = level.obstacles.map { $0.box }
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
+
+        botCars.forEach { $0.node.removeFromParentNode() }
+        botCars.removeAll()
+        traffic = nil
+        if let city = level.city {
+            let newTraffic = Traffic(map: city, starts: level.bots, seed: UInt64(levelIndex * 31 + 7))
+            traffic = newTraffic
+            for bot in newTraffic.bots {
+                botCars.append(world.makeCar(color: CarArt.parkedColors[bot.tint % CarArt.parkedColors.count]))
+            }
+        }
+        route = []
+        routeClock = 0
+        giveUp = 20
+        if levelIndex == Levels.cityBase || !Levels.isCity(levelIndex) {
+            myWins = 0
+            friendWins = 0
+        }
 
         let start = level.starts[slot]
         carPosition = start.position
@@ -453,14 +512,13 @@ final class ParkingScene: SKScene {
         advanceScheduled = false
         newBest = false
         statusLabel.text = ""
-        countdownLabel.text = "3"
-        countdownLabel.fontSize = 60
+        setCountdown("3")
         countdownNode.removeAllActions()
         countdownNode.alpha = 1
         countdownNode.setScale(1)
         hitsLabel.text = "0"
         gearLabel.text = "D"
-        levelLabel.text = Strings.level(levelIndex + 1, of: Levels.all.count) + " · " + level.name
+        refreshLevelLabel()
         codeLabel.text = online ? "\(Strings.roomCode): \(model?.roomCode ?? "")" : ""
         remoteCheck.isHidden = true
         holdRing.path = nil
@@ -492,7 +550,7 @@ final class ParkingScene: SKScene {
         case "p":
             guard messageLevel == levelIndex else { return }
             remoteParked = true
-            remoteTime = message["time"] as? Double ?? 0
+            remoteTime = message["time"] as? Double ?? -1
             remoteHits = message["hits"] as? Int ?? 0
             if let x = message["x"] as? Double, let y = message["y"] as? Double, let h = message["h"] as? Double {
                 remoteTarget = (CGPoint(x: x, y: y), CGFloat(h))
@@ -505,8 +563,31 @@ final class ParkingScene: SKScene {
             checkLevelDone()
         case "hn":
             remoteHonk()
+        case "b":
+            guard messageLevel == levelIndex, !isHost, let data = message["d"] as? [Int] else { return }
+            traffic?.apply(data)
         default:
             break
+        }
+    }
+
+    private func setCountdown(_ text: String) {
+        let colors: [String: UIColor] = ["3": UIColor(red: 1.0, green: 0.38, blue: 0.35, alpha: 1),
+                                         "2": UIColor(red: 1.0, green: 0.72, blue: 0.22, alpha: 1),
+                                         "1": UIColor(red: 1.0, green: 0.90, blue: 0.30, alpha: 1)]
+        let isNumber = text.count == 1
+        countdownLabel.text = text
+        countdownShadow.text = text
+        countdownLabel.fontColor = colors[text] ?? UIColor(red: 0.40, green: 1.0, blue: 0.55, alpha: 1)
+        countdownLabel.fontSize = isNumber ? 110 : 72
+        countdownShadow.fontSize = countdownLabel.fontSize
+    }
+
+    private func refreshLevelLabel() {
+        if isCity && online && friendPresent {
+            levelLabel.text = Levels.title(levelIndex) + " · " + Strings.score(myWins, friendWins)
+        } else {
+            levelLabel.text = Levels.title(levelIndex) + " · " + level.name
         }
     }
 
@@ -515,7 +596,7 @@ final class ParkingScene: SKScene {
     }
 
     func nextLevel() {
-        load(level: min(levelIndex + 1, Levels.all.count - 1))
+        load(level: Levels.clamp(levelIndex + 1))
     }
 
     // MARK: Horn
@@ -713,17 +794,15 @@ final class ParkingScene: SKScene {
             let after = Int(ceil(countdown))
             if countdown <= 0 {
                 phase = .driving
-                countdownLabel.text = Strings.go
-                countdownLabel.fontSize = 34
+                setCountdown(Strings.go)
                 countdownNode.run(.sequence([.scale(to: 1.25, duration: 0.15), .wait(forDuration: 0.3),
                                              .group([.fadeOut(withDuration: 0.25), .scale(to: 1.6, duration: 0.25)])]))
                 tickHaptic.impactOccurred(intensity: 1.0)
                 audio.play("go", volume: 0.7)
             } else if after != before {
-                countdownLabel.text = "\(after)"
-                countdownLabel.fontSize = 60
-                countdownNode.setScale(1.25)
-                countdownNode.run(.scale(to: 1.0, duration: 0.2))
+                setCountdown("\(after)")
+                countdownNode.setScale(1.7)
+                countdownNode.run({ let a = SKAction.scale(to: 1.0, duration: 0.28); a.timingMode = .easeOut; return a }())
                 tickHaptic.impactOccurred()
                 audio.play("beep", volume: 0.6)
             }
@@ -747,6 +826,29 @@ final class ParkingScene: SKScene {
                 sendClock = 0
                 sendState()
             }
+        }
+
+        if let traffic = traffic {
+            var blockers = [carPosition]
+            if friendPresent && remoteTarget != nil { blockers.append(remotePosition) }
+            traffic.step(dt, blockers: blockers)
+            for (index, bot) in traffic.bots.enumerated() where index < botCars.count {
+                botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)
+            }
+            if online && friendPresent && isHost {
+                botSendClock += TimeInterval(dt)
+                if botSendClock >= 0.125 {
+                    botSendClock = 0
+                    model?.send(["t": "b", "l": levelIndex, "d": traffic.snapshot()])
+                }
+            }
+        }
+        if isCity { updateNavigation(dt) }
+
+        if online && friendPresent && remoteParked && !localParked && phase == .driving {
+            giveUp -= dt
+            statusLabel.text = Strings.friendParkedHurry(max(0, Int(ceil(giveUp))))
+            if giveUp <= 0 { gaveUp() }
         }
 
         if let target = remoteTarget {
@@ -778,13 +880,85 @@ final class ParkingScene: SKScene {
         steerLabel.text = abs(amount) < 0.12 ? "" : (amount > 0 ? "◀ " + Strings.left : Strings.right + " ▶")
     }
 
+    // MARK: City race
+
+    private func gaveUp() {
+        localParked = true
+        localTime = -1
+        velocity = 0
+        braking = false
+        phase = .finished
+        holdRing.path = nil
+        statusLabel.text = ""
+        notifyHaptic.notificationOccurred(.error)
+        model?.send(["t": "p", "l": levelIndex, "time": -1.0, "hits": hits,
+                     "x": Double(carPosition.x), "y": Double(carPosition.y), "h": Double(heading)])
+        checkLevelDone()
+    }
+
+    private func updateNavigation(_ dt: CGFloat) {
+        guard let city = level.city else { return }
+        let target = level.spots[slot].center
+        routeClock -= dt
+        if routeClock <= 0 || route.isEmpty {
+            routeClock = 0.25
+            route = city.route(from: carPosition, to: target)
+            let path = CGMutablePath()
+            for (index, point) in route.enumerated() {
+                let p = CGPoint(x: point.x * mapScale, y: point.y * mapScale)
+                if index == 0 { path.move(to: p) } else { path.addLine(to: p) }
+            }
+            routeLine.path = path
+        }
+        navNode.isHidden = localParked
+        guard route.count >= 2 else { return }
+
+        // Where to steer right now
+        var k = 1
+        if route.count > 2 && carPosition.distance(to: route[1]) < 95 { k = 2 }
+        let aim = route[k]
+        let relative = CGFloat.angleDelta(heading, atan2(aim.y - carPosition.y, aim.x - carPosition.x))
+        navArrow.zRotation = relative
+
+        let toTarget = carPosition.distance(to: target)
+        if toTarget < 90 {
+            navLabel.text = Strings.parkHere
+            return
+        }
+        if abs(relative) > 2.0 {
+            navLabel.text = Strings.uTurn
+            return
+        }
+        // Next turn along the route
+        var travelled = carPosition.distance(to: route[k])
+        var m = k
+        while m < route.count - 1 {
+            let a = route[m - 1]
+            let b = route[m]
+            let c = route[m + 1]
+            let turn = CGFloat.angleDelta(atan2(b.y - a.y, b.x - a.x), atan2(c.y - b.y, c.x - b.x))
+            if m >= 1 && abs(turn) > 0.6 && m < route.count - 1 && !(m == route.count - 2 && b.distance(to: c) < 140) {
+                let meters = Int((travelled / 10).rounded())
+                navLabel.text = (turn > 0 ? Strings.turnLeft : Strings.turnRight) + " · \(meters) m"
+                return
+            }
+            travelled += b.distance(to: c)
+            m += 1
+        }
+        navLabel.text = Strings.toTarget + " · \(Int((toTarget / 10).rounded())) m"
+    }
+
     // MARK: Minimap
 
     private func buildMinimap() {
         minimap.removeAllChildren()
-        let mapSize = CGSize(width: Levels.world.width * mapScale, height: Levels.world.height * mapScale)
-        let background = SKShapeNode(rect: CGRect(origin: .zero, size: mapSize).insetBy(dx: -3, dy: -3), cornerRadius: 8)
-        background.fillColor = UIColor(white: 0.05, alpha: 0.55)
+        botDots.removeAll()
+        let mapWidth: CGFloat = isCity ? 190 : 168
+        mapScale = mapWidth / level.world.width
+        let mapSize = CGSize(width: level.world.width * mapScale, height: level.world.height * mapScale)
+        minimap.position = CGPoint(x: hudLeft + 6, y: size.height - 80 - mapSize.height)
+        let background = SKShapeNode(rect: CGRect(origin: .zero, size: mapSize).insetBy(dx: -4, dy: -4), cornerRadius: 10)
+        background.fillColor = isCity ? UIColor(red: 0.30, green: 0.31, blue: 0.35, alpha: 0.85) : UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.6)
         background.strokeColor = UIColor.white.withAlphaComponent(0.3)
         background.lineWidth = 1
         minimap.addChild(background)
@@ -798,24 +972,57 @@ final class ParkingScene: SKScene {
             return node
         }
 
-        for obstacle in level.obstacles {
-            let node = shape(center: obstacle.center, size: obstacle.size, angle: obstacle.angle)
-            switch obstacle.kind {
-            case .wall: node.fillColor = UIColor(white: 0.78, alpha: 0.9)
-            case .car: node.fillColor = UIColor(white: 0.55, alpha: 0.9)
-            case .cone: node.fillColor = UIColor(red: 1.0, green: 0.5, blue: 0.15, alpha: 1)
+        if let city = level.city {
+            for block in city.blocks {
+                let node = SKShapeNode(rect: CGRect(x: block.minX * mapScale, y: block.minY * mapScale,
+                                                    width: block.width * mapScale, height: block.height * mapScale), cornerRadius: 2)
+                node.fillColor = UIColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 0.95)
+                node.strokeColor = .clear
+                minimap.addChild(node)
             }
-            minimap.addChild(node)
+            routeLine = SKShapeNode()
+            routeLine.strokeColor = UIColor(red: 1.0, green: 0.82, blue: 0.20, alpha: 1)
+            routeLine.lineWidth = 3
+            routeLine.lineCap = .round
+            routeLine.lineJoin = .round
+            routeLine.glowWidth = 1
+            minimap.addChild(routeLine)
+            for _ in traffic?.bots ?? [] {
+                let dot = SKShapeNode(circleOfRadius: 1.8)
+                dot.fillColor = UIColor.white.withAlphaComponent(0.75)
+                dot.strokeColor = .clear
+                minimap.addChild(dot)
+                botDots.append(dot)
+            }
+        } else {
+            for obstacle in level.obstacles {
+                let node = shape(center: obstacle.center, size: obstacle.size, angle: obstacle.angle)
+                switch obstacle.kind {
+                case .wall, .building: node.fillColor = UIColor(white: 0.78, alpha: 0.9)
+                case .car: node.fillColor = UIColor(white: 0.55, alpha: 0.9)
+                case .cone: node.fillColor = UIColor(red: 1.0, green: 0.5, blue: 0.15, alpha: 1)
+                }
+                minimap.addChild(node)
+            }
         }
 
         let spotSlots = friendPresent ? [otherSlot, slot] : [slot]
         for spotSlot in spotSlots {
             let def = level.spots[spotSlot]
-            let node = shape(center: def.center, size: def.size, angle: def.angle)
             let color = CarArt.playerColors[spotSlot]
-            node.fillColor = color.withAlphaComponent(0.35)
-            node.strokeColor = color.lighter(by: 0.3)
-            node.lineWidth = 1.5
+            let node: SKShapeNode
+            if isCity {
+                node = SKShapeNode(circleOfRadius: spotSlot == slot ? 6 : 4)
+                node.position = CGPoint(x: def.center.x * mapScale, y: def.center.y * mapScale)
+                node.fillColor = color
+                node.strokeColor = .white
+                node.lineWidth = 1.5
+            } else {
+                node = shape(center: def.center, size: def.size, angle: def.angle)
+                node.fillColor = color.withAlphaComponent(0.35)
+                node.strokeColor = color.lighter(by: 0.3)
+                node.lineWidth = 1.5
+            }
             if spotSlot == slot {
                 node.glowWidth = 2
                 node.run(.repeatForever(.sequence([.fadeAlpha(to: 0.4, duration: 0.5), .fadeAlpha(to: 1, duration: 0.5)])))
@@ -841,6 +1048,7 @@ final class ParkingScene: SKScene {
         myMarker = marker(CarArt.playerColors[slot])
         myMarker.setScale(1.15)
         minimap.addChild(myMarker)
+        navNode.isHidden = !isCity
         updateMinimap()
     }
 
@@ -850,6 +1058,11 @@ final class ParkingScene: SKScene {
         friendMarker.isHidden = !friendPresent
         friendMarker.position = CGPoint(x: remotePosition.x * mapScale, y: remotePosition.y * mapScale)
         friendMarker.zRotation = remoteHeading
+        if let bots = traffic?.bots {
+            for (index, dot) in botDots.enumerated() where index < bots.count {
+                dot.position = CGPoint(x: bots[index].position.x * mapScale, y: bots[index].position.y * mapScale)
+            }
+        }
     }
 
     private func updateCarNodes() {
@@ -964,7 +1177,7 @@ final class ParkingScene: SKScene {
 
     private func contacts(_ box: OBB, includeRemote: Bool = true) -> Set<Contact> {
         var result = Set<Contact>()
-        let world = Levels.world
+        let world = level.world
         let curb: CGFloat = 11
         for corner in box.corners {
             if corner.x < curb || corner.y < curb || corner.x > world.width - curb || corner.y > world.height - curb {
@@ -982,6 +1195,12 @@ final class ParkingScene: SKScene {
         if includeRemote && friendPresent && remoteTarget != nil && box.intersects(remoteBox) {
             result.insert(.remoteCar)
         }
+        if let traffic = traffic {
+            for (index, bot) in traffic.bots.enumerated() {
+                if abs(bot.position.x - box.center.x) > 60 || abs(bot.position.y - box.center.y) > 60 { continue }
+                if box.intersects(bot.box) { result.insert(.bot(index)) }
+            }
+        }
         return result
     }
 
@@ -990,6 +1209,9 @@ final class ParkingScene: SKScene {
         case .bounds: return nil
         case .obstacle(let index): return obstacleBoxes[index].center
         case .remoteCar: return remotePosition
+        case .bot(let index):
+            guard let bots = traffic?.bots, index < bots.count else { return nil }
+            return bots[index].position
         }
     }
 
@@ -1134,8 +1356,10 @@ final class ParkingScene: SKScene {
         confetti(at: carPosition)
         model?.send(["t": "p", "l": levelIndex, "time": localTime, "hits": hits,
                      "x": Double(carPosition.x), "y": Double(carPosition.y), "h": Double(heading)])
-        model?.levelCompleted(levelIndex)
-        newBest = model?.record(level: levelIndex, time: localTime, hits: hits) ?? false
+        if !isCity {
+            model?.levelCompleted(levelIndex)
+            newBest = model?.record(level: levelIndex, time: localTime, hits: hits) ?? false
+        }
         checkLevelDone()
     }
 
@@ -1172,7 +1396,7 @@ final class ParkingScene: SKScene {
         statusLabel.text = ""
 
         let footer: ResultFooter
-        if levelIndex >= Levels.all.count - 1 {
+        if Levels.isLast(levelIndex) {
             footer = .final
         } else if together {
             footer = .autoNext(seconds: advanceDelay)
@@ -1197,18 +1421,38 @@ final class ParkingScene: SKScene {
     }
 
     private func showResults(footer: ResultFooter) {
-        var entries = [ResultEntry(name: Strings.you, slot: slot, time: localTime, hits: hits, isMe: true, isWinner: false)]
+        let myTime: Double? = localTime >= 0 ? localTime : nil
+        var entries = [ResultEntry(name: Strings.you, slot: slot, time: myTime, hits: hits, isMe: true, isWinner: false)]
+        var headline: String?
+        var scoreLine: String?
         if (online && friendPresent) || remoteParked {
-            entries.append(ResultEntry(name: Strings.friend, slot: otherSlot, time: remoteParked ? remoteTime : nil,
+            let friendTime: Double? = remoteParked && remoteTime >= 0 ? remoteTime : nil
+            entries.append(ResultEntry(name: Strings.friend, slot: otherSlot, time: friendTime,
                                        hits: remoteHits, isMe: false, isWinner: false))
             if let best = entries.compactMap({ $0.time }).min() {
                 for index in entries.indices where entries[index].time == best {
                     entries[index].isWinner = true
                 }
             }
+            let iWon = entries[0].isWinner && !entries[1].isWinner
+            let friendWon = entries[1].isWinner && !entries[0].isWinner
+            if iWon { myWins += 1 }
+            if friendWon { friendWins += 1 }
+            headline = iWon ? Strings.youWon : (friendWon ? Strings.friendWon : Strings.draw)
+            if isCity {
+                scoreLine = Strings.score(myWins, friendWins)
+                if case .final = footer {
+                    headline = myWins > friendWins ? Strings.youWon : (friendWins > myWins ? Strings.friendWon : Strings.draw)
+                }
+            }
+            refreshLevelLabel()
+        } else if case .final = footer, isCity {
+            headline = Strings.allRounds
         }
-        model?.results = ResultsInfo(levelIndex: levelIndex, levelName: level.name, entries: entries, footer: footer,
-                                     newBest: newBest, bestTime: model?.bestTime(for: levelIndex))
+        model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex) + " · " + level.name,
+                                     entries: entries, footer: footer, newBest: newBest,
+                                     bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
+                                     headline: headline, scoreLine: scoreLine)
     }
 
     private func showToast(_ text: String) {

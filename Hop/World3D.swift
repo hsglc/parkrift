@@ -137,6 +137,8 @@ final class World3D {
     let scene = SCNScene()
     let cameraNode = SCNNode()
     private let levelRoot = SCNNode()
+    /// Classic parking lot ground, curbs, trees and poles (hidden in the city).
+    private let lotRoot = SCNNode()
     private let fxRoot = SCNNode()
     private(set) var arrowNode: SCNNode?
     private var myNeon: SCNNode?
@@ -163,6 +165,7 @@ final class World3D {
         scene.lightingEnvironment.contents = CarArt.skyImage()
         scene.lightingEnvironment.intensity = 1.1
         buildLights()
+        scene.rootNode.addChildNode(lotRoot)
         buildGround()
         buildScenery()
         scene.rootNode.addChildNode(levelRoot)
@@ -227,7 +230,7 @@ final class World3D {
         let lot = SCNPlane(width: 100, height: 50)
         let lotMaterial = Mat.lambert(CarArt.asphaltImage(size: Levels.world))
         lot.materials = [lotMaterial]
-        scene.rootNode.addChildNode(flat(lot, y: 0))
+        lotRoot.addChildNode(flat(lot, y: 0))
 
         // Raised curbs
         let concrete = Mat.pbr(UIColor(red: 0.78, green: 0.78, blue: 0.80, alpha: 1), rough: 0.9)
@@ -237,7 +240,7 @@ final class World3D {
             geometry.materials = [concrete]
             let node = SCNNode(geometry: geometry)
             node.position = SCNVector3(curb.2, 0.11, curb.3)
-            scene.rootNode.addChildNode(node)
+            lotRoot.addChildNode(node)
         }
     }
 
@@ -277,7 +280,7 @@ final class World3D {
             trees.addChildNode(tree)
             placed += 1
         }
-        scene.rootNode.addChildNode(trees.flattenedClone())
+        lotRoot.addChildNode(trees.flattenedClone())
 
         // Light poles at the lot corners
         let pole = SCNCylinder(radius: 0.12, height: 6)
@@ -288,10 +291,10 @@ final class World3D {
         for corner: (Float, Float) in [(-51.5, -26.5), (51.5, -26.5), (-51.5, 26.5), (51.5, 26.5)] {
             let poleNode = SCNNode(geometry: pole)
             poleNode.position = SCNVector3(corner.0, 3, corner.1)
-            scene.rootNode.addChildNode(poleNode)
+            lotRoot.addChildNode(poleNode)
             let lampNode = SCNNode(geometry: lamp)
             lampNode.position = SCNVector3(corner.0 + (corner.0 > 0 ? -0.6 : 0.6), 6, corner.1)
-            scene.rootNode.addChildNode(lampNode)
+            lotRoot.addChildNode(lampNode)
         }
     }
 
@@ -371,6 +374,10 @@ final class World3D {
         fxRoot.childNodes.forEach { $0.removeFromParentNode() }
         myNeon = nil
         arrowNode = nil
+        lotRoot.isHidden = level.city != nil
+        if let city = level.city {
+            buildCity(city, world: level.world)
+        }
 
         for spotSlot in spotSlots {
             let def = level.spots[spotSlot]
@@ -402,13 +409,28 @@ final class World3D {
             }
             levelRoot.addChildNode(holder)
 
+            if level.city != nil {
+                let beam = SCNCylinder(radius: 1.4, height: 40)
+                beam.radialSegmentCount = 12
+                let beamMaterial = SCNMaterial()
+                beamMaterial.lightingModel = .constant
+                beamMaterial.diffuse.contents = color.withAlphaComponent(spotSlot == mySlot ? 0.35 : 0.18)
+                beamMaterial.blendMode = .add
+                beamMaterial.writesToDepthBuffer = false
+                beamMaterial.isDoubleSided = true
+                beam.materials = [beamMaterial]
+                let beamNode = SCNNode(geometry: beam)
+                beamNode.position = World3D.vec(def.center, y: 20)
+                levelRoot.addChildNode(beamNode)
+            }
             if spotSlot == mySlot {
                 let pyramid = SCNPyramid(width: 1.3, height: 1.5, length: 1.3)
                 pyramid.materials = [Mat.glow(color.lighter(by: 0.2))]
                 let arrow = SCNNode(geometry: pyramid)
                 arrow.eulerAngles.x = Float.pi
                 let arrowHolder = SCNNode()
-                arrowHolder.position = World3D.vec(def.center, y: 4.6)
+                arrowHolder.position = World3D.vec(def.center, y: level.city != nil ? 6.5 : 4.6)
+                if level.city != nil { arrowHolder.scale = SCNVector3(1.8, 1.8, 1.8) }
                 arrowHolder.addChildNode(arrow)
                 arrowHolder.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.8, z: 0, duration: 0.45),
                                                                  .moveBy(x: 0, y: -0.8, z: 0, duration: 0.45)])))
@@ -423,12 +445,40 @@ final class World3D {
         let coneWhite = Mat.pbr(UIColor(white: 0.95, alpha: 1), rough: 0.5)
         let coneBase = Mat.pbr(UIColor(white: 0.1, alpha: 1), rough: 0.8)
 
+        let parkedCars = SCNNode()
+        var roofCache: [Int: SCNMaterial] = [:]
+        defer { levelRoot.addChildNode(parkedCars.flattenedClone()) }
         for obstacle in level.obstacles {
             switch obstacle.kind {
             case .car:
                 let car = Car3D(color: CarArt.parkedColors[obstacle.tint % CarArt.parkedColors.count])
                 car.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
-                levelRoot.addChildNode(car.node)
+                parkedCars.addChildNode(car.node)
+            case .building:
+                let height = obstacle.height
+                let width = obstacle.size.width / 10
+                let length = obstacle.size.height / 10
+                let box = SCNBox(width: width, height: height, length: length, chamferRadius: 0)
+                func facade(_ span: CGFloat) -> SCNMaterial {
+                    let material = Mat.lambert(CarArt.facadeImage(tint: obstacle.tint))
+                    material.diffuse.wrapS = .repeat
+                    material.diffuse.wrapT = .repeat
+                    material.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(max(1, (span / 4).rounded())),
+                                                                             Float(max(1, (height / 3.2).rounded())), 1)
+                    return material
+                }
+                let roof: SCNMaterial
+                if let cached = roofCache[obstacle.tint] {
+                    roof = cached
+                } else {
+                    roof = Mat.lambert(CarArt.buildingColors[obstacle.tint % CarArt.buildingColors.count].darker(by: 0.3))
+                    roofCache[obstacle.tint] = roof
+                }
+                box.materials = [facade(width), facade(length), facade(width), facade(length), roof, roof]
+                let node = SCNNode(geometry: box)
+                node.position = World3D.vec(obstacle.center, y: height / 2)
+                node.eulerAngles.y = Float(obstacle.angle)
+                levelRoot.addChildNode(node)
             case .wall:
                 let geometry = SCNBox(width: obstacle.size.width / 10, height: 1.1,
                                       length: obstacle.size.height / 10, chamferRadius: 0.06)
@@ -462,6 +512,98 @@ final class World3D {
                 levelRoot.addChildNode(holder)
             }
         }
+    }
+
+    /// Streets, intersections, sidewalks and edge barriers for a city level.
+    private func buildCity(_ city: CityMap, world: CGSize) {
+        let roadTexture = CarArt.roadImage()
+        let roadWidth = CityMap.roadHalf * 2
+        func roadMaterial(length: CGFloat) -> SCNMaterial {
+            let material = Mat.lambert(roadTexture)
+            material.diffuse.wrapS = .repeat
+            material.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(length / roadWidth), 1, 1)
+            return material
+        }
+        let ground = SCNNode()
+        for y in city.ys {
+            let plane = SCNPlane(width: world.width / 10, height: roadWidth / 10)
+            plane.materials = [roadMaterial(length: world.width)]
+            let node = flat(plane, y: 0.01)
+            let center = World3D.vec(CGPoint(x: world.width / 2, y: y))
+            node.position.x = center.x
+            node.position.z = center.z
+            ground.addChildNode(node)
+        }
+        for x in city.xs {
+            let plane = SCNPlane(width: world.height / 10, height: roadWidth / 10)
+            plane.materials = [roadMaterial(length: world.height)]
+            let holder = SCNNode()
+            holder.position = World3D.vec(CGPoint(x: x, y: world.height / 2), y: 0.02)
+            holder.eulerAngles.y = Float.pi / 2
+            holder.addChildNode(flat(plane, y: 0))
+            ground.addChildNode(holder)
+        }
+        let junction = SCNPlane(width: roadWidth / 10, height: roadWidth / 10)
+        junction.materials = [Mat.lambert(UIColor(red: 0.27, green: 0.28, blue: 0.31, alpha: 1))]
+        let stripe = SCNPlane(width: 0.5, height: 3.2)
+        stripe.materials = [Mat.lambert(UIColor(white: 0.93, alpha: 1))]
+        for x in city.xs {
+            for y in city.ys {
+                let node = flat(junction, y: 0.03)
+                let p = World3D.vec(CGPoint(x: x, y: y))
+                node.position.x = p.x
+                node.position.z = p.z
+                ground.addChildNode(node)
+                // Zebra crossings on all four sides
+                for side in 0..<4 {
+                    let angle = Float(side) * Float.pi / 2
+                    for k in -6...6 {
+                        let along = Float(k) * 0.95
+                        let out: Float = 11.4
+                        let holder = SCNNode()
+                        holder.position = SCNVector3(p.x + cos(angle) * out - sin(angle) * along, 0,
+                                                     p.z + sin(angle) * out + cos(angle) * along)
+                        holder.eulerAngles.y = -angle + Float.pi / 2
+                        holder.addChildNode(flat(stripe, y: 0.04))
+                        ground.addChildNode(holder)
+                    }
+                }
+            }
+        }
+        // Sidewalks / plazas on each block
+        let sidewalk = Mat.lambert(UIColor(red: 0.74, green: 0.73, blue: 0.70, alpha: 1))
+        let lawn = Mat.lambert(UIColor(red: 0.42, green: 0.62, blue: 0.36, alpha: 1))
+        for block in city.blocks {
+            let plane = SCNPlane(width: block.width / 10, height: block.height / 10)
+            plane.materials = [sidewalk]
+            let node = flat(plane, y: 0.08)
+            let p = World3D.vec(CGPoint(x: block.midX, y: block.midY))
+            node.position.x = p.x
+            node.position.z = p.z
+            ground.addChildNode(node)
+            let inner = SCNPlane(width: block.width / 10 - 3, height: block.height / 10 - 3)
+            inner.materials = [lawn]
+            let innerNode = flat(inner, y: 0.09)
+            innerNode.position.x = p.x
+            innerNode.position.z = p.z
+            ground.addChildNode(innerNode)
+        }
+        // Low barriers around the map edge
+        let barrier = Mat.pbr(UIColor(red: 0.85, green: 0.85, blue: 0.86, alpha: 1), rough: 0.8)
+        let edges: [(CGPoint, CGFloat, CGFloat)] = [
+            (CGPoint(x: world.width / 2, y: -4), world.width + 16, 8),
+            (CGPoint(x: world.width / 2, y: world.height + 4), world.width + 16, 8),
+            (CGPoint(x: -4, y: world.height / 2), 8, world.height + 16),
+            (CGPoint(x: world.width + 4, y: world.height / 2), 8, world.height + 16)
+        ]
+        for edge in edges {
+            let box = SCNBox(width: edge.1 / 10, height: 0.9, length: edge.2 / 10, chamferRadius: 0.1)
+            box.materials = [barrier]
+            let node = SCNNode(geometry: box)
+            node.position = World3D.vec(edge.0, y: 0.45)
+            ground.addChildNode(node)
+        }
+        levelRoot.addChildNode(ground.flattenedClone())
     }
 
     /// Menu backdrop: a level with both cars parked and a camera slowly circling the lot.

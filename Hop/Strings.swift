@@ -61,4 +61,19 @@ enum Strings {
     static var players: String { t("Oyuncular", "Players") }
     static var levelShort: String { t("Bölüm", "Level") }
     static var starHint: String { t("Çarpmadan park et: 3 yıldız", "Park without bumps: 3 stars") }
+    static func round(_ n: Int, of total: Int) -> String { t("Tur \(n)/\(total)", "Round \(n)/\(total)") }
+    static var cityDrive: String { t("Şehirde Sür", "City Drive") }
+    static var cityRace: String { t("Şehir yarışı", "City race") }
+    static var cityRaceInfo: String { t("5 tur · trafikte ilk park eden kazanır", "5 rounds · first to park in traffic wins") }
+    static var turnLeft: String { t("Sola dön", "Turn left") }
+    static var turnRight: String { t("Sağa dön", "Turn right") }
+    static var uTurn: String { t("Geri dön", "Turn around") }
+    static var toTarget: String { t("Hedef", "Target") }
+    static var parkHere: String { t("Park et!", "Park here!") }
+    static func friendParkedHurry(_ s: Int) -> String { t("Arkadaşın park etti! \(s) sn", "Your friend parked! \(s)s") }
+    static var allRounds: String { t("Yarış bitti!", "Race over!") }
+    static var youWon: String { t("Kazandın!", "You won!") }
+    static var friendWon: String { t("Arkadaşın kazandı", "Your friend won") }
+    static var draw: String { t("Berabere", "Draw") }
+    static func score(_ a: Int, _ b: Int) -> String { t("Skor \(a) – \(b)", "Score \(a) – \(b)") }
 }

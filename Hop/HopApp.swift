@@ -65,6 +65,13 @@ final class AppModel: ObservableObject {
         beginGame(level: selectedLevel)
     }
 
+    func playCity() {
+        online = false
+        mySlot = 0
+        friendHere = false
+        beginGame(level: Levels.cityBase)
+    }
+
     func createRoom() {
         let letters = Array("ABCDEFGHJKLMNPQRSTUVWXYZ")
         roomCode = String((0..<4).map { _ in letters.randomElement()! })
@@ -93,8 +100,8 @@ final class AppModel: ObservableObject {
 
     func startOnlineGame() {
         guard isHost, friendHere else { return }
-        net.send(["t": "lvl", "n": selectedLevel])
-        beginGame(level: selectedLevel)
+        net.send(["t": "lvl", "n": Levels.cityBase])
+        beginGame(level: Levels.cityBase)
     }
 
     func leaveToMenu() {
@@ -241,7 +248,7 @@ struct RootView: View {
                     ZStack {
                         SceneKitView(world: world)
                             .ignoresSafeArea()
-                        SpriteView(scene: scene, preferredFramesPerSecond: 60, options: [.allowsTransparency, .ignoresSiblingOrder])
+                        SpriteView(scene: scene, preferredFramesPerSecond: 60, options: [.allowsTransparency])
                             .ignoresSafeArea()
                         if let results = model.results {
                             ResultsOverlay(info: results)

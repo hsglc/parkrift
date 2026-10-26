@@ -1,0 +1,452 @@
+import CoreGraphics
+import Foundation
+
+// MARK: - Deterministic random numbers (same map on both phones)
+
+struct SplitMix64: RandomNumberGenerator {
+    private var state: UInt64
+
+    init(seed: UInt64) { state = seed &+ 0x9E37_79B9_7F4A_7C15 }
+
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE5_E4B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+
+    mutating func unit() -> CGFloat { CGFloat(next() >> 11) / CGFloat(1 << 53) }
+    mutating func range(_ low: CGFloat, _ high: CGFloat) -> CGFloat { low + (high - low) * unit() }
+    mutating func int(_ upper: Int) -> Int { Int(next() % UInt64(max(upper, 1))) }
+}
+
+// MARK: - Street grid
+
+/// A grid of two-lane streets. Roads run through `xs` (vertical streets) and `ys` (horizontal streets).
+/// Cross-section of a street (distance from its center line): lanes 0…70, parking strip 70…100.
+struct CityMap {
+    let xs: [CGFloat]
+    let ys: [CGFloat]
+
+    static let roadHalf: CGFloat = 100
+    static let laneOffset: CGFloat = 35
+    static let stripOffset: CGFloat = 86
+    static let slotLength: CGFloat = 64
+    static let slotWidth: CGFloat = 30
+
+    var cols: Int { xs.count }
+    var rows: Int { ys.count }
+    var nodeCount: Int { cols * rows }
+
+    func node(_ i: Int, _ j: Int) -> Int { j * cols + i }
+    func position(of node: Int) -> CGPoint { CGPoint(x: xs[node % cols], y: ys[node / cols]) }
+
+    func neighbors(_ node: Int) -> [Int] {
+        let i = node % cols
+        let j = node / cols
+        var result: [Int] = []
+        if i > 0 { result.append(self.node(i - 1, j)) }
+        if i < cols - 1 { result.append(self.node(i + 1, j)) }
+        if j > 0 { result.append(self.node(i, j - 1)) }
+        if j < rows - 1 { result.append(self.node(i, j + 1)) }
+        return result
+    }
+
+    /// The street segment (between two intersections) closest to a point.
+    func nearestSegment(to p: CGPoint) -> (a: Int, b: Int) {
+        var bestRow = 0
+        for j in 0..<rows where abs(p.y - ys[j]) < abs(p.y - ys[bestRow]) { bestRow = j }
+        var bestCol = 0
+        for i in 0..<cols where abs(p.x - xs[i]) < abs(p.x - xs[bestCol]) { bestCol = i }
+        if abs(p.y - ys[bestRow]) <= abs(p.x - xs[bestCol]) {
+            var i0 = 0
+            for i in 0..<(cols - 1) where xs[i] <= p.x { i0 = i }
+            return (node(i0, bestRow), node(i0 + 1, bestRow))
+        } else {
+            var j0 = 0
+            for j in 0..<(rows - 1) where ys[j] <= p.y { j0 = j }
+            return (node(bestCol, j0), node(bestCol, j0 + 1))
+        }
+    }
+
+    /// Shortest drive along the streets: start point, intersections to pass, target.
+    func route(from start: CGPoint, to target: CGPoint) -> [CGPoint] {
+        let s = nearestSegment(to: start)
+        let t = nearestSegment(to: target)
+        if (s.a == t.a && s.b == t.b) || (s.a == t.b && s.b == t.a) {
+            return [start, target]
+        }
+        var dist = [CGFloat](repeating: .greatestFiniteMagnitude, count: nodeCount)
+        var previous = [Int](repeating: -1, count: nodeCount)
+        var done = [Bool](repeating: false, count: nodeCount)
+        dist[s.a] = start.distance(to: position(of: s.a))
+        dist[s.b] = start.distance(to: position(of: s.b))
+        for _ in 0..<nodeCount {
+            var current = -1
+            for n in 0..<nodeCount where !done[n] && (current < 0 || dist[n] < dist[current]) { current = n }
+            guard current >= 0, dist[current] < .greatestFiniteMagnitude else { break }
+            done[current] = true
+            for next in neighbors(current) {
+                let candidate = dist[current] + position(of: current).distance(to: position(of: next))
+                if candidate < dist[next] {
+                    dist[next] = candidate
+                    previous[next] = current
+                }
+            }
+        }
+        let viaA = dist[t.a] + target.distance(to: position(of: t.a))
+        let viaB = dist[t.b] + target.distance(to: position(of: t.b))
+        var node = viaA <= viaB ? t.a : t.b
+        var nodes: [CGPoint] = []
+        while node >= 0 {
+            nodes.append(position(of: node))
+            node = previous[node]
+        }
+        return [start] + nodes.reversed() + [target]
+    }
+
+    /// Right-hand lane from intersection `a` to intersection `b`: entry and exit points.
+    func lane(from a: Int, to b: Int) -> (start: CGPoint, end: CGPoint, heading: CGFloat) {
+        let pa = position(of: a)
+        let pb = position(of: b)
+        let length = max(pa.distance(to: pb), 1)
+        let d = CGPoint(x: (pb.x - pa.x) / length, y: (pb.y - pa.y) / length)
+        let n = CGPoint(x: d.y, y: -d.x)
+        let inset: CGFloat = 118
+        let start = CGPoint(x: pa.x + d.x * inset + n.x * CityMap.laneOffset, y: pa.y + d.y * inset + n.y * CityMap.laneOffset)
+        let end = CGPoint(x: pb.x - d.x * inset + n.x * CityMap.laneOffset, y: pb.y - d.y * inset + n.y * CityMap.laneOffset)
+        return (start, end, atan2(d.y, d.x))
+    }
+
+    /// Building blocks between the streets (inner rectangles, without the street area).
+    var blocks: [CGRect] {
+        var result: [CGRect] = []
+        for i in 0..<(cols - 1) {
+            for j in 0..<(rows - 1) {
+                result.append(CGRect(x: xs[i] + CityMap.roadHalf, y: ys[j] + CityMap.roadHalf,
+                                     width: xs[i + 1] - xs[i] - CityMap.roadHalf * 2,
+                                     height: ys[j + 1] - ys[j] - CityMap.roadHalf * 2))
+            }
+        }
+        return result
+    }
+}
+
+extension CGPoint {
+    func distance(to other: CGPoint) -> CGFloat { hypot(other.x - x, other.y - y) }
+}
+
+struct BotStart {
+    let from: Int
+    let to: Int
+    let progress: CGFloat
+    let tint: Int
+}
+
+// MARK: - City rounds
+
+extension Levels {
+    static let cityBase = 100
+    static let cityRounds = 5
+
+    static func isCity(_ index: Int) -> Bool { index >= cityBase }
+
+    static func level(_ index: Int) -> LevelDef {
+        if isCity(index) { return city(round: index - cityBase) }
+        return all[max(0, min(index, all.count - 1))]
+    }
+
+    static func isLast(_ index: Int) -> Bool {
+        isCity(index) ? index >= cityBase + cityRounds - 1 : index >= all.count - 1
+    }
+
+    static func clamp(_ index: Int) -> Int {
+        isCity(index) ? min(index, cityBase + cityRounds - 1) : max(0, min(index, all.count - 1))
+    }
+
+    static func title(_ index: Int) -> String {
+        if isCity(index) { return Strings.round(index - cityBase + 1, of: cityRounds) }
+        return Strings.level(index + 1, of: all.count)
+    }
+
+    /// A procedurally generated city with a street grid, parked cars, buildings and traffic.
+    static func city(round: Int) -> LevelDef {
+        var rng = SplitMix64(seed: UInt64(round + 1) &* 0x2545_F491_4F6C_DD1D)
+        let map = CityMap(xs: [100, 900, 1700, 2500, 3300], ys: [100, 800, 1500, 2200])
+        let worldSize = CGSize(width: 3400, height: 2300)
+
+        // Parking slots along every curb that faces a block
+        struct Slot { let center: CGPoint; let angle: CGFloat; let segment: Int; let side: Int; let index: Int }
+        var slots: [Slot] = []
+        var segments: [(a: Int, b: Int, horizontal: Bool, interior: Bool)] = []
+        for j in 0..<map.rows {
+            for i in 0..<(map.cols - 1) {
+                segments.append((map.node(i, j), map.node(i + 1, j), true, j > 0 && j < map.rows - 1))
+            }
+        }
+        for i in 0..<map.cols {
+            for j in 0..<(map.rows - 1) {
+                segments.append((map.node(i, j), map.node(i, j + 1), false, i > 0 && i < map.cols - 1))
+            }
+        }
+        for (segmentIndex, segment) in segments.enumerated() {
+            let pa = map.position(of: segment.a)
+            let pb = map.position(of: segment.b)
+            let length = pa.distance(to: pb)
+            let count = Int((length - 2 * (CityMap.roadHalf + 30)) / CityMap.slotLength)
+            for side in [-1, 1] {
+                if segment.horizontal {
+                    let j = segment.a / map.cols
+                    if (side < 0 && j == 0) || (side > 0 && j == map.rows - 1) { continue }
+                } else {
+                    let i = segment.a % map.cols
+                    if (side < 0 && i == 0) || (side > 0 && i == map.cols - 1) { continue }
+                }
+                for k in 0..<count {
+                    let along = CityMap.roadHalf + 30 + CityMap.slotLength * (CGFloat(k) + 0.5)
+                    let offset = CGFloat(side) * CityMap.stripOffset
+                    let center = segment.horizontal
+                        ? CGPoint(x: pa.x + along, y: pa.y + offset)
+                        : CGPoint(x: pa.x + offset, y: pa.y + along)
+                    slots.append(Slot(center: center, angle: segment.horizontal ? 0 : CGFloat.pi / 2,
+                                      segment: segmentIndex, side: side, index: k))
+                }
+            }
+        }
+
+        // Target: two facing slots on an interior street
+        let interior = segments.indices.filter { segments[$0].interior }
+        let targetSegment = interior[rng.int(interior.count)]
+        let targetIndex = 2 + rng.int(4)
+        guard let spotA = slots.first(where: { $0.segment == targetSegment && $0.side == -1 && $0.index == targetIndex }),
+              let spotB = slots.first(where: { $0.segment == targetSegment && $0.side == 1 && $0.index == targetIndex }) else {
+            return all[0]
+        }
+        let spotSize = CGSize(width: CityMap.slotLength, height: CityMap.slotWidth)
+        let spots = [SpotDef(center: spotA.center, size: spotSize, angle: spotA.angle),
+                     SpotDef(center: spotB.center, size: spotSize, angle: spotB.angle)]
+        let targetCenter = CGPoint(x: (spotA.center.x + spotB.center.x) / 2, y: (spotA.center.y + spotB.center.y) / 2)
+
+        // Start: a street far away from the target
+        var startSegment = 0
+        for _ in 0..<40 {
+            let candidate = rng.int(segments.count)
+            let s = segments[candidate]
+            let mid = CGPoint(x: (map.position(of: s.a).x + map.position(of: s.b).x) / 2,
+                              y: (map.position(of: s.a).y + map.position(of: s.b).y) / 2)
+            startSegment = candidate
+            if mid.distance(to: targetCenter) > 1500 { break }
+        }
+        let startSeg = segments[startSegment]
+        let flip = rng.unit() < 0.5
+        let fromNode = flip ? startSeg.b : startSeg.a
+        let toNode = flip ? startSeg.a : startSeg.b
+        let lane = map.lane(from: fromNode, to: toNode)
+        let mid = CGPoint(x: (lane.start.x + lane.end.x) / 2, y: (lane.start.y + lane.end.y) / 2)
+        let normal = CGPoint(x: sin(lane.heading), y: -cos(lane.heading))
+        // Slot 0 in the right lane, slot 1 in the left lane, side by side
+        let starts = [StartDef(position: mid, heading: lane.heading),
+                      StartDef(position: CGPoint(x: mid.x - normal.x * CityMap.laneOffset * 2, y: mid.y - normal.y * CityMap.laneOffset * 2),
+                               heading: lane.heading)]
+
+        // Parked cars
+        var obstacles: [ObstacleDef] = []
+        for slot in slots {
+            if slot.segment == targetSegment && slot.index == targetIndex { continue }
+            let nearTarget = slot.segment == targetSegment && abs(slot.index - targetIndex) == 1
+            let chance: CGFloat = nearTarget ? 0.75 : 0.2
+            guard rng.unit() < chance else { continue }
+            let jitter = rng.range(-6, 6)
+            let center = slot.angle == 0 ? CGPoint(x: slot.center.x + jitter, y: slot.center.y)
+                                         : CGPoint(x: slot.center.x, y: slot.center.y + jitter)
+            obstacles.append(ObstacleDef(kind: .car, center: center, size: carSize,
+                                         angle: slot.angle + (rng.unit() < 0.5 ? 0 : CGFloat.pi), tint: rng.int(6)))
+        }
+
+        // Buildings: 2–3 columns x 2 rows per block, set back behind a sidewalk
+        for block in map.blocks {
+            let inner = block.insetBy(dx: 24, dy: 24)
+            let columns = 2 + rng.int(2)
+            let gap: CGFloat = 22
+            let width = (inner.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
+            let height = (inner.height - gap) / 2
+            for c in 0..<columns {
+                for r in 0..<2 {
+                    let center = CGPoint(x: inner.minX + width * (CGFloat(c) + 0.5) + gap * CGFloat(c),
+                                         y: inner.minY + height * (CGFloat(r) + 0.5) + gap * CGFloat(r))
+                    obstacles.append(ObstacleDef(kind: .building, center: center, size: CGSize(width: width, height: height),
+                                                 angle: 0, tint: rng.int(8), height: rng.range(7, 24)))
+                }
+            }
+        }
+
+        // Traffic
+        var bots: [BotStart] = []
+        var attempts = 0
+        while bots.count < 12 && attempts < 200 {
+            attempts += 1
+            let index = rng.int(segments.count)
+            if index == startSegment { continue }
+            let s = segments[index]
+            let forward = rng.unit() < 0.5
+            bots.append(BotStart(from: forward ? s.a : s.b, to: forward ? s.b : s.a, progress: rng.range(0.15, 0.85), tint: rng.int(6)))
+        }
+
+        return LevelDef(nameTR: "Şehir", nameEN: "City", starts: starts, spots: spots, obstacles: obstacles,
+                        world: worldSize, city: map, bots: bots)
+    }
+}
+
+// MARK: - Traffic
+
+struct Bot {
+    var position: CGPoint
+    var heading: CGFloat
+    var speed: CGFloat
+    var from: Int
+    var to: Int
+    var waypoints: [CGPoint]
+    var waiting: CGFloat = 0
+    var ignoreBots: CGFloat = 0
+    var braking = false
+    let tint: Int
+
+    var box: OBB { OBB(center: position, size: Levels.carSize, angle: heading) }
+}
+
+/// Simple lane-following traffic: drive the right-hand lane, pick a random street at each
+/// intersection, stop for anything ahead.
+final class Traffic {
+    let map: CityMap
+    private(set) var bots: [Bot] = []
+    private var rng: SplitMix64
+
+    private let cruise: CGFloat = 78
+    private let cornerSpeed: CGFloat = 42
+
+    init(map: CityMap, starts: [BotStart], seed: UInt64) {
+        self.map = map
+        rng = SplitMix64(seed: seed)
+        for start in starts {
+            let lane = map.lane(from: start.from, to: start.to)
+            let p = CGPoint(x: lane.start.x + (lane.end.x - lane.start.x) * start.progress,
+                            y: lane.start.y + (lane.end.y - lane.start.y) * start.progress)
+            bots.append(Bot(position: p, heading: lane.heading, speed: cruise, from: start.from, to: start.to,
+                            waypoints: [lane.end], tint: start.tint))
+        }
+    }
+
+    /// `blockers`: player car centers the bots must not drive into.
+    func step(_ dt: CGFloat, blockers: [CGPoint]) {
+        for index in bots.indices {
+            var bot = bots[index]
+            if bot.waypoints.isEmpty {
+                var options = map.neighbors(bot.to).filter { $0 != bot.from }
+                if options.isEmpty { options = map.neighbors(bot.to) }
+                let next = options[rng.int(options.count)]
+                bot.from = bot.to
+                bot.to = next
+                let lane = map.lane(from: bot.from, to: bot.to)
+                bot.waypoints = [lane.start, lane.end]
+            }
+            let target = bot.waypoints[0]
+            let dx = target.x - bot.position.x
+            let dy = target.y - bot.position.y
+            let distance = hypot(dx, dy)
+            let ahead = dx * cos(bot.heading) + dy * sin(bot.heading)
+            if distance < 24 || (distance < 70 && ahead < 0) {
+                bot.waypoints.removeFirst()
+                bots[index] = bot
+                continue
+            }
+            let desired = atan2(dy, dx)
+            let error = CGFloat.angleDelta(bot.heading, desired)
+            let maxTurn = 2.4 * dt
+            bot.heading += max(-maxTurn, min(maxTurn, error))
+
+            var targetSpeed = abs(error) > 0.35 ? cornerSpeed : cruise
+            var blockedByBot = false
+            var blocked = false
+            func check(_ point: CGPoint) -> Bool {
+                let vx = point.x - bot.position.x
+                let vy = point.y - bot.position.y
+                let forward = vx * cos(bot.heading) + vy * sin(bot.heading)
+                let lateral = abs(-vx * sin(bot.heading) + vy * cos(bot.heading))
+                return forward > 0 && forward < 82 && lateral < 26
+            }
+            for point in blockers where check(point) { blocked = true }
+            if !blocked && bot.ignoreBots <= 0 {
+                for other in bots.indices where other != index && check(bots[other].position) {
+                    blocked = true
+                    blockedByBot = true
+                    break
+                }
+            }
+            if blocked {
+                targetSpeed = 0
+                bot.waiting += dt
+                if blockedByBot && bot.waiting > 2.5 {
+                    bot.ignoreBots = 1.6
+                    bot.waiting = 0
+                }
+            } else {
+                bot.waiting = 0
+            }
+            bot.ignoreBots = max(0, bot.ignoreBots - dt)
+
+            let accel: CGFloat = bot.speed < targetSpeed ? 90 : 280
+            if bot.speed < targetSpeed {
+                bot.speed = min(targetSpeed, bot.speed + accel * dt)
+            } else {
+                bot.speed = max(targetSpeed, bot.speed - accel * dt)
+            }
+            bot.braking = targetSpeed < bot.speed - 1 || (targetSpeed == 0)
+            bot.position.x += cos(bot.heading) * bot.speed * dt
+            bot.position.y += sin(bot.heading) * bot.speed * dt
+            bots[index] = bot
+        }
+    }
+
+    /// Compact state for the network: x, y, heading*100, from, to, speed per bot.
+    func snapshot() -> [Int] {
+        var result: [Int] = []
+        for bot in bots {
+            result += [Int(bot.position.x.rounded()), Int(bot.position.y.rounded()), Int((bot.heading * 100).rounded()),
+                       bot.from, bot.to, Int(bot.speed.rounded())]
+        }
+        return result
+    }
+
+    /// Applies the host's state, easing toward it to hide small differences.
+    func apply(_ data: [Int]) {
+        guard data.count == bots.count * 6 else { return }
+        for index in bots.indices {
+            let base = index * 6
+            let target = CGPoint(x: CGFloat(data[base]), y: CGFloat(data[base + 1]))
+            let heading = CGFloat(data[base + 2]) / 100
+            let from = data[base + 3]
+            let to = data[base + 4]
+            guard from >= 0, from < map.nodeCount, to >= 0, to < map.nodeCount else { continue }
+            var bot = bots[index]
+            if bot.position.distance(to: target) > 90 {
+                bot.position = target
+                bot.heading = heading
+            } else {
+                bot.position.x += (target.x - bot.position.x) * 0.6
+                bot.position.y += (target.y - bot.position.y) * 0.6
+                bot.heading += CGFloat.angleDelta(bot.heading, heading) * 0.6
+            }
+            bot.speed = CGFloat(data[base + 5])
+            if from != bot.from || to != bot.to {
+                bot.from = from
+                bot.to = to
+                let lane = map.lane(from: from, to: to)
+                bot.waypoints = [lane.start, lane.end].filter {
+                    ($0.x - bot.position.x) * cos(bot.heading) + ($0.y - bot.position.y) * sin(bot.heading) > 0
+                }
+            }
+            bots[index] = bot
+        }
+    }
+}

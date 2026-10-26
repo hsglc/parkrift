@@ -4,6 +4,7 @@ enum ObstacleKind {
     case wall
     case car
     case cone
+    case building
 }
 
 struct ObstacleDef {
@@ -12,6 +13,7 @@ struct ObstacleDef {
     let size: CGSize   // width = length along `angle`
     let angle: CGFloat
     let tint: Int
+    var height: CGFloat = 0   // meters, buildings only
 
     var box: OBB { OBB(center: center, size: size, angle: angle) }
 }
@@ -35,6 +37,9 @@ struct LevelDef {
     let starts: [StartDef]   // index = player slot
     let spots: [SpotDef]     // index = player slot
     let obstacles: [ObstacleDef]
+    var world: CGSize = CGSize(width: 1000, height: 500)
+    var city: CityMap? = nil
+    var bots: [BotStart] = []
 
     var name: String { Strings.isTurkish ? nameTR : nameEN }
 }

@@ -22,11 +22,13 @@ enum ResultFooter {
 struct ResultsInfo: Identifiable {
     let id = UUID()
     let levelIndex: Int
-    let levelName: String
+    let levelTitle: String
     let entries: [ResultEntry]
     let footer: ResultFooter
     let newBest: Bool
     let bestTime: Double?
+    var headline: String? = nil
+    var scoreLine: String? = nil
 
     var me: ResultEntry? { entries.first { $0.isMe } }
 }
@@ -113,18 +115,26 @@ struct ResultsOverlay: View {
             }
             .scaleEffect(appeared ? 1 : 0.3)
 
-            Text(isFinal ? Strings.allDone : Strings.parkedTitle)
+            Text(info.headline ?? (isFinal ? Strings.allDone : Strings.parkedTitle))
                 .font(.system(size: isFinal ? 20 : 26, weight: .black, design: .rounded))
                 .italic()
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .shadow(color: .black.opacity(0.3), radius: 0, y: 2)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("\(Strings.levelShort) \(info.levelIndex + 1) · \(info.levelName)")
+            Text(info.levelTitle)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.75))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+            if let scoreLine = info.scoreLine {
+                Text(scoreLine)
+                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.black.opacity(0.25)))
+            }
 
             HStack(spacing: 6) {
                 ForEach(0..<3, id: \.self) { index in

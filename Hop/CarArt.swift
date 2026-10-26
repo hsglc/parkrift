@@ -20,6 +20,68 @@ enum CarArt {
 
     // MARK: Helpers
 
+    static let buildingColors: [UIColor] = [
+        UIColor(red: 0.93, green: 0.86, blue: 0.74, alpha: 1),
+        UIColor(red: 0.80, green: 0.55, blue: 0.45, alpha: 1),
+        UIColor(red: 0.62, green: 0.72, blue: 0.82, alpha: 1),
+        UIColor(red: 0.90, green: 0.90, blue: 0.88, alpha: 1),
+        UIColor(red: 0.72, green: 0.80, blue: 0.66, alpha: 1),
+        UIColor(red: 0.95, green: 0.74, blue: 0.52, alpha: 1),
+        UIColor(red: 0.56, green: 0.56, blue: 0.62, alpha: 1),
+        UIColor(red: 0.85, green: 0.66, blue: 0.70, alpha: 1)
+    ]
+
+    private static var facadeCache: [Int: UIImage] = [:]
+
+    /// One window bay (4 m wide, 3.2 m tall) of a building wall; repeat it across the facade.
+    static func facadeImage(tint: Int) -> UIImage {
+        let index = tint % buildingColors.count
+        if let cached = facadeCache[index] { return cached }
+        let color = buildingColors[index]
+        let result = image(CGSize(width: 64, height: 52), scale: 1) { context, s in
+            context.setFillColor(color.cgColor)
+            context.fill(CGRect(origin: .zero, size: s))
+            context.setFillColor(color.darker(by: 0.12).cgColor)
+            context.fill(CGRect(x: 0, y: s.height - 5, width: s.width, height: 5))
+            let window = CGRect(x: 14, y: 12, width: 36, height: 26)
+            context.setFillColor(UIColor(red: 0.20, green: 0.30, blue: 0.42, alpha: 1).cgColor)
+            context.fill(window)
+            context.setFillColor(UIColor(red: 0.55, green: 0.72, blue: 0.88, alpha: 0.55).cgColor)
+            context.fill(CGRect(x: window.minX + 3, y: window.minY + 3, width: 12, height: window.height - 6))
+            context.setStrokeColor(color.lighter(by: 0.2).cgColor)
+            context.setLineWidth(2)
+            context.stroke(window)
+        }
+        facadeCache[index] = result
+        return result
+    }
+
+    /// 200 x 200 street tile (20 m): lanes with a dashed center line, solid lines at the
+    /// parking strips and curbs. U runs along the street.
+    static func roadImage() -> UIImage {
+        image(CGSize(width: 128, height: 128), scale: 1) { context, s in
+            let k = s.height / 200
+            context.setFillColor(UIColor(red: 0.27, green: 0.28, blue: 0.31, alpha: 1).cgColor)
+            context.fill(CGRect(origin: .zero, size: s))
+            // Parking strips slightly lighter
+            context.setFillColor(UIColor(red: 0.33, green: 0.34, blue: 0.37, alpha: 1).cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: s.width, height: 30 * k))
+            context.fill(CGRect(x: 0, y: s.height - 30 * k, width: s.width, height: 30 * k))
+            // Solid edge lines between lanes and strips
+            context.setFillColor(UIColor(white: 0.92, alpha: 0.9).cgColor)
+            context.fill(CGRect(x: 0, y: 30 * k - 1.5, width: s.width, height: 3))
+            context.fill(CGRect(x: 0, y: s.height - 30 * k - 1.5, width: s.width, height: 3))
+            // Dashed center line
+            context.setFillColor(UIColor(red: 1.0, green: 0.84, blue: 0.30, alpha: 1).cgColor)
+            context.fill(CGRect(x: 8, y: s.height / 2 - 2, width: s.width / 2 - 16, height: 4))
+            context.fill(CGRect(x: s.width / 2 + 8, y: s.height / 2 - 2, width: s.width / 2 - 16, height: 4))
+            // Curb edge
+            context.setFillColor(UIColor(white: 0.75, alpha: 1).cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: s.width, height: 2))
+            context.fill(CGRect(x: 0, y: s.height - 2, width: s.width, height: 2))
+        }
+    }
+
     static func image(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false
@@ -490,17 +552,18 @@ enum CarArt {
         render(size) { context, s in
             let rect = CGRect(origin: .zero, size: s).insetBy(dx: 1, dy: 1)
             let path = CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil)
-            fill(context, path: path,
-                 colors: [UIColor(red: 0.20, green: 0.22, blue: 0.30, alpha: 0.78), UIColor(red: 0.08, green: 0.09, blue: 0.14, alpha: 0.82)],
-                 from: .zero, to: CGPoint(x: 0, y: s.height))
+            context.addPath(path)
+            context.setFillColor(UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.55).cgColor)
+            context.fillPath()
             context.saveGState()
             context.addPath(path)
             context.clip()
-            context.setFillColor(UIColor.white.withAlphaComponent(0.08).cgColor)
-            context.fill(CGRect(x: 0, y: 0, width: s.width, height: s.height * 0.45))
+            if let sheen = gradient([UIColor.white.withAlphaComponent(0.10), UIColor.white.withAlphaComponent(0.0)]) {
+                context.drawLinearGradient(sheen, start: .zero, end: CGPoint(x: 0, y: s.height * 0.6), options: [])
+            }
             context.restoreGState()
             context.addPath(path)
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.22).cgColor)
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
             context.setLineWidth(1)
             context.strokePath()
         }
@@ -574,36 +637,29 @@ enum CarArt {
         }
     }
 
+    /// Chunky colored pedal with a darker raised edge (matches the menu buttons).
     static func pedal(size: CGSize, accent: UIColor) -> SKTexture {
         render(size) { context, s in
-            let rect = CGRect(origin: .zero, size: s).insetBy(dx: 2, dy: 2)
-            let path = CGPath(roundedRect: rect, cornerWidth: 14, cornerHeight: 14, transform: nil)
-            fill(context, path: path,
-                 colors: [UIColor(white: 0.36, alpha: 0.95), UIColor(white: 0.12, alpha: 0.95)],
-                 from: .zero, to: CGPoint(x: s.width, y: s.height))
-            // Ridges
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.16).cgColor)
-            context.setLineWidth(3)
-            context.setLineCap(.round)
-            var y = rect.minY + 26
-            while y < rect.maxY - 12 {
-                context.move(to: CGPoint(x: rect.minX + 12, y: y))
-                context.addLine(to: CGPoint(x: rect.maxX - 12, y: y))
-                y += 10
-            }
-            context.strokePath()
-            // Accent strip
-            let strip = CGPath(roundedRect: CGRect(x: rect.minX + 8, y: rect.minY + 7, width: rect.width - 16, height: 8),
-                               cornerWidth: 4, cornerHeight: 4, transform: nil)
-            context.addPath(strip)
-            context.setFillColor(accent.cgColor)
+            let depth: CGFloat = 6
+            let body = CGRect(x: 2, y: 2, width: s.width - 4, height: s.height - 4 - depth)
+            let edge = body.offsetBy(dx: 0, dy: depth)
+            let corner: CGFloat = 18
+            context.addPath(CGPath(roundedRect: edge, cornerWidth: corner, cornerHeight: corner, transform: nil))
+            context.setFillColor(accent.darker(by: 0.45).withAlphaComponent(0.95).cgColor)
             context.fillPath()
-            context.addPath(path)
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.35).cgColor)
-            context.setLineWidth(1.5)
-            context.strokePath()
+            let face = CGPath(roundedRect: body, cornerWidth: corner, cornerHeight: corner, transform: nil)
+            fill(context, path: face, colors: [accent.lighter(by: 0.18).withAlphaComponent(0.95), accent.darker(by: 0.12).withAlphaComponent(0.95)],
+                 from: CGPoint(x: 0, y: body.minY), to: CGPoint(x: 0, y: body.maxY))
+            context.saveGState()
+            context.addPath(face)
+            context.clip()
+            if let sheen = gradient([UIColor.white.withAlphaComponent(0.35), UIColor.white.withAlphaComponent(0.0)]) {
+                context.drawLinearGradient(sheen, start: CGPoint(x: 0, y: body.minY), end: CGPoint(x: 0, y: body.minY + 22), options: [])
+            }
+            context.restoreGState()
         }
     }
+
     // MARK: 3D surface helpers
 
     /// Glowing outline for a parking bay (drawn additively over the bay).

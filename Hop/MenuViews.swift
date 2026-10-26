@@ -44,7 +44,11 @@ struct MenuView: View {
                         Button { model.playSolo() } label: {
                             Label(Strings.playSolo, systemImage: "car.fill")
                         }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 54, fontSize: 20))
+                        .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 50, fontSize: 19))
+                        Button { model.playCity() } label: {
+                            Label(Strings.cityDrive, systemImage: "building.2.fill")
+                        }
+                        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate))
                         Button { model.createRoom() } label: {
                             Label(Strings.createRoom, systemImage: "person.2.fill")
                         }
@@ -278,20 +282,21 @@ struct LobbyView: View {
                     PlayerChip(name: Strings.you, slot: model.mySlot, present: true)
                     PlayerChip(name: Strings.friend, slot: 1 - model.mySlot, present: model.friendHere)
 
-                    if model.isHost {
-                        HStack(spacing: 10) {
-                            stepButton("minus") { model.selectedLevel = max(0, model.selectedLevel - 1) }
-                            VStack(spacing: 2) {
-                                Text(Strings.levelShort.uppercased())
-                                    .font(.system(size: 10, weight: .black, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.55))
-                                Text("\(model.selectedLevel + 1)")
-                                    .font(.system(size: 22, weight: .black, design: .rounded))
-                                    .foregroundStyle(.white)
-                            }
-                            .frame(maxWidth: .infinity)
-                            stepButton("plus") { model.selectedLevel = min(model.unlockedLevels - 1, model.selectedLevel + 1) }
+                    HStack(spacing: 10) {
+                        Image(systemName: "building.2.crop.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(Palette.gold)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(Strings.cityRace)
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                            Text(Strings.cityRaceInfo)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
+                    }
+                    if model.isHost {
                         Button { model.startOnlineGame() } label: {
                             Label(Strings.start, systemImage: "flag.checkered")
                         }
