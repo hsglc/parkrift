@@ -95,6 +95,7 @@ final class ParkingScene: SKScene {
     private var benchDone = false
     var levelLoadMilliseconds: Double = 0
     private var finishAnimating = false
+    private var nitroFiredAt: [Double] = []
     private var navNode = SKNode()
     private var navArrow = SKSpriteNode()
     private var navLabel = SKLabelNode()
@@ -552,6 +553,7 @@ final class ParkingScene: SKScene {
         obstacleBoxes = level.obstacles.map { $0.box }
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
+        defer { world.warmUp() }
 
         botCars.forEach { $0.node.removeFromParentNode() }
         botCars.removeAll()
@@ -816,7 +818,9 @@ final class ParkingScene: SKScene {
             "drawCallsAtCamera": effective.0, "trianglesAtCamera": effective.1,
             "sceneNodes": stats.0, "geometryNodes": stats.1, "drawCallsFullDetail": stats.2, "triangles": stats.3,
             "levelLoadMs": (levelLoadMilliseconds * 10).rounded() / 10,
-            "hits": hits
+            "hits": hits,
+            "spikes": FrameMonitor.shared.spikes(over: 50),
+            "nitroAt": nitroFiredAt
         ]
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8) {
@@ -842,6 +846,7 @@ final class ParkingScene: SKScene {
         }
         nitro = 0
         boostTime = boostDuration
+        if benchRecording { nitroFiredAt.append((Double(benchClock - 2) * 10).rounded() / 10) }
         engaged = true
         if gear == .reverse && velocity <= 2 { gear = .drive }
         velocity = max(velocity, 0) + 45

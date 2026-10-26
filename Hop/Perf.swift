@@ -201,6 +201,22 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
         lock.unlock()
     }
 
+    /// Frames slower than `threshold` ms as [seconds since start, milliseconds].
+    func spikes(over threshold: Double) -> [[Double]] {
+        lock.lock()
+        let times = renderTimes
+        lock.unlock()
+        guard let first = times.first else { return [] }
+        var result: [[Double]] = []
+        for index in 1..<max(times.count, 1) {
+            let ms = (times[index] - times[index - 1]) * 1000
+            if ms > threshold {
+                result.append([((times[index] - first) * 10).rounded() / 10, ms.rounded()])
+            }
+        }
+        return Array(result.prefix(20))
+    }
+
     struct Summary {
         let frames: Int
         let seconds: Double

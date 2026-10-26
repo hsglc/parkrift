@@ -376,6 +376,16 @@ private enum CarFactory {
 
     private static var bodies: [String: SCNGeometry] = [:]
 
+    /// Every cached geometry including far-distance versions, for warming up the GPU.
+    static var allGeometries: [SCNGeometry] {
+        var result: [SCNGeometry] = [wheel, CarShapes.flameOuter, CarShapes.flameInner]
+        for geometry in bodies.values {
+            result.append(geometry)
+            result += (geometry.levelsOfDetail ?? []).compactMap { $0.geometry }
+        }
+        return result
+    }
+
     /// Merged static geometry for a moving car (lights and wheels are separate) or a parked car
     /// (everything baked in).
     static func body(style: CarStyle, color: UIColor, parked: Bool) -> SCNGeometry {
@@ -546,6 +556,8 @@ final class Car3D {
 /// The 3D parking lot: chase camera behind the player's car, sun with shadows, lot, scenery and level props.
 final class World3D {
     let scene = SCNScene()
+    /// The view drawing this world; used to upload geometry and compile shaders ahead of time.
+    weak var renderer: SCNView?
     let cameraNode = SCNNode()
     private let levelRoot = SCNNode()
     /// Classic parking lot ground, curbs, trees and poles (hidden in the city).
@@ -1221,6 +1233,15 @@ final class World3D {
         cameraNode.simdPosition = SIMD3<Float>(0, 24, 44)
         cameraNode.simdLook(at: SIMD3<Float>(0, 0, 2), up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
         pivot.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 120)))
+    }
+
+    /// Uploads all geometry (including far-distance car models that are not in the tree yet) and
+    /// compiles their shaders before they first appear, so the first sighting does not stall a frame.
+    func warmUp() {
+        guard PerfSettings.optimized, let renderer = renderer else { return }
+        var objects: [Any] = [scene.rootNode]
+        objects += CarFactory.allGeometries
+        renderer.prepare(objects, completionHandler: nil)
     }
 
     func markParked() {

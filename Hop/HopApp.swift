@@ -302,6 +302,7 @@ struct SceneKitView: UIViewRepresentable {
         let view = SCNView(frame: .zero)
         view.scene = world.scene
         view.pointOfView = world.cameraNode
+        world.renderer = view
         if PerfSettings.optimized {
             // Native 3x on Pro phones costs 2.25x the pixels of 2x; 2x MSAA instead of 4x
             view.antialiasingMode = .multisampling2X
@@ -322,6 +323,7 @@ struct SceneKitView: UIViewRepresentable {
         if uiView.scene !== world.scene {
             uiView.scene = world.scene
             uiView.pointOfView = world.cameraNode
+            world.renderer = uiView
         }
     }
 }
