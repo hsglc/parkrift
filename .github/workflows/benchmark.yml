@@ -85,9 +85,30 @@ jobs:
             fi
           }
           run optimized-1
-          run legacy-1 -legacy
-          run optimized-2
-          run legacy-2 -legacy
+
+      - name: Collect crash reports
+        if: always()
+        run: |
+          mkdir -p results
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null | head -3); do
+            cp "$f" results/ || true
+            python3 - "$f" <<'PY' || true
+          import json, sys
+          path = sys.argv[1]
+          text = open(path).read()
+          parts = text.split("\n", 1)
+          body = json.loads(parts[1]) if len(parts) > 1 else {}
+          exc = body.get("exception", {})
+          print(f"::warning title=crash::{exc.get('type')} {exc.get('signal')} {body.get('termination', {}).get('indicator', '')}")
+          images = body.get("usedImages", [])
+          for thread in body.get("threads", []):
+              if not thread.get("triggered"):
+                  continue
+              for frame in thread.get("frames", [])[:25]:
+                  image = images[frame.get("imageIndex", 0)].get("name", "?") if images else "?"
+                  print(f"::warning title=frame::{image} {frame.get('symbol', '?')} +{frame.get('symbolLocation', 0)}")
+          PY
+          done
 
       - name: Publish results to bench-results branch
         if: always()

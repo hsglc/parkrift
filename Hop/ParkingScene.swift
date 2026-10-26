@@ -295,6 +295,14 @@ final class ParkingScene: SKScene {
 
         buildHUD()
         buildControls()
+        // Render the big banner fonts once so the first NITRO!/FINISH! does not stall a frame
+        for (text, fontSize) in [(Strings.nitroGo, CGFloat(34)), (Strings.finishBig, CGFloat(76)), ("0123456789.s", CGFloat(22))] {
+            let warm = makeLabel(text, size: fontSize, color: .white)
+            warm.alpha = 0.01
+            warm.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            hud.addChild(warm)
+            warm.run(.sequence([.wait(forDuration: 0.5), .removeFromParent()]))
+        }
         load(level: levelIndex)
     }
 
