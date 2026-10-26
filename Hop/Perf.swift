@@ -302,3 +302,41 @@ enum SceneStats {
         return (drawCalls, triangles)
     }
 }
+
+// MARK: - Merger diagnostics
+
+enum MergerDiagnostics {
+    static func describe(_ geometry: SCNGeometry) -> [String: Any] {
+        var sources: [[String: Any]] = []
+        for source in geometry.sources {
+            sources.append(["sem": source.semantic.rawValue, "n": source.vectorCount, "float": source.usesFloatComponents,
+                            "cpv": source.componentsPerVector, "bpc": source.bytesPerComponent,
+                            "off": source.dataOffset, "stride": source.dataStride, "bytes": source.data.count])
+        }
+        var elements: [[String: Any]] = []
+        for element in geometry.elements.prefix(4) {
+            let range = element.primitiveRange
+            elements.append(["type": element.primitiveType.rawValue, "count": element.primitiveCount,
+                             "bpi": element.bytesPerIndex, "bytes": element.data.count,
+                             "rangeLoc": range.location == NSNotFound ? -1 : range.location, "rangeLen": range.length])
+        }
+        let (low, high) = geometry.boundingBox
+        return ["sources": sources, "elements": elements, "elementCount": geometry.elements.count,
+                "bbox": [low.x, low.y, low.z, high.x, high.y, high.z].map { (Double($0) * 100).rounded() / 100 }]
+    }
+
+    static func report() -> [String: Any] {
+        let box = SCNBox(width: 2, height: 3, length: 4, chamferRadius: 0)
+        let chamfered = SCNBox(width: 2, height: 1, length: 1, chamferRadius: 0.1)
+        let path = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 2, height: 1))
+        let shape = SCNShape(path: path, extrusionDepth: 1)
+        shape.chamferRadius = 0.05
+        let holder = SCNNode()
+        let a = SCNNode(geometry: box)
+        a.position = SCNVector3(10, 0, 0)
+        holder.addChildNode(a)
+        let merged = GeometryMerger.merge(holder)
+        return ["box": describe(box), "chamferedBox": describe(chamfered), "shape": describe(shape),
+                "mergedBox": merged.map { describe($0) } ?? [:]]
+    }
+}

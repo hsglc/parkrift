@@ -85,9 +85,6 @@ jobs:
             fi
           }
           run optimized-1
-          run legacy-1 -legacy
-          run optimized-2
-          run legacy-2 -legacy
 
       - name: Publish results to bench-results branch
         if: always()

@@ -820,7 +820,8 @@ final class ParkingScene: SKScene {
             "levelLoadMs": (levelLoadMilliseconds * 10).rounded() / 10,
             "hits": hits,
             "spikes": FrameMonitor.shared.spikes(over: 50),
-            "nitroAt": nitroFiredAt
+            "nitroAt": nitroFiredAt,
+            "merger": MergerDiagnostics.report()
         ]
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8) {
