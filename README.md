@@ -2,7 +2,8 @@
 
 Dokunarak uçulan basit bir iOS oyunu (SwiftUI + SpriteKit). Amacı, GitHub Actions üzerinden TestFlight hattını uçtan uca denemek.
 
-- **Oynanış:** Her dokunuşta karakter yükselir, bırakınca düşer. Üst ve alt sütunların arasındaki boşluktan geç; yere ya da sütuna değersen oyun biter. Boşluk skor arttıkça biraz daralır. Rekor cihazda saklanır.
+- **Oynanış:** Ekranın sol tarafına dokun → yüksel, sağ tarafına dokun → ateş et. Sütun boşluklarından geç, altınları topla, sağdan gelen canavarları vur (vurulan canavar puan ve altın düşürür). Yere, sütuna ya da canavara çarparsan oyun biter. Rekor ve toplam altın cihazda saklanır.
+- **Grafik:** Tüm görseller kodla çiziliyor (`Hop/Art.swift`): paralaks dağlar/tepeler/zemin, gölgeli karakter ve kanat, ışıklı sütunlar, parçacık efektleri.
 - **Dil:** Cihaz Türkçe ise Türkçe, değilse İngilizce.
 - **Gereksinimler (Ekim 2026):** Xcode 26 / iOS 26 SDK ile derlenir (`macos-15` runner + Xcode 26.x seçilerek), minimum iOS 17, privacy manifest (UserDefaults · `CA92.1`), `ITSAppUsesNonExemptEncryption = NO`, tek boyutlu 1024px ikon.
 
@@ -13,7 +14,8 @@ Dokunarak uçulan basit bir iOS oyunu (SwiftUI + SpriteKit). Amacı, GitHub Acti
 | `project.yml` | XcodeGen proje tanımı (Xcode projesi CI'da üretilir) |
 | `Support/Info.plist` | Uygulama ayarları |
 | `Hop/HopApp.swift` | Uygulama girişi ve SpriteView |
-| `Hop/GameScene.swift` | Oyunun tamamı |
+| `Hop/GameScene.swift` | Oyun mantığı |
+| `Hop/Art.swift` | Kodla çizilen tüm dokular |
 | `Hop/Strings.swift` | TR/EN metinler |
 | `Hop/PrivacyInfo.xcprivacy` | Privacy manifest |
 | `.github/workflows/testflight.yml` | Derle → imzala → TestFlight'a yükle |
