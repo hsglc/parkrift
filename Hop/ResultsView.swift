@@ -9,6 +9,7 @@ struct ResultEntry: Identifiable {
     let hits: Int
     let isMe: Bool
     var isWinner: Bool
+    var score: Double? = nil
 
     var stars: Int { time == nil ? 0 : AppModel.stars(forHits: hits) }
 }
@@ -177,7 +178,11 @@ struct ResultsOverlay: View {
                              tint: me.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : Color(red: 1.0, green: 0.55, blue: 0.4))
                 }
                 HStack(spacing: 8) {
-                    StatTile(icon: "crown.fill", label: Strings.bestLabel, value: format(info.bestTime), tint: Color(red: 0.75, green: 0.6, blue: 1.0))
+                    if let score = me.score {
+                        StatTile(icon: "flag.checkered", label: Strings.scoreLabel, value: score >= 0 ? String(format: "%.1f", score) : "–", tint: Palette.gold)
+                    } else {
+                        StatTile(icon: "crown.fill", label: Strings.bestLabel, value: format(info.bestTime), tint: Color(red: 0.75, green: 0.6, blue: 1.0))
+                    }
                     hintTile
                 }
             } else {
@@ -192,7 +197,7 @@ struct ResultsOverlay: View {
     private var hintTile: some View {
         HStack(spacing: 6) {
             StarsRow(filled: 3, size: 9, spacing: 1)
-            Text(Strings.starHint)
+            Text(info.me?.score != nil ? Strings.penaltyHint : Strings.starHint)
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
@@ -325,6 +330,17 @@ private struct PlayerResultRow: View {
                 StarsRow(filled: entry.stars, size: 9, spacing: 1)
             }
             Spacer(minLength: 4)
+            if let score = entry.score {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(score >= 0 ? String(format: "%.1f", score) : "–")
+                        .font(.system(size: 18, weight: .black, design: .rounded))
+                        .foregroundStyle(Palette.gold)
+                        .monospacedDigit()
+                    Text((entry.time.map { String(format: "%.1f s", $0) } ?? "–") + " · " + Strings.crashes(entry.hits))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            } else {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(entry.time.map { String(format: "%.1f s", $0) } ?? Strings.notParked)
                     .font(.system(size: entry.time == nil ? 12 : 18, weight: .black, design: .rounded))
@@ -333,6 +349,7 @@ private struct PlayerResultRow: View {
                 Text(Strings.hits(entry.hits))
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.55))
+            }
             }
         }
         .padding(8)

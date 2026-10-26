@@ -149,30 +149,48 @@ struct BotStart {
 extension Levels {
     static let cityBase = 100
     static let cityRounds = 5
+    static let raceBase = 200
+    static let raceRounds = 3
+    /// Seconds added to the race time for every crash.
+    static let crashPenalty: Double = 3
 
+    /// City streets (park race and car race).
     static func isCity(_ index: Int) -> Bool { index >= cityBase }
+    static func isRace(_ index: Int) -> Bool { index >= raceBase }
 
     static func level(_ index: Int) -> LevelDef {
-        if isCity(index) { return city(round: index - cityBase) }
+        if isRace(index) { return city(round: index - raceBase, race: true) }
+        if isCity(index) { return city(round: index - cityBase, race: false) }
         return all[max(0, min(index, all.count - 1))]
     }
 
     static func isLast(_ index: Int) -> Bool {
-        isCity(index) ? index >= cityBase + cityRounds - 1 : index >= all.count - 1
+        if isRace(index) { return index >= raceBase + raceRounds - 1 }
+        if isCity(index) { return index >= cityBase + cityRounds - 1 }
+        return index >= all.count - 1
     }
 
     static func clamp(_ index: Int) -> Int {
-        isCity(index) ? min(index, cityBase + cityRounds - 1) : max(0, min(index, all.count - 1))
+        if isRace(index) { return min(index, raceBase + raceRounds - 1) }
+        if isCity(index) { return min(index, cityBase + cityRounds - 1) }
+        return max(0, min(index, all.count - 1))
     }
 
     static func title(_ index: Int) -> String {
+        if isRace(index) { return Strings.raceRound(index - raceBase + 1, of: raceRounds) }
         if isCity(index) { return Strings.round(index - cityBase + 1, of: cityRounds) }
         return Strings.level(index + 1, of: all.count)
     }
 
+    /// Race score: time plus a penalty per crash (lower is better).
+    static func raceScore(time: Double, crashes: Int) -> Double {
+        time + Double(crashes) * crashPenalty
+    }
+
     /// A procedurally generated city with a street grid, parked cars, buildings and traffic.
-    static func city(round: Int) -> LevelDef {
-        var rng = SplitMix64(seed: UInt64(round + 1) &* 0x2545_F491_4F6C_DD1D)
+    /// `race`: a finish line far away and dense traffic instead of a parking target.
+    static func city(round: Int, race: Bool) -> LevelDef {
+        var rng = SplitMix64(seed: (UInt64(round + 1) &* 0x2545_F491_4F6C_DD1D) ^ (race ? 0xA5A5_5A5A : 0))
         let map = CityMap(xs: [100, 900, 1700, 2500, 3300], ys: [100, 800, 1500, 2200])
         let worldSize = CGSize(width: 3400, height: 2300)
 
@@ -213,6 +231,81 @@ extension Levels {
                                       segment: segmentIndex, side: side, index: k))
                 }
             }
+        }
+
+        func midpoint(_ index: Int) -> CGPoint {
+            let s = segments[index]
+            return CGPoint(x: (map.position(of: s.a).x + map.position(of: s.b).x) / 2,
+                           y: (map.position(of: s.a).y + map.position(of: s.b).y) / 2)
+        }
+        func sideBySideStarts(on segmentIndex: Int, towards target: CGPoint?) -> [StartDef] {
+            let seg = segments[segmentIndex]
+            var fromNode = seg.a
+            var toNode = seg.b
+            if let target = target {
+                if map.position(of: seg.a).distance(to: target) < map.position(of: seg.b).distance(to: target) {
+                    fromNode = seg.b
+                    toNode = seg.a
+                }
+            } else if rng.unit() < 0.5 {
+                fromNode = seg.b
+                toNode = seg.a
+            }
+            let lane = map.lane(from: fromNode, to: toNode)
+            let mid = CGPoint(x: (lane.start.x + lane.end.x) / 2, y: (lane.start.y + lane.end.y) / 2)
+            let normal = CGPoint(x: sin(lane.heading), y: -cos(lane.heading))
+            return [StartDef(position: mid, heading: lane.heading),
+                    StartDef(position: CGPoint(x: mid.x - normal.x * CityMap.laneOffset * 2, y: mid.y - normal.y * CityMap.laneOffset * 2),
+                             heading: lane.heading)]
+        }
+
+        if race {
+            // Start somewhere, finish line across a street far away
+            let startSegment = rng.int(segments.count)
+            var finishSegment = startSegment
+            var bestDistance: CGFloat = 0
+            for _ in 0..<30 {
+                let candidate = rng.int(segments.count)
+                let d = midpoint(candidate).distance(to: midpoint(startSegment))
+                if d > bestDistance && (d < 2900 || bestDistance < 2000) {
+                    bestDistance = d
+                    finishSegment = candidate
+                }
+            }
+            let finishSeg = segments[finishSegment]
+            let finish = SpotDef(center: midpoint(finishSegment), size: CGSize(width: 50, height: 150),
+                                 angle: finishSeg.horizontal ? 0 : CGFloat.pi / 2)
+            let starts = sideBySideStarts(on: startSegment, towards: finish.center)
+
+            var obstacles: [ObstacleDef] = []
+            for slot in slots {
+                guard slot.segment != finishSegment, rng.unit() < 0.12 else { continue }
+                obstacles.append(ObstacleDef(kind: .car, center: slot.center, size: carSize,
+                                             angle: slot.angle + (rng.unit() < 0.5 ? 0 : CGFloat.pi), tint: rng.int(6)))
+            }
+            obstacles += buildings(map: map, rng: &rng)
+
+            var bots: [BotStart] = []
+            var attempts = 0
+            while bots.count < 40 && attempts < 600 {
+                attempts += 1
+                let index = rng.int(segments.count)
+                let s = segments[index]
+                let forward = rng.unit() < 0.5
+                let start = BotStart(from: forward ? s.a : s.b, to: forward ? s.b : s.a, progress: rng.range(0.1, 0.9), tint: rng.int(6))
+                let lane = map.lane(from: start.from, to: start.to)
+                let p = CGPoint(x: lane.start.x + (lane.end.x - lane.start.x) * start.progress,
+                                y: lane.start.y + (lane.end.y - lane.start.y) * start.progress)
+                if starts.contains(where: { $0.position.distance(to: p) < 260 }) { continue }
+                if bots.contains(where: { other in
+                    let l = map.lane(from: other.from, to: other.to)
+                    let q = CGPoint(x: l.start.x + (l.end.x - l.start.x) * other.progress, y: l.start.y + (l.end.y - l.start.y) * other.progress)
+                    return q.distance(to: p) < 90
+                }) { continue }
+                bots.append(start)
+            }
+            return LevelDef(nameTR: "Yoğun Trafik", nameEN: "Rush Hour", starts: starts, spots: [finish, finish], obstacles: obstacles,
+                            world: worldSize, city: map, bots: bots, race: true)
         }
 
         // Target: two facing slots on an interior street
@@ -264,22 +357,7 @@ extension Levels {
                                          angle: slot.angle + (rng.unit() < 0.5 ? 0 : CGFloat.pi), tint: rng.int(6)))
         }
 
-        // Buildings: 2–3 columns x 2 rows per block, set back behind a sidewalk
-        for block in map.blocks {
-            let inner = block.insetBy(dx: 24, dy: 24)
-            let columns = 2 + rng.int(2)
-            let gap: CGFloat = 22
-            let width = (inner.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
-            let height = (inner.height - gap) / 2
-            for c in 0..<columns {
-                for r in 0..<2 {
-                    let center = CGPoint(x: inner.minX + width * (CGFloat(c) + 0.5) + gap * CGFloat(c),
-                                         y: inner.minY + height * (CGFloat(r) + 0.5) + gap * CGFloat(r))
-                    obstacles.append(ObstacleDef(kind: .building, center: center, size: CGSize(width: width, height: height),
-                                                 angle: 0, tint: rng.int(8), height: rng.range(7, 24)))
-                }
-            }
-        }
+        obstacles += buildings(map: map, rng: &rng)
 
         // Traffic
         var bots: [BotStart] = []
@@ -295,6 +373,27 @@ extension Levels {
 
         return LevelDef(nameTR: "Şehir", nameEN: "City", starts: starts, spots: spots, obstacles: obstacles,
                         world: worldSize, city: map, bots: bots)
+    }
+
+    /// Buildings: 2–3 columns x 2 rows per block, set back behind a sidewalk.
+    private static func buildings(map: CityMap, rng: inout SplitMix64) -> [ObstacleDef] {
+        var result: [ObstacleDef] = []
+        for block in map.blocks {
+            let inner = block.insetBy(dx: 24, dy: 24)
+            let columns = 2 + rng.int(2)
+            let gap: CGFloat = 22
+            let width = (inner.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
+            let height = (inner.height - gap) / 2
+            for c in 0..<columns {
+                for r in 0..<2 {
+                    let center = CGPoint(x: inner.minX + width * (CGFloat(c) + 0.5) + gap * CGFloat(c),
+                                         y: inner.minY + height * (CGFloat(r) + 0.5) + gap * CGFloat(r))
+                    result.append(ObstacleDef(kind: .building, center: center, size: CGSize(width: width, height: height),
+                                              angle: 0, tint: rng.int(8), height: rng.range(7, 24)))
+                }
+            }
+        }
+        return result
     }
 }
 

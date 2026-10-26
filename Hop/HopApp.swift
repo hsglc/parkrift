@@ -33,6 +33,13 @@ final class AppModel: ObservableObject {
     @Published var selectedLevel = 0
     @Published var results: ResultsInfo?
 
+    enum OnlineMode: String {
+        case park
+        case race
+    }
+    /// What the room plays; chosen by the host in the lobby.
+    @Published var onlineMode: OnlineMode = .race
+
     /// Slowly orbiting 3D lot shown behind the menu and lobby.
     let menuWorld: World3D = {
         let world = World3D()
@@ -72,6 +79,18 @@ final class AppModel: ObservableObject {
         beginGame(level: Levels.cityBase)
     }
 
+    func playRace() {
+        online = false
+        mySlot = 0
+        friendHere = false
+        beginGame(level: Levels.raceBase)
+    }
+
+    func setOnlineMode(_ mode: OnlineMode) {
+        onlineMode = mode
+        if isHost { net.send(["t": "mode", "m": mode.rawValue]) }
+    }
+
     func createRoom() {
         let letters = Array("ABCDEFGHJKLMNPQRSTUVWXYZ")
         roomCode = String((0..<4).map { _ in letters.randomElement()! })
@@ -100,8 +119,9 @@ final class AppModel: ObservableObject {
 
     func startOnlineGame() {
         guard isHost, friendHere else { return }
-        net.send(["t": "lvl", "n": Levels.cityBase])
-        beginGame(level: Levels.cityBase)
+        let start = onlineMode == .race ? Levels.raceBase : Levels.cityBase
+        net.send(["t": "lvl", "n": start])
+        beginGame(level: start)
     }
 
     func leaveToMenu() {
@@ -188,6 +208,7 @@ final class AppModel: ObservableObject {
             screen = .lobby
         case "join":
             friendHere = true
+            if isHost { net.send(["t": "mode", "m": onlineMode.rawValue]) }
             scene?.friendJoined()
         case "leave":
             friendHere = false
@@ -204,6 +225,8 @@ final class AppModel: ObservableObject {
             online = false
             errorText = Strings.roomFull
             screen = .menu
+        case "mode":
+            if let raw = message["m"] as? String, let mode = OnlineMode(rawValue: raw) { onlineMode = mode }
         case "lvl":
             let level = message["n"] as? Int ?? 0
             if screen == .game, let scene = scene {

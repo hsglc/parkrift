@@ -40,6 +40,7 @@ struct LevelDef {
     var world: CGSize = CGSize(width: 1000, height: 500)
     var city: CityMap? = nil
     var bots: [BotStart] = []
+    var race: Bool = false
 
     var name: String { Strings.isTurkish ? nameTR : nameEN }
 }

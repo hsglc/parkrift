@@ -82,6 +82,19 @@ enum CarArt {
         }
     }
 
+    /// Black and white checkerboard (8 x 8) for the finish line.
+    static func checkerImage() -> UIImage {
+        image(CGSize(width: 64, height: 64), scale: 1) { context, s in
+            let cell = s.width / 8
+            for row in 0..<8 {
+                for col in 0..<8 {
+                    context.setFillColor(((row + col) % 2 == 0 ? UIColor(white: 0.97, alpha: 1) : UIColor(white: 0.08, alpha: 1)).cgColor)
+                    context.fill(CGRect(x: CGFloat(col) * cell, y: CGFloat(row) * cell, width: cell, height: cell))
+                }
+            }
+        }
+    }
+
     static func image(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false

@@ -76,4 +76,14 @@ enum Strings {
     static var friendWon: String { t("Arkadaşın kazandı", "Your friend won") }
     static var draw: String { t("Berabere", "Draw") }
     static func score(_ a: Int, _ b: Int) -> String { t("Skor \(a) – \(b)", "Score \(a) – \(b)") }
+    static func raceRound(_ n: Int, of total: Int) -> String { t("Yarış \(n)/\(total)", "Race \(n)/\(total)") }
+    static var carRace: String { t("Araba Yarışı", "Car Race") }
+    static var parkRace: String { t("Park Yarışı", "Park Race") }
+    static var carRaceInfo: String { t("3 tur · yoğun trafik · en hızlı ve en az kazayla varan kazanır", "3 rounds · heavy traffic · fastest with fewest crashes wins") }
+    static var finished: String { t("BİTİRDİN!", "FINISHED!") }
+    static var finishLine: String { t("Bitiş", "Finish") }
+    static var scoreLabel: String { t("PUAN", "SCORE") }
+    static var penaltyHint: String { t("Puan = süre + her kaza 3 sn", "Score = time + 3 s per crash") }
+    static func crashes(_ n: Int) -> String { t("\(n) kaza", "\(n) crashes") }
+    static var mode: String { t("MOD", "MODE") }
 }

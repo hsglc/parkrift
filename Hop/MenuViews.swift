@@ -44,19 +44,23 @@ struct MenuView: View {
                         Button { model.playSolo() } label: {
                             Label(Strings.playSolo, systemImage: "car.fill")
                         }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 50, fontSize: 19))
+                        .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 46, fontSize: 18))
                         Button { model.playCity() } label: {
                             Label(Strings.cityDrive, systemImage: "building.2.fill")
                         }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate))
+                        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 44, fontSize: 17))
+                        Button { model.playRace() } label: {
+                            Label(Strings.carRace, systemImage: "flag.checkered")
+                        }
+                        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 44, fontSize: 17))
                         Button { model.createRoom() } label: {
                             Label(Strings.createRoom, systemImage: "person.2.fill")
                         }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.blueButton))
+                        .buttonStyle(ChunkyButtonStyle(colors: Palette.blueButton, height: 44, fontSize: 17))
                         Button { withAnimation(.spring(response: 0.3)) { showJoin = true } } label: {
                             Label(Strings.joinRoom, systemImage: "keyboard.fill")
                         }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.green))
+                        .buttonStyle(ChunkyButtonStyle(colors: Palette.green, height: 44, fontSize: 17))
                     }
                     if model.connecting {
                         HStack(spacing: 8) {
@@ -282,20 +286,16 @@ struct LobbyView: View {
                     PlayerChip(name: Strings.you, slot: model.mySlot, present: true)
                     PlayerChip(name: Strings.friend, slot: 1 - model.mySlot, present: model.friendHere)
 
-                    HStack(spacing: 10) {
-                        Image(systemName: "building.2.crop.circle.fill")
-                            .font(.system(size: 26))
-                            .foregroundStyle(Palette.gold)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(Strings.cityRace)
-                                .font(.system(size: 15, weight: .black, design: .rounded))
-                                .foregroundStyle(.white)
-                            Text(Strings.cityRaceInfo)
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                    HStack(spacing: 8) {
+                        ModeChip(title: Strings.carRace, icon: "flag.checkered", selected: model.onlineMode == .race,
+                                 enabled: model.isHost) { model.setOnlineMode(.race) }
+                        ModeChip(title: Strings.parkRace, icon: "parkingsign", selected: model.onlineMode == .park,
+                                 enabled: model.isHost) { model.setOnlineMode(.park) }
                     }
+                    Text(model.onlineMode == .race ? Strings.carRaceInfo : Strings.cityRaceInfo)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
                     if model.isHost {
                         Button { model.startOnlineGame() } label: {
                             Label(Strings.start, systemImage: "flag.checkered")
@@ -367,5 +367,39 @@ private struct PlayerChip: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .strokeBorder(present ? Palette.player(slot).opacity(0.6) : Color.white.opacity(0.08),
                           style: StrokeStyle(lineWidth: 1, dash: present ? [] : [4, 3])))
+    }
+}
+
+private struct ModeChip: View {
+    let title: String
+    let icon: String
+    let selected: Bool
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .black))
+                Text(title)
+                    .font(.system(size: 11, weight: .black, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(selected ? Palette.ink : .white.opacity(0.8))
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected
+                          ? AnyShapeStyle(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .top, endPoint: .bottom))
+                          : AnyShapeStyle(Color.white.opacity(0.08)))
+            )
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.white.opacity(selected ? 0.5 : 0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 }

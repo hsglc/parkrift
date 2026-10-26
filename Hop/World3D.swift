@@ -379,7 +379,8 @@ final class World3D {
             buildCity(city, world: level.world)
         }
 
-        for spotSlot in spotSlots {
+        if level.race { buildFinish(level.spots[0]) }
+        for spotSlot in (level.race ? [] : spotSlots) {
             let def = level.spots[spotSlot]
             let color = CarArt.playerColors[spotSlot]
             let holder = SCNNode()
@@ -512,6 +513,55 @@ final class World3D {
                 levelRoot.addChildNode(holder)
             }
         }
+    }
+
+    /// Checkered finish line across the street with two posts, a banner and a light beam.
+    private func buildFinish(_ def: SpotDef) {
+        let holder = SCNNode()
+        holder.position = World3D.vec(def.center)
+        holder.eulerAngles.y = Float(def.angle)
+        let checker = CarArt.checkerImage()
+        let across = def.size.height / 10
+
+        let strip = SCNPlane(width: 3, height: across)
+        let stripMaterial = Mat.lambert(checker)
+        stripMaterial.diffuse.wrapS = .repeat
+        stripMaterial.diffuse.wrapT = .repeat
+        stripMaterial.diffuse.contentsTransform = SCNMatrix4MakeScale(0.5, Float(across / 6), 1)
+        strip.materials = [stripMaterial]
+        holder.addChildNode(flat(strip, y: 0.06))
+
+        let pole = SCNCylinder(radius: 0.25, height: 6.5)
+        pole.radialSegmentCount = 8
+        pole.materials = [Mat.pbr(UIColor(red: 0.95, green: 0.25, blue: 0.25, alpha: 1), rough: 0.5)]
+        for side: Float in [-1, 1] {
+            let node = SCNNode(geometry: pole)
+            node.position = SCNVector3(0, 3.25, side * Float(across / 2 + 0.6))
+            holder.addChildNode(node)
+        }
+        let banner = SCNBox(width: 0.4, height: 1.5, length: across + 1.6, chamferRadius: 0.05)
+        let bannerMaterial = Mat.lambert(checker)
+        bannerMaterial.diffuse.wrapS = .repeat
+        bannerMaterial.diffuse.wrapT = .repeat
+        bannerMaterial.diffuse.contentsTransform = SCNMatrix4MakeScale(Float((across + 1.6) / 3), 0.5, 1)
+        banner.materials = [bannerMaterial]
+        let bannerNode = SCNNode(geometry: banner)
+        bannerNode.position = SCNVector3(0, 6.2, 0)
+        holder.addChildNode(bannerNode)
+
+        let beam = SCNCylinder(radius: 2.0, height: 50)
+        beam.radialSegmentCount = 12
+        let beamMaterial = SCNMaterial()
+        beamMaterial.lightingModel = .constant
+        beamMaterial.diffuse.contents = UIColor(red: 1.0, green: 0.82, blue: 0.2, alpha: 0.3)
+        beamMaterial.blendMode = .add
+        beamMaterial.writesToDepthBuffer = false
+        beamMaterial.isDoubleSided = true
+        beam.materials = [beamMaterial]
+        let beamNode = SCNNode(geometry: beam)
+        beamNode.position = SCNVector3(0, 25, 0)
+        holder.addChildNode(beamNode)
+        levelRoot.addChildNode(holder)
     }
 
     /// Streets, intersections, sidewalks and edge barriers for a city level.

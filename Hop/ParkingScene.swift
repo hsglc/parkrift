@@ -999,7 +999,7 @@ final class ParkingScene: SKScene {
 
         let toTarget = carPosition.distance(to: target)
         if toTarget < 90 {
-            navLabel.text = Strings.parkHere
+            navLabel.text = level.race ? Strings.finishLine : Strings.parkHere
             return
         }
         if abs(relative) > 2.0 {
@@ -1022,7 +1022,7 @@ final class ParkingScene: SKScene {
             travelled += b.distance(to: c)
             m += 1
         }
-        navLabel.text = Strings.toTarget + " · \(Int((toTarget / 10).rounded())) m"
+        navLabel.text = (level.race ? Strings.finishLine : Strings.toTarget) + " · \(Int((toTarget / 10).rounded())) m"
     }
 
     // MARK: Minimap
@@ -1410,6 +1410,10 @@ final class ParkingScene: SKScene {
     // MARK: Parking
 
     private func checkParking(_ dt: CGFloat) {
+        if level.race {
+            if level.spots[slot].box.contains(carPosition) { parked() }
+            return
+        }
         let spot = level.spots[slot]
         let spotBox = spot.box
         let carBox = OBB(center: carPosition, size: Levels.carSize, angle: heading)
@@ -1455,7 +1459,7 @@ final class ParkingScene: SKScene {
         world?.markParked()
         notifyHaptic.notificationOccurred(.success)
         audio.play("park", volume: 0.9)
-        statusLabel.text = Strings.parked
+        statusLabel.text = level.race ? Strings.finished : Strings.parked
         confetti(at: carPosition)
         model?.send(["t": "p", "l": levelIndex, "time": localTime, "hits": hits,
                      "x": Double(carPosition.x), "y": Double(carPosition.y), "h": Double(heading)])
@@ -1532,7 +1536,19 @@ final class ParkingScene: SKScene {
             let friendTime: Double? = remoteParked && remoteTime >= 0 ? remoteTime : nil
             entries.append(ResultEntry(name: Strings.friend, slot: otherSlot, time: friendTime,
                                        hits: remoteHits, isMe: false, isWinner: false))
-            if let best = entries.compactMap({ $0.time }).min() {
+            if level.race {
+                for index in entries.indices {
+                    let crashes = entries[index].hits
+                    let score = entries[index].time.map { Levels.raceScore(time: $0, crashes: crashes) } ?? -1
+                    entries[index].score = score
+                }
+                let scores = entries.compactMap { $0.score }.filter { $0 >= 0 }
+                if let best = scores.min() {
+                    for index in entries.indices where entries[index].score == best {
+                        entries[index].isWinner = true
+                    }
+                }
+            } else if let best = entries.compactMap({ $0.time }).min() {
                 for index in entries.indices where entries[index].time == best {
                     entries[index].isWinner = true
                 }
@@ -1551,6 +1567,10 @@ final class ParkingScene: SKScene {
             refreshLevelLabel()
         } else if case .final = footer, isCity {
             headline = Strings.allRounds
+        }
+        if level.race && entries.count == 1 {
+            entries[0].score = myTime.map { Levels.raceScore(time: $0, crashes: hits) } ?? -1
+            if headline == nil { headline = Strings.finished }
         }
         model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex) + " · " + level.name,
                                      entries: entries, footer: footer, newBest: newBest,
