@@ -298,9 +298,9 @@ final class World3D {
     // MARK: Camera
 
     /// Chase camera settings (meters / degrees).
-    private let chaseDistance: Float = 8.6
-    private let chaseHeight: Float = 4.4
-    private let lookAhead: Float = 5.5
+    private let chaseDistance: Float = 13.5
+    private let chaseHeight: Float = 7.2
+    private let lookAhead: Float = 6.5
     private let lookHeight: Float = 0.6
     private let fieldOfView: CGFloat = 56
     private var cameraYaw: Float = 0
@@ -462,6 +462,25 @@ final class World3D {
                 levelRoot.addChildNode(holder)
             }
         }
+    }
+
+    /// Menu backdrop: a level with both cars parked and a camera slowly circling the lot.
+    func setupShowcase() {
+        let level = Levels.all[2]
+        load(level: level, spotSlots: [0, 1], mySlot: 0)
+        arrowNode?.isHidden = true
+        for slot in 0..<2 {
+            let car = makeCar(color: CarArt.playerColors[slot])
+            let spot = level.spots[slot]
+            car.update(position: spot.center, heading: spot.angle, steer: 0)
+        }
+        let pivot = SCNNode()
+        scene.rootNode.addChildNode(pivot)
+        cameraNode.removeFromParentNode()
+        pivot.addChildNode(cameraNode)
+        cameraNode.simdPosition = SIMD3<Float>(0, 24, 44)
+        cameraNode.simdLook(at: SIMD3<Float>(0, 0, 2), up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+        pivot.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 120)))
     }
 
     func markParked() {

@@ -31,6 +31,14 @@ final class AppModel: ObservableObject {
     @Published var connecting = false
     @Published var errorText: String?
     @Published var selectedLevel = 0
+    @Published var results: ResultsInfo?
+
+    /// Slowly orbiting 3D lot shown behind the menu and lobby.
+    let menuWorld: World3D = {
+        let world = World3D()
+        world.setupShowcase()
+        return world
+    }()
 
     private(set) var online = false
     private(set) var mySlot = 0
@@ -90,6 +98,7 @@ final class AppModel: ObservableObject {
     }
 
     func leaveToMenu() {
+        results = nil
         net.disconnect()
         online = false
         connecting = false
@@ -118,6 +127,45 @@ final class AppModel: ObservableObject {
 
     func levelCompleted(_ index: Int) {
         if index + 2 > unlockedLevels { unlockedLevels = index + 2 }
+    }
+
+    // MARK: Records
+
+    nonisolated static func stars(forHits hits: Int) -> Int {
+        hits == 0 ? 3 : (hits <= 2 ? 2 : 1)
+    }
+
+    func stars(for level: Int) -> Int {
+        (UserDefaults.standard.dictionary(forKey: "pp.stars") as? [String: Int])?[String(level)] ?? 0
+    }
+
+    func bestTime(for level: Int) -> Double? {
+        (UserDefaults.standard.dictionary(forKey: "pp.best") as? [String: Double])?[String(level)]
+    }
+
+    /// Saves stars and time for a level; returns true when the time is a new best.
+    @discardableResult
+    func record(level: Int, time: Double, hits: Int) -> Bool {
+        let key = String(level)
+        var stars = UserDefaults.standard.dictionary(forKey: "pp.stars") as? [String: Int] ?? [:]
+        stars[key] = max(stars[key] ?? 0, AppModel.stars(forHits: hits))
+        UserDefaults.standard.set(stars, forKey: "pp.stars")
+        var best = UserDefaults.standard.dictionary(forKey: "pp.best") as? [String: Double] ?? [:]
+        let isNewBest = best[key].map { time < $0 } ?? true
+        if isNewBest { best[key] = time }
+        UserDefaults.standard.set(best, forKey: "pp.best")
+        objectWillChange.send()
+        return isNewBest
+    }
+
+    func retryLevel() {
+        results = nil
+        scene?.retryLevel()
+    }
+
+    func nextLevel() {
+        results = nil
+        scene?.nextLevel()
     }
 
     // MARK: Network events
@@ -195,6 +243,11 @@ struct RootView: View {
                             .ignoresSafeArea()
                         SpriteView(scene: scene, preferredFramesPerSecond: 60, options: [.allowsTransparency, .ignoresSiblingOrder])
                             .ignoresSafeArea()
+                        if let results = model.results {
+                            ResultsOverlay(info: results)
+                                .id(results.id)
+                                .transition(.opacity)
+                        }
                     }
                 }
             }
@@ -230,323 +283,3 @@ struct SceneKitView: UIViewRepresentable {
     }
 }
 
-/// Small round button that toggles music and sounds.
-private struct SoundToggle: View {
-    @State private var muted = AudioManager.shared.isMuted
-
-    var body: some View {
-        Button {
-            muted.toggle()
-            AudioManager.shared.isMuted = muted
-            AudioManager.shared.play("click")
-        } label: {
-            Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 42, height: 42)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct MenuBackground: View {
-    var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(red: 0.10, green: 0.12, blue: 0.20), Color(red: 0.04, green: 0.05, blue: 0.09)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            Circle()
-                .fill(Color(red: 0.95, green: 0.26, blue: 0.27).opacity(0.55))
-                .frame(width: 360, height: 360)
-                .blur(radius: 90)
-                .offset(x: -260, y: -120)
-            Circle()
-                .fill(Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.55))
-                .frame(width: 380, height: 380)
-                .blur(radius: 100)
-                .offset(x: 280, y: 130)
-            Circle()
-                .fill(Color(red: 0.98, green: 0.78, blue: 0.22).opacity(0.18))
-                .frame(width: 260, height: 260)
-                .blur(radius: 80)
-                .offset(x: 60, y: -160)
-            GeometryReader { proxy in
-                Path { path in
-                    let step: CGFloat = 46
-                    var x: CGFloat = 0
-                    while x < proxy.size.width {
-                        path.move(to: CGPoint(x: x, y: proxy.size.height * 0.78))
-                        path.addLine(to: CGPoint(x: x, y: proxy.size.height))
-                        x += step
-                    }
-                }
-                .stroke(Color.white.opacity(0.06), lineWidth: 3)
-            }
-        }
-        .ignoresSafeArea()
-    }
-}
-
-private struct GlassCard: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(20)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 1))
-            .shadow(color: .black.opacity(0.35), radius: 24, y: 12)
-    }
-}
-
-extension View {
-    fileprivate func glassCard() -> some View { modifier(GlassCard()) }
-}
-
-private struct BigButton: View {
-    let title: String
-    let systemImage: String
-    let colors: [Color]
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .bold))
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color.white.opacity(0.18)))
-                Text(title)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .bold))
-                    .opacity(0.7)
-            }
-            .font(.system(size: 18, weight: .heavy, design: .rounded))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-            )
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.22), lineWidth: 1))
-            .shadow(color: (colors.first ?? .black).opacity(0.45), radius: 12, y: 6)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct CarPreview: View {
-    var body: some View {
-        ZStack {
-            Image(uiImage: CarArt.carImage(color: CarArt.playerColors[0], size: CGSize(width: 72, height: 36)))
-                .rotationEffect(.degrees(-90))
-                .offset(x: -20, y: 4)
-                .shadow(color: .black.opacity(0.5), radius: 8, x: 4, y: 8)
-            Image(uiImage: CarArt.carImage(color: CarArt.playerColors[1], size: CGSize(width: 72, height: 36)))
-                .rotationEffect(.degrees(-80))
-                .offset(x: 22, y: -2)
-                .shadow(color: .black.opacity(0.5), radius: 8, x: 4, y: 8)
-        }
-        .frame(width: 96, height: 80)
-    }
-}
-
-struct MenuView: View {
-    @EnvironmentObject var model: AppModel
-    @State private var code = ""
-    @State private var showJoin = false
-
-    var body: some View {
-        ZStack {
-            MenuBackground()
-            HStack(alignment: .center, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .center, spacing: 2) {
-                        HStack(spacing: 2) {
-                            Text("Park")
-                                .foregroundStyle(LinearGradient(colors: [Color(red: 1.0, green: 0.52, blue: 0.42), Color(red: 0.92, green: 0.22, blue: 0.24)],
-                                                                startPoint: .top, endPoint: .bottom))
-                            Text("Park")
-                                .foregroundStyle(LinearGradient(colors: [Color(red: 0.50, green: 0.76, blue: 1.0), Color(red: 0.16, green: 0.48, blue: 0.96)],
-                                                                startPoint: .top, endPoint: .bottom))
-                        }
-                        .font(.system(size: 38, weight: .black, design: .rounded))
-                        .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
-                        CarPreview()
-                    }
-                    Text(Strings.tagline)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.75))
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        Image(systemName: "flag.checkered")
-                        Text(Strings.levels)
-                    }
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .padding(.top, 6)
-                    LevelPicker()
-                }
-                .frame(maxWidth: 320, alignment: .leading)
-                .glassCard()
-
-                VStack(spacing: 12) {
-                    if showJoin {
-                        Text(Strings.joinRoom)
-                            .font(.system(size: 17, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
-                        HStack(spacing: 10) {
-                            TextField(Strings.codePlaceholder, text: $code)
-                                .textInputAutocapitalization(.characters)
-                                .autocorrectionDisabled()
-                                .font(.system(size: 26, weight: .heavy, design: .monospaced))
-                                .multilineTextAlignment(.center)
-                                .padding(.vertical, 10)
-                                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.12)))
-                                .foregroundStyle(.white)
-                                .onChange(of: code) { _, newValue in
-                                    let filtered = String(newValue.uppercased().filter { $0.isLetter && $0.isASCII }.prefix(4))
-                                    if filtered != newValue { code = filtered }
-                                }
-                            Button {
-                                model.joinRoom(code: code)
-                            } label: {
-                                Image(systemName: "arrow.right")
-                                    .font(.system(size: 20, weight: .heavy))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 52, height: 50)
-                                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(code.count == 4 ? Color.green.gradient : Color.gray.gradient))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(code.count != 4 || model.connecting)
-                        }
-                        Button(Strings.back) { showJoin = false }
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.7))
-                    } else {
-                        BigButton(title: Strings.playSolo, systemImage: "car.fill",
-                                  colors: [Color(red: 1.0, green: 0.55, blue: 0.32), Color(red: 0.92, green: 0.28, blue: 0.24)]) { model.playSolo() }
-                        BigButton(title: Strings.createRoom, systemImage: "person.2.fill",
-                                  colors: [Color(red: 0.36, green: 0.66, blue: 1.0), Color(red: 0.16, green: 0.42, blue: 0.92)]) { model.createRoom() }
-                        BigButton(title: Strings.joinRoom, systemImage: "number",
-                                  colors: [Color(red: 0.36, green: 0.82, blue: 0.56), Color(red: 0.14, green: 0.58, blue: 0.40)]) { showJoin = true }
-                    }
-                    if model.connecting {
-                        ProgressView(Strings.connecting)
-                            .tint(.white)
-                            .foregroundStyle(.white)
-                    }
-                    if let error = model.errorText {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.55))
-                    }
-                }
-                .frame(width: 236)
-                .glassCard()
-            }
-            .padding(.horizontal, 16)
-        }
-        .overlay(alignment: .topTrailing) {
-            SoundToggle()
-                .padding(.top, 10)
-                .padding(.trailing, 14)
-        }
-    }
-}
-
-struct LevelPicker: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        let columns = Array(repeating: GridItem(.fixed(44), spacing: 8), count: 5)
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-            ForEach(0..<Levels.all.count, id: \.self) { index in
-                let unlocked = index < model.unlockedLevels
-                Button {
-                    model.selectedLevel = index
-                } label: {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(model.selectedLevel == index ? Color.white : Color.white.opacity(unlocked ? 0.14 : 0.05))
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.white.opacity(unlocked ? 0.22 : 0.08), lineWidth: 1)
-                        if unlocked {
-                            Text("\(index + 1)")
-                                .font(.system(size: 18, weight: .heavy, design: .rounded))
-                                .foregroundStyle(model.selectedLevel == index ? Color.black : Color.white)
-                        } else {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(.white.opacity(0.35))
-                        }
-                    }
-                    .frame(width: 44, height: 40)
-                }
-                .buttonStyle(.plain)
-                .disabled(!unlocked)
-            }
-        }
-    }
-}
-
-struct LobbyView: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        ZStack {
-            MenuBackground()
-            VStack(spacing: 14) {
-                Text(Strings.roomCode.uppercased())
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.6))
-                Text(model.roomCode)
-                    .font(.system(size: 64, weight: .black, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .tracking(10)
-                    .textSelection(.enabled)
-                if model.isHost {
-                    Text(Strings.shareCode)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(model.friendHere ? Color.green : Color.orange)
-                        .frame(width: 10, height: 10)
-                    Text(model.friendHere ? Strings.friendJoined : Strings.waitingFriend)
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-                if model.isHost {
-                    HStack(spacing: 10) {
-                        Text("\(Strings.startLevel): \(model.selectedLevel + 1)")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.75))
-                        Stepper("", value: $model.selectedLevel, in: 0...(model.unlockedLevels - 1))
-                            .labelsHidden()
-                    }
-                    Button(Strings.start) { model.startOnlineGame() }
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
-                        .padding(.horizontal, 40)
-                        .padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 16)
-                            .fill(model.friendHere ? Color.green.gradient : Color.gray.gradient))
-                        .foregroundStyle(.white)
-                        .disabled(!model.friendHere)
-                } else {
-                    Text(Strings.waitingHost)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                Button(Strings.leave) { model.leaveToMenu() }
-                    .foregroundStyle(.white.opacity(0.7))
-                    .padding(.top, 4)
-            }
-            .frame(minWidth: 380)
-            .glassCard()
-        }
-    }
-}

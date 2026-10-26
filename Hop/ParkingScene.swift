@@ -78,6 +78,10 @@ final class ParkingScene: SKScene {
     private var myMarker = SKShapeNode()
     private var friendMarker = SKShapeNode()
     private var gasPedal = SKSpriteNode()
+    private var hornButton = SKSpriteNode()
+    private var lastHorn: TimeInterval = -10
+    private var newBest = false
+    private let advanceDelay: TimeInterval = 4.5
     private var reversePedal = SKSpriteNode()
     private var activeTouches: [UITouch: Control] = [:]
     private var wheelStartX: [UITouch: CGFloat] = [:]
@@ -386,6 +390,16 @@ final class ParkingScene: SKScene {
         reverseText.position = CGPoint(x: 0, y: -20)
         reversePedal.addChild(reverseText)
 
+        hornButton = makeGlass(width: 60, height: 60)
+        hornButton.position = CGPoint(x: gasPedal.position.x, y: gasPedal.position.y + gasSize.height / 2 + 38)
+        controlsLayer.addChild(hornButton)
+        let hornIcon = makeIcon("horn.blast.fill", size: 20, color: UIColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1))
+        hornIcon.position = CGPoint(x: 0, y: 6)
+        hornButton.addChild(hornIcon)
+        let hornText = makeLabel(Strings.horn, size: 9, color: UIColor.white.withAlphaComponent(0.85))
+        hornText.position = CGPoint(x: 0, y: -15)
+        hornButton.addChild(hornText)
+
         let gearDisc = makeGlass(width: 36, height: 36)
         gearDisc.position = CGPoint(x: reversePedal.position.x, y: reversePedal.position.y + reverseSize.height / 2 + 26)
         controlsLayer.addChild(gearDisc)
@@ -397,6 +411,7 @@ final class ParkingScene: SKScene {
 
     func load(level index: Int) {
         levelIndex = max(0, min(index, Levels.all.count - 1))
+        model?.results = nil
         guard builtSize != .zero, let world = world else { return }
         overlay.removeAllChildren()
         finalButton = nil
@@ -436,6 +451,7 @@ final class ParkingScene: SKScene {
         remoteHits = 0
         resultsShown = false
         advanceScheduled = false
+        newBest = false
         statusLabel.text = ""
         countdownLabel.text = "3"
         countdownLabel.fontSize = 60
@@ -487,9 +503,58 @@ final class ParkingScene: SKScene {
             remoteCheck.isHidden = false
             notifyHaptic.notificationOccurred(.warning)
             checkLevelDone()
+        case "hn":
+            remoteHonk()
         default:
             break
         }
+    }
+
+    func retryLevel() {
+        load(level: levelIndex)
+    }
+
+    func nextLevel() {
+        load(level: min(levelIndex + 1, Levels.all.count - 1))
+    }
+
+    // MARK: Horn
+
+    private func honk() {
+        guard lastUpdate - lastHorn > 0.25 else { return }
+        lastHorn = lastUpdate
+        audio.play("horn", volume: 0.9)
+        tickHaptic.impactOccurred(intensity: 0.9)
+        hornButton.removeAction(forKey: "pulse")
+        hornButton.setScale(1)
+        hornButton.run(.sequence([.scale(to: 0.86, duration: 0.05), .scale(to: 1.0, duration: 0.18)]), withKey: "pulse")
+        if online && friendPresent {
+            model?.send(["t": "hn"])
+        }
+    }
+
+    private func remoteHonk() {
+        guard friendPresent else { return }
+        let distance = hypot(remotePosition.x - carPosition.x, remotePosition.y - carPosition.y)
+        audio.play("horn", volume: Float(max(0.4, min(1.0, 1.1 - distance / 900))))
+        tickHaptic.impactOccurred(intensity: 0.5)
+
+        var point = world?.project(remotePosition, height: 3.2) ?? CGPoint(x: -10000, y: 0)
+        point.x = max(70, min(size.width - 70, point.x))
+        point.y = max(90, min(size.height - 70, point.y))
+        let bubble = makeGlass(width: 46, height: 46)
+        bubble.position = point
+        bubble.addChild(makeIcon("horn.blast.fill", size: 20, color: CarArt.playerColors[otherSlot].lighter(by: 0.25)))
+        bubble.setScale(0.4)
+        fxLayer.addChild(bubble)
+        bubble.run(.sequence([
+            .scale(to: 1.15, duration: 0.12),
+            .scale(to: 1.0, duration: 0.1),
+            .wait(forDuration: 0.5),
+            .group([.fadeOut(withDuration: 0.35), .moveBy(x: 0, y: 18, duration: 0.35)]),
+            .removeFromParent()
+        ]))
+        friendMarker.run(.sequence([.scale(to: 2.0, duration: 0.12), .scale(to: 1.0, duration: 0.25)]))
     }
 
     func friendJoined() {
@@ -502,6 +567,9 @@ final class ParkingScene: SKScene {
         online = false
         remoteTarget = nil
         showToast(Strings.friendLeft)
+        if resultsShown && !advanceScheduled {
+            resultsShown = false
+        }
         if phase == .finished { checkLevelDone() }
     }
 
@@ -552,6 +620,10 @@ final class ParkingScene: SKScene {
             if resetButton.contains(point) {
                 audio.play("click")
                 resetCar()
+                continue
+            }
+            if hornButton.contains(point) {
+                honk()
                 continue
             }
             if soundButton.contains(point) {
@@ -1063,6 +1135,7 @@ final class ParkingScene: SKScene {
         model?.send(["t": "p", "l": levelIndex, "time": localTime, "hits": hits,
                      "x": Double(carPosition.x), "y": Double(carPosition.y), "h": Double(heading)])
         model?.levelCompleted(levelIndex)
+        newBest = model?.record(level: levelIndex, time: localTime, hits: hits) ?? false
         checkLevelDone()
     }
 
@@ -1090,30 +1163,30 @@ final class ParkingScene: SKScene {
 
     private func checkLevelDone() {
         guard localParked, !resultsShown else { return }
-        if online && friendPresent && !remoteParked {
+        let together = online && friendPresent
+        if together && !remoteParked {
             statusLabel.text = Strings.waitingFriendPark
             return
         }
         resultsShown = true
         statusLabel.text = ""
-        showResults()
 
-        let isLast = levelIndex >= Levels.all.count - 1
-        if isLast {
-            run(.wait(forDuration: 2.5)) { [weak self] in self?.showFinal() }
-            return
-        }
-        if !online || !friendPresent || isHost {
-            scheduleAdvance()
+        let footer: ResultFooter
+        if levelIndex >= Levels.all.count - 1 {
+            footer = .final
+        } else if together {
+            footer = .autoNext(seconds: advanceDelay)
+            if isHost { scheduleAdvance() }
         } else {
-            statusLabel.text = Strings.nextLevelSoon
+            footer = .solo(hasNext: true)
         }
+        showResults(footer: footer)
     }
 
     private func scheduleAdvance() {
         guard !advanceScheduled else { return }
         advanceScheduled = true
-        run(.wait(forDuration: 3.5)) { [weak self] in
+        run(.wait(forDuration: advanceDelay)) { [weak self] in
             guard let self = self else { return }
             let next = self.levelIndex + 1
             if self.online && self.friendPresent {
@@ -1123,95 +1196,19 @@ final class ParkingScene: SKScene {
         }
     }
 
-    private func formatTime(_ seconds: Double) -> String {
-        String(format: "%.1f s", seconds)
-    }
-
-    private func showResults() {
-        overlay.removeAllChildren()
-        let panelWidth: CGFloat = 360
-        let rows = (online && friendPresent) || remoteParked ? 2 : 1
-        let panelHeight: CGFloat = 100 + CGFloat(rows) * 40
-        let panel = makeGlass(width: panelWidth, height: panelHeight, corner: 22)
-        panel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 20)
-        overlay.addChild(panel)
-
-        let badge = makeIcon("checkmark.seal.fill", size: 26, color: UIColor(red: 0.40, green: 1.0, blue: 0.60, alpha: 1))
-        badge.position = CGPoint(x: -panelWidth / 2 + 32, y: panelHeight / 2 - 32)
-        panel.addChild(badge)
-        let title = makeLabel(Strings.parked, size: 24, color: .white)
-        title.horizontalAlignmentMode = .left
-        title.position = CGPoint(x: -panelWidth / 2 + 56, y: panelHeight / 2 - 30)
-        panel.addChild(title)
-        let subtitle = makeLabel(level.name, size: 13, color: UIColor.white.withAlphaComponent(0.6), font: "AvenirNext-Bold")
-        subtitle.horizontalAlignmentMode = .left
-        subtitle.position = CGPoint(x: -panelWidth / 2 + 56, y: panelHeight / 2 - 54)
-        panel.addChild(subtitle)
-
-        var entries: [(String, UIColor, Double?, Int)] = [(Strings.you, CarArt.playerColors[slot], localTime, hits)]
-        if rows == 2 {
-            entries.append((Strings.friend, CarArt.playerColors[otherSlot], remoteParked ? remoteTime : nil, remoteHits))
-        }
-        let bestTime = entries.compactMap { $0.2 }.min()
-
-        for (index, entry) in entries.enumerated() {
-            let y = panelHeight / 2 - 92 - CGFloat(index) * 40
-            let row = SKShapeNode(rectOf: CGSize(width: panelWidth - 28, height: 34), cornerRadius: 10)
-            row.fillColor = UIColor.white.withAlphaComponent(0.06)
-            row.strokeColor = .clear
-            row.position = CGPoint(x: 0, y: y)
-            panel.addChild(row)
-            let chip = SKShapeNode(circleOfRadius: 6)
-            chip.fillColor = entry.1
-            chip.strokeColor = .clear
-            chip.position = CGPoint(x: -panelWidth / 2 + 32, y: y)
-            panel.addChild(chip)
-            let name = makeLabel(entry.0, size: 15, color: .white)
-            name.horizontalAlignmentMode = .left
-            name.position = CGPoint(x: -panelWidth / 2 + 46, y: y)
-            panel.addChild(name)
-            let timeText = entry.2.map { formatTime($0) } ?? Strings.notParked
-            let time = makeLabel(timeText, size: 15, color: UIColor(red: 1, green: 0.86, blue: 0.45, alpha: 1))
-            time.position = CGPoint(x: 18, y: y)
-            panel.addChild(time)
-            let bumps = makeLabel(Strings.hits(entry.3), size: 12, color: UIColor.white.withAlphaComponent(0.7), font: "AvenirNext-Bold")
-            bumps.horizontalAlignmentMode = .right
-            bumps.position = CGPoint(x: panelWidth / 2 - 46, y: y)
-            panel.addChild(bumps)
-            if rows == 2, let time = entry.2, let best = bestTime, time == best {
-                let crown = makeIcon("crown.fill", size: 16, color: UIColor(red: 1, green: 0.82, blue: 0.3, alpha: 1))
-                crown.position = CGPoint(x: panelWidth / 2 - 26, y: y)
-                panel.addChild(crown)
+    private func showResults(footer: ResultFooter) {
+        var entries = [ResultEntry(name: Strings.you, slot: slot, time: localTime, hits: hits, isMe: true, isWinner: false)]
+        if (online && friendPresent) || remoteParked {
+            entries.append(ResultEntry(name: Strings.friend, slot: otherSlot, time: remoteParked ? remoteTime : nil,
+                                       hits: remoteHits, isMe: false, isWinner: false))
+            if let best = entries.compactMap({ $0.time }).min() {
+                for index in entries.indices where entries[index].time == best {
+                    entries[index].isWinner = true
+                }
             }
         }
-
-        panel.setScale(0.8)
-        panel.alpha = 0
-        panel.run(.group([.fadeIn(withDuration: 0.2), .scale(to: 1, duration: 0.25)]))
-    }
-
-    private func showFinal() {
-        overlay.removeAllChildren()
-        let panel = makeGlass(width: 360, height: 190, corner: 24)
-        panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        overlay.addChild(panel)
-
-        let trophy = makeIcon("trophy.fill", size: 40, color: UIColor(red: 1, green: 0.82, blue: 0.3, alpha: 1))
-        trophy.position = CGPoint(x: 0, y: 50)
-        panel.addChild(trophy)
-        let title = makeLabel(Strings.allDone, size: 22, color: .white)
-        title.position = CGPoint(x: 0, y: 6)
-        panel.addChild(title)
-
-        let button = SKShapeNode(rectOf: CGSize(width: 210, height: 46), cornerRadius: 23)
-        button.fillColor = UIColor(red: 0.25, green: 0.72, blue: 0.48, alpha: 1)
-        button.strokeColor = UIColor.white.withAlphaComponent(0.3)
-        button.position = CGPoint(x: size.width / 2, y: size.height / 2 - 52)
-        button.addChild(makeLabel(Strings.backToMenu, size: 16, color: .white))
-        overlay.addChild(button)
-        finalButton = button
-        notifyHaptic.notificationOccurred(.success)
-        audio.play("park")
+        model?.results = ResultsInfo(levelIndex: levelIndex, levelName: level.name, entries: entries, footer: footer,
+                                     newBest: newBest, bestTime: model?.bestTime(for: levelIndex))
     }
 
     private func showToast(_ text: String) {

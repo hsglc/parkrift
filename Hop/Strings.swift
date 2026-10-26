@@ -48,4 +48,17 @@ enum Strings {
     static var reverse: String { t("GERİ", "REV") }
     static var notParked: String { t("park etmedi", "not parked") }
     static var resetHint: String { t("↻ arabayı başa alır", "↻ puts your car back at the start") }
+
+    static var parkedTitle: String { t("PARK ETTİN!", "PARKED!") }
+    static var timeLabel: String { t("SÜRE", "TIME") }
+    static var bumpsLabel: String { t("ÇARPMA", "BUMPS") }
+    static var bestLabel: String { t("EN İYİ", "BEST") }
+    static var newBest: String { t("Yeni rekor!", "New best!") }
+    static var retry: String { t("Tekrar", "Retry") }
+    static var next: String { t("Sonraki", "Next") }
+    static var menu: String { t("Menü", "Menu") }
+    static var horn: String { t("KORNA", "HORN") }
+    static var players: String { t("Oyuncular", "Players") }
+    static var levelShort: String { t("Bölüm", "Level") }
+    static var starHint: String { t("Çarpmadan park et: 3 yıldız", "Park without bumps: 3 stars") }
 }
