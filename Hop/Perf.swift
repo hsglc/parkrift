@@ -13,143 +13,66 @@ enum PerfSettings {
     static let carDetailDistance: CGFloat = 38
 }
 
-// MARK: - Geometry merging
+// MARK: - Mesh building
 
-/// Bakes a node tree into a single geometry with one element per distinct material, so a whole
-/// car (or every building of a city) is drawn with a handful of draw calls instead of dozens.
-enum GeometryMerger {
-    /// `uvScale` lets callers bake texture repeats into the UVs (per node and element) so one shared
-    /// material can serve differently sized faces.
-    static func merge(_ root: SCNNode, uvScale: ((SCNNode, Int) -> SIMD2<Float>)? = nil) -> SCNGeometry? {
-        var positions: [SIMD3<Float>] = []
-        var normals: [SIMD3<Float>] = []
-        var uvs: [SIMD2<Float>] = []
-        var materials: [SCNMaterial] = []
-        var groups: [[UInt32]] = []
+/// Builds one geometry from boxes written vertex by vertex (SceneKit's own primitives do not expose
+/// their real vertex data), grouping triangles by material so a whole city of buildings costs one
+/// draw call per material.
+final class MeshBuilder {
+    private var positions: [SCNVector3] = []
+    private var normals: [SCNVector3] = []
+    private var uvs: [SIMD2<Float>] = []
+    private var materials: [SCNMaterial] = []
+    private var groups: [[UInt32]] = []
 
-        func visit(_ node: SCNNode, _ parent: simd_float4x4) {
-            let transform = parent * node.simdTransform
-            if let geometry = node.geometry {
-                let vertices = vectors(geometry, .vertex, components: 3)
-                if !vertices.isEmpty {
-                    let normalSource = vectors(geometry, .normal, components: 3)
-                    let texcoords = vectors(geometry, .texcoord, components: 2)
-                    let base = UInt32(positions.count)
-                    let linear = simd_float3x3(SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
-                                               SIMD3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
-                                               SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z))
-                    let normalMatrix = linear.inverse.transpose
-                    for index in 0..<vertices.count {
-                        let v = vertices[index]
-                        let p = transform * SIMD4<Float>(v[0], v[1], v[2], 1)
-                        positions.append(SIMD3(p.x, p.y, p.z))
-                        if index < normalSource.count {
-                            let n = normalSource[index]
-                            normals.append(simd_normalize(normalMatrix * SIMD3(n[0], n[1], n[2])))
-                        } else {
-                            normals.append(SIMD3(0, 1, 0))
-                        }
-                        uvs.append(index < texcoords.count ? SIMD2(texcoords[index][0], texcoords[index][1]) : .zero)
-                    }
-                    // Per-element UV scaling needs per-element vertices; remember which vertices each element uses
-                    for (elementIndex, element) in geometry.elements.enumerated() where element.primitiveType == .triangles {
-                        let material = geometry.materials.isEmpty ? SCNMaterial()
-                                                                  : geometry.materials[elementIndex % geometry.materials.count]
-                        var indices = elementIndices(element)
-                        if let uvScale = uvScale {
-                            let scale = uvScale(node, elementIndex)
-                            if scale != SIMD2(1, 1) {
-                                // Duplicate this element's vertices so the scale does not leak into other faces
-                                var remap: [UInt32: UInt32] = [:]
-                                for (k, i) in indices.enumerated() {
-                                    if let mapped = remap[i] {
-                                        indices[k] = mapped
-                                        continue
-                                    }
-                                    let source = Int(base + i)
-                                    positions.append(positions[source])
-                                    normals.append(normals[source])
-                                    uvs.append(uvs[source] * scale)
-                                    let newIndex = UInt32(positions.count - 1) - base
-                                    remap[i] = newIndex
-                                    indices[k] = newIndex
-                                }
-                            }
-                        }
-                        let shifted = indices.map { $0 + base }
-                        if let group = materials.firstIndex(where: { $0 === material }) {
-                            groups[group].append(contentsOf: shifted)
-                        } else {
-                            materials.append(material)
-                            groups.append(shifted)
-                        }
-                    }
-                }
-            }
-            for child in node.childNodes { visit(child, transform) }
+    private func group(for material: SCNMaterial) -> Int {
+        if let index = materials.firstIndex(where: { $0 === material }) { return index }
+        materials.append(material)
+        groups.append([])
+        return materials.count - 1
+    }
+
+    private func quad(_ corners: [SIMD3<Float>], normal: SIMD3<Float>, uvMax: SIMD2<Float>, material: SCNMaterial) {
+        let base = UInt32(positions.count)
+        let uv: [SIMD2<Float>] = [SIMD2(0, uvMax.y), SIMD2(uvMax.x, uvMax.y), SIMD2(uvMax.x, 0), SIMD2(0, 0)]
+        for (corner, coord) in zip(corners, uv) {
+            positions.append(SCNVector3(corner.x, corner.y, corner.z))
+            normals.append(SCNVector3(normal.x, normal.y, normal.z))
+            uvs.append(coord)
         }
-        visit(root, matrix_identity_float4x4)
-        guard !positions.isEmpty else { return nil }
+        let g = group(for: material)
+        groups[g] += [base, base + 1, base + 2, base, base + 2, base + 3]
+    }
 
-        let vertexSource = SCNGeometrySource(vertices: positions.map { SCNVector3($0.x, $0.y, $0.z) })
-        let normalSource = SCNGeometrySource(normals: normals.map { SCNVector3($0.x, $0.y, $0.z) })
+    /// Axis-aligned box (rotated about y by `angle`) standing on y = 0 at `center`.
+    /// `sideRepeats(width or length) -> uv repeats` sets the texture tiling on the walls.
+    func addBox(center: SIMD3<Float>, width: Float, height: Float, length: Float, angle: Float,
+                wall: SCNMaterial, roof: SCNMaterial, wallRepeats: (Float) -> SIMD2<Float>) {
+        let c = cos(angle), s = sin(angle)
+        func p(_ x: Float, _ y: Float, _ z: Float) -> SIMD3<Float> {
+            SIMD3(center.x + x * c + z * s, center.y + y, center.z - x * s + z * c)
+        }
+        func n(_ x: Float, _ z: Float) -> SIMD3<Float> { SIMD3(x * c + z * s, 0, -x * s + z * c) }
+        let w = width / 2, l = length / 2, h = height
+        // Walls: counter-clockwise seen from outside (bottom-left, bottom-right, top-right, top-left)
+        quad([p(-w, 0, l), p(w, 0, l), p(w, h, l), p(-w, h, l)], normal: n(0, 1), uvMax: wallRepeats(width), material: wall)
+        quad([p(w, 0, -l), p(-w, 0, -l), p(-w, h, -l), p(w, h, -l)], normal: n(0, -1), uvMax: wallRepeats(width), material: wall)
+        quad([p(w, 0, l), p(w, 0, -l), p(w, h, -l), p(w, h, l)], normal: n(1, 0), uvMax: wallRepeats(length), material: wall)
+        quad([p(-w, 0, -l), p(-w, 0, l), p(-w, h, l), p(-w, h, -l)], normal: n(-1, 0), uvMax: wallRepeats(length), material: wall)
+        quad([p(-w, h, l), p(w, h, l), p(w, h, -l), p(-w, h, -l)], normal: SIMD3(0, 1, 0), uvMax: SIMD2(1, 1), material: roof)
+    }
+
+    func build() -> SCNGeometry? {
+        guard !positions.isEmpty else { return nil }
         let uvData = uvs.withUnsafeBufferPointer { Data(buffer: $0) }
         let uvSource = SCNGeometrySource(data: uvData, semantic: .texcoord, vectorCount: uvs.count,
                                          usesFloatComponents: true, componentsPerVector: 2,
                                          bytesPerComponent: MemoryLayout<Float>.size, dataOffset: 0,
                                          dataStride: MemoryLayout<SIMD2<Float>>.stride)
-        let elements = groups.map { SCNGeometryElement(indices: $0, primitiveType: .triangles) }
-        let geometry = SCNGeometry(sources: [vertexSource, normalSource, uvSource], elements: elements)
+        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals), uvSource],
+                                   elements: groups.map { SCNGeometryElement(indices: $0, primitiveType: .triangles) })
         geometry.materials = materials
         return geometry
-    }
-
-    private static func vectors(_ geometry: SCNGeometry, _ semantic: SCNGeometrySource.Semantic, components: Int) -> [[Float]] {
-        guard let source = geometry.sources(for: semantic).first,
-              source.usesFloatComponents, source.bytesPerComponent == 4,
-              source.componentsPerVector >= components else { return [] }
-        var result: [[Float]] = []
-        result.reserveCapacity(source.vectorCount)
-        source.data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-            for index in 0..<source.vectorCount {
-                let offset = source.dataOffset + index * source.dataStride
-                var vector: [Float] = []
-                for component in 0..<components {
-                    vector.append(raw.loadUnaligned(fromByteOffset: offset + component * 4, as: Float.self))
-                }
-                result.append(vector)
-            }
-        }
-        return result
-    }
-
-    private static func elementIndices(_ element: SCNGeometryElement) -> [UInt32] {
-        // Built-in geometries (boxes, shapes) let several elements share one index buffer and pick
-        // their own slice with `primitiveRange`.
-        var start = 0
-        var count = element.primitiveCount * 3
-        let range = element.primitiveRange
-        if range.location != NSNotFound && range.length > 0 {
-            start = range.location * 3
-            count = range.length * 3
-        }
-        let available = element.data.count / max(element.bytesPerIndex, 1)
-        if start + count > available {
-            start = 0
-            count = min(count, available)
-        }
-        var result: [UInt32] = []
-        result.reserveCapacity(count)
-        element.data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-            for index in start..<(start + count) {
-                switch element.bytesPerIndex {
-                case 1: result.append(UInt32(raw.loadUnaligned(fromByteOffset: index, as: UInt8.self)))
-                case 2: result.append(UInt32(raw.loadUnaligned(fromByteOffset: index * 2, as: UInt16.self)))
-                default: result.append(raw.loadUnaligned(fromByteOffset: index * 4, as: UInt32.self))
-                }
-            }
-        }
-        return result
     }
 }
 
@@ -303,40 +226,3 @@ enum SceneStats {
     }
 }
 
-// MARK: - Merger diagnostics
-
-enum MergerDiagnostics {
-    static func describe(_ geometry: SCNGeometry) -> [String: Any] {
-        var sources: [[String: Any]] = []
-        for source in geometry.sources {
-            sources.append(["sem": source.semantic.rawValue, "n": source.vectorCount, "float": source.usesFloatComponents,
-                            "cpv": source.componentsPerVector, "bpc": source.bytesPerComponent,
-                            "off": source.dataOffset, "stride": source.dataStride, "bytes": source.data.count])
-        }
-        var elements: [[String: Any]] = []
-        for element in geometry.elements.prefix(4) {
-            let range = element.primitiveRange
-            elements.append(["type": element.primitiveType.rawValue, "count": element.primitiveCount,
-                             "bpi": element.bytesPerIndex, "bytes": element.data.count,
-                             "rangeLoc": range.location == NSNotFound ? -1 : range.location, "rangeLen": range.length])
-        }
-        let (low, high) = geometry.boundingBox
-        return ["sources": sources, "elements": elements, "elementCount": geometry.elements.count,
-                "bbox": [low.x, low.y, low.z, high.x, high.y, high.z].map { (Double($0) * 100).rounded() / 100 }]
-    }
-
-    static func report() -> [String: Any] {
-        let box = SCNBox(width: 2, height: 3, length: 4, chamferRadius: 0)
-        let chamfered = SCNBox(width: 2, height: 1, length: 1, chamferRadius: 0.1)
-        let path = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 2, height: 1))
-        let shape = SCNShape(path: path, extrusionDepth: 1)
-        shape.chamferRadius = 0.05
-        let holder = SCNNode()
-        let a = SCNNode(geometry: box)
-        a.position = SCNVector3(10, 0, 0)
-        holder.addChildNode(a)
-        let merged = GeometryMerger.merge(holder)
-        return ["box": describe(box), "chamferedBox": describe(chamfered), "shape": describe(shape),
-                "mergedBox": merged.map { describe($0) } ?? [:]]
-    }
-}
