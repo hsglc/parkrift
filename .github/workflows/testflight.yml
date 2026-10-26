@@ -3,6 +3,10 @@ name: TestFlight
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "server/**"
+      - ".github/workflows/server-check.yml"
+      - "README.md"
   workflow_dispatch:
 
 concurrency:
