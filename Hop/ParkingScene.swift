@@ -604,7 +604,7 @@ final class ParkingScene: SKScene {
     private func honk() {
         guard lastUpdate - lastHorn > 0.25 else { return }
         lastHorn = lastUpdate
-        audio.play("horn", volume: 0.9)
+        audio.play("horn", volume: 0.5)
         tickHaptic.impactOccurred(intensity: 0.9)
         hornButton.removeAction(forKey: "pulse")
         hornButton.setScale(1)
@@ -617,7 +617,7 @@ final class ParkingScene: SKScene {
     private func remoteHonk() {
         guard friendPresent else { return }
         let distance = hypot(remotePosition.x - carPosition.x, remotePosition.y - carPosition.y)
-        audio.play("horn", volume: Float(max(0.4, min(1.0, 1.1 - distance / 900))))
+        audio.play("horn", volume: Float(max(0.25, min(0.55, 0.6 - distance / 2000))))
         tickHaptic.impactOccurred(intensity: 0.5)
 
         var point = world?.project(remotePosition, height: 3.2) ?? CGPoint(x: -10000, y: 0)
