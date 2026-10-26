@@ -1,5 +1,6 @@
 import SwiftUI
 import SpriteKit
+import SceneKit
 
 @main
 struct ParkParkApp: App {
@@ -34,6 +35,7 @@ final class AppModel: ObservableObject {
     private(set) var online = false
     private(set) var mySlot = 0
     private(set) var scene: ParkingScene?
+    private(set) var world: World3D?
     let net = NetClient()
 
     var unlockedLevels: Int {
@@ -93,15 +95,18 @@ final class AppModel: ObservableObject {
         connecting = false
         friendHere = false
         scene = nil
+        world = nil
         screen = .menu
     }
 
     // MARK: Game
 
     private func beginGame(level: Int) {
+        let newWorld = World3D()
         let newScene = ParkingScene(size: CGSize(width: 852, height: 393))
         newScene.scaleMode = .resizeFill
-        newScene.configure(model: self, online: online, slot: mySlot, isHost: isHost || !online, level: level)
+        newScene.configure(model: self, world: newWorld, online: online, slot: mySlot, isHost: isHost || !online, level: level)
+        world = newWorld
         scene = newScene
         screen = .game
     }
@@ -184,14 +189,65 @@ struct RootView: View {
             case .lobby:
                 LobbyView()
             case .game:
-                if let scene = model.scene {
-                    SpriteView(scene: scene, preferredFramesPerSecond: 60, options: [.ignoresSiblingOrder])
-                        .ignoresSafeArea()
+                if let scene = model.scene, let world = model.world {
+                    ZStack {
+                        SceneKitView(world: world)
+                            .ignoresSafeArea()
+                        SpriteView(scene: scene, preferredFramesPerSecond: 60, options: [.allowsTransparency, .ignoresSiblingOrder])
+                            .ignoresSafeArea()
+                    }
                 }
             }
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .onAppear { AudioManager.shared.ensureRunning() }
+    }
+}
+
+/// SceneKit view that renders the 3D lot under the SpriteKit HUD.
+struct SceneKitView: UIViewRepresentable {
+    let world: World3D
+
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView(frame: .zero)
+        view.scene = world.scene
+        view.pointOfView = world.cameraNode
+        view.antialiasingMode = .multisampling4X
+        view.preferredFramesPerSecond = 60
+        view.rendersContinuously = true
+        view.isPlaying = true
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = UIColor(red: 0.30, green: 0.50, blue: 0.30, alpha: 1)
+        return view
+    }
+
+    func updateUIView(_ uiView: SCNView, context: Context) {
+        if uiView.scene !== world.scene {
+            uiView.scene = world.scene
+            uiView.pointOfView = world.cameraNode
+        }
+    }
+}
+
+/// Small round button that toggles music and sounds.
+private struct SoundToggle: View {
+    @State private var muted = AudioManager.shared.isMuted
+
+    var body: some View {
+        Button {
+            muted.toggle()
+            AudioManager.shared.isMuted = muted
+            AudioManager.shared.play("click")
+        } label: {
+            Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -392,6 +448,11 @@ struct MenuView: View {
                 .glassCard()
             }
             .padding(.horizontal, 16)
+        }
+        .overlay(alignment: .topTrailing) {
+            SoundToggle()
+                .padding(.top, 10)
+                .padding(.trailing, 14)
         }
     }
 }

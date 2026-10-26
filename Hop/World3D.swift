@@ -1,0 +1,467 @@
+import SceneKit
+import UIKit
+
+// MARK: - Materials
+
+private enum Mat {
+    static func pbr(_ color: UIColor, metal: CGFloat = 0, rough: CGFloat = 0.6) -> SCNMaterial {
+        let material = SCNMaterial()
+        material.lightingModel = .physicallyBased
+        material.diffuse.contents = color
+        material.metalness.contents = NSNumber(value: Double(metal))
+        material.roughness.contents = NSNumber(value: Double(rough))
+        return material
+    }
+
+    static func lambert(_ contents: Any) -> SCNMaterial {
+        let material = SCNMaterial()
+        material.lightingModel = .lambert
+        material.diffuse.contents = contents
+        return material
+    }
+
+    static func glow(_ color: UIColor) -> SCNMaterial {
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = color
+        material.emission.contents = color
+        return material
+    }
+}
+
+// MARK: - Car model
+
+/// Low-poly 3D car built from primitives. Faces +x in its local frame (meters).
+final class Car3D {
+    let node = SCNNode()
+    private let body = SCNNode()
+    private var steerPivots: [SCNNode] = []
+    private var spinNodes: [SCNNode] = []
+    private let brakeMaterial: SCNMaterial
+    private let reverseMaterial: SCNMaterial
+    private var spin: CGFloat = 0
+    private var lastPosition: CGPoint?
+
+    init(color: UIColor) {
+        let paint = Mat.pbr(color, metal: 0.15, rough: 0.55)
+        let trim = Mat.pbr(UIColor(white: 0.12, alpha: 1), metal: 0.1, rough: 0.7)
+        let glass = Mat.pbr(UIColor(red: 0.10, green: 0.14, blue: 0.22, alpha: 1), metal: 0.6, rough: 0.12)
+        let chrome = Mat.pbr(UIColor(white: 0.8, alpha: 1), metal: 0.9, rough: 0.25)
+        let rubber = Mat.pbr(UIColor(white: 0.07, alpha: 1), metal: 0, rough: 0.9)
+        brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
+        reverseMaterial = Mat.glow(UIColor(white: 0.35, alpha: 1))
+
+        func box(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ chamfer: CGFloat, _ material: SCNMaterial,
+                 at position: SCNVector3, parent: SCNNode) {
+            let geometry = SCNBox(width: w, height: h, length: l, chamferRadius: chamfer)
+            geometry.chamferSegmentCount = 1
+            geometry.materials = [material]
+            let child = SCNNode(geometry: geometry)
+            child.position = position
+            parent.addChildNode(child)
+        }
+
+        // Body
+        box(4.3, 0.62, 2.0, 0.26, paint, at: SCNVector3(0, 0.66, 0), parent: body)
+        box(2.3, 0.6, 1.78, 0.24, glass, at: SCNVector3(-0.25, 1.18, 0), parent: body)
+        box(1.8, 0.1, 1.62, 0.05, paint, at: SCNVector3(-0.35, 1.49, 0), parent: body)
+        box(0.16, 0.28, 2.02, 0.07, trim, at: SCNVector3(2.14, 0.48, 0), parent: body)
+        box(0.16, 0.28, 2.02, 0.07, trim, at: SCNVector3(-2.14, 0.48, 0), parent: body)
+        box(0.2, 0.13, 0.22, 0.04, paint, at: SCNVector3(0.72, 1.02, 1.08), parent: body)
+        box(0.2, 0.13, 0.22, 0.04, paint, at: SCNVector3(0.72, 1.02, -1.08), parent: body)
+        let headlight = Mat.glow(UIColor(red: 1.0, green: 0.97, blue: 0.85, alpha: 1))
+        for z: Float in [0.62, -0.62] {
+            box(0.06, 0.16, 0.46, 0.03, headlight, at: SCNVector3(2.17, 0.74, z), parent: body)
+            box(0.06, 0.16, 0.46, 0.03, brakeMaterial, at: SCNVector3(-2.17, 0.76, z), parent: body)
+        }
+        box(0.06, 0.1, 0.3, 0.02, reverseMaterial, at: SCNVector3(-2.17, 0.58, 0), parent: body)
+        node.addChildNode(body)
+
+        // Wheels: pivot (steering) -> spin (rolling) -> tyre
+        let tyre = SCNCylinder(radius: 0.37, height: 0.3)
+        tyre.radialSegmentCount = 8
+        tyre.materials = [rubber]
+        let hub = SCNCylinder(radius: 0.2, height: 0.32)
+        hub.radialSegmentCount = 6
+        hub.materials = [chrome]
+        let spots: [(Float, Float, Bool)] = [(1.35, 0.98, true), (1.35, -0.98, true), (-1.35, 0.98, false), (-1.35, -0.98, false)]
+        for spot in spots {
+            let pivot = SCNNode()
+            pivot.position = SCNVector3(spot.0, 0.37, spot.1)
+            let spinner = SCNNode()
+            let tyreNode = SCNNode(geometry: tyre)
+            tyreNode.eulerAngles.x = Float.pi / 2
+            let hubNode = SCNNode(geometry: hub)
+            hubNode.eulerAngles.x = Float.pi / 2
+            spinner.addChildNode(tyreNode)
+            spinner.addChildNode(hubNode)
+            pivot.addChildNode(spinner)
+            node.addChildNode(pivot)
+            spinNodes.append(spinner)
+            if spot.2 { steerPivots.append(pivot) }
+        }
+    }
+
+    func update(position: CGPoint, heading: CGFloat, steer: CGFloat,
+                pitch: CGFloat = 0, roll: CGFloat = 0, braking: Bool = false, reversing: Bool = false) {
+        node.position = World3D.vec(position)
+        node.eulerAngles = SCNVector3(0, Float(heading), 0)
+        for pivot in steerPivots { pivot.eulerAngles.y = Float(steer) }
+        body.eulerAngles = SCNVector3(Float(roll), 0, Float(pitch))
+
+        if let last = lastPosition {
+            let dx = position.x - last.x
+            let dy = position.y - last.y
+            let travelled = (dx * cos(heading) + dy * sin(heading)) / 10   // meters
+            spin -= travelled / 0.37
+            for spinner in spinNodes { spinner.eulerAngles.z = Float(spin) }
+        }
+        lastPosition = position
+
+        brakeMaterial.emission.contents = braking
+            ? UIColor(red: 1.0, green: 0.10, blue: 0.08, alpha: 1)
+            : UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1)
+        reverseMaterial.emission.contents = reversing ? UIColor.white : UIColor(white: 0.35, alpha: 1)
+    }
+
+    var isHidden: Bool {
+        get { node.isHidden }
+        set { node.isHidden = newValue }
+    }
+}
+
+// MARK: - World
+
+/// The 3D parking lot: tilted orthographic camera, sun with shadows, lot, scenery and level props.
+final class World3D {
+    let scene = SCNScene()
+    let cameraNode = SCNNode()
+    private let levelRoot = SCNNode()
+    private let fxRoot = SCNNode()
+    private(set) var arrowNode: SCNNode?
+    private var myNeon: SCNNode?
+    private let elevation: CGFloat = 58 * CGFloat.pi / 180
+    private var pointsPerMeter: CGFloat = 7
+    private var viewSize = CGSize(width: 852, height: 393)
+    private var target = SCNVector3Zero
+    private let skidGeometry: SCNPlane
+
+    /// World units (1000 x 500, y up) -> scene meters (x right, z towards the camera).
+    static func vec(_ point: CGPoint, y: CGFloat = 0) -> SCNVector3 {
+        SCNVector3(Float(point.x / 10 - 50), Float(y), Float(25 - point.y / 10))
+    }
+
+    init() {
+        skidGeometry = SCNPlane(width: 0.42, height: 0.36)
+        let skidMaterial = SCNMaterial()
+        skidMaterial.lightingModel = .constant
+        skidMaterial.diffuse.contents = UIColor(white: 0.03, alpha: 0.5)
+        skidMaterial.writesToDepthBuffer = false
+        skidGeometry.materials = [skidMaterial]
+
+        scene.background.contents = UIColor(red: 0.30, green: 0.50, blue: 0.30, alpha: 1)
+        scene.lightingEnvironment.contents = CarArt.skyImage()
+        scene.lightingEnvironment.intensity = 1.1
+        buildLights()
+        buildGround()
+        buildScenery()
+        scene.rootNode.addChildNode(levelRoot)
+        scene.rootNode.addChildNode(fxRoot)
+
+        let camera = SCNCamera()
+        camera.usesOrthographicProjection = true
+        camera.zNear = 1
+        camera.zFar = 400
+        cameraNode.camera = camera
+        scene.rootNode.addChildNode(cameraNode)
+        fit(size: viewSize, insets: .zero, topReserved: 50)
+    }
+
+    private func buildLights() {
+        let sun = SCNLight()
+        sun.type = .directional
+        sun.intensity = 1150
+        sun.color = UIColor(red: 1.0, green: 0.96, blue: 0.88, alpha: 1)
+        sun.castsShadow = true
+        sun.shadowMode = .forward
+        sun.shadowSampleCount = 16
+        sun.shadowRadius = 3
+        sun.shadowColor = UIColor.black.withAlphaComponent(0.5)
+        sun.shadowMapSize = CGSize(width: 2048, height: 2048)
+        sun.orthographicScale = 60
+        sun.automaticallyAdjustsShadowProjection = true
+        let sunNode = SCNNode()
+        sunNode.light = sun
+        sunNode.eulerAngles = SCNVector3(-0.95, 0.6, 0)
+        scene.rootNode.addChildNode(sunNode)
+
+        let ambient = SCNLight()
+        ambient.type = .ambient
+        ambient.intensity = 420
+        ambient.color = UIColor(red: 0.80, green: 0.86, blue: 1.0, alpha: 1)
+        let ambientNode = SCNNode()
+        ambientNode.light = ambient
+        scene.rootNode.addChildNode(ambientNode)
+    }
+
+    private func flat(_ plane: SCNPlane, y: Float) -> SCNNode {
+        let node = SCNNode(geometry: plane)
+        node.eulerAngles.x = -Float.pi / 2
+        node.position.y = y
+        return node
+    }
+
+    private func buildGround() {
+        // Grass all around
+        let grass = SCNPlane(width: 600, height: 600)
+        let grassMaterial = Mat.lambert(CarArt.grassImage(size: CGSize(width: 128, height: 128)))
+        grassMaterial.diffuse.wrapS = .repeat
+        grassMaterial.diffuse.wrapT = .repeat
+        grassMaterial.diffuse.contentsTransform = SCNMatrix4MakeScale(120, 120, 1)
+        grass.materials = [grassMaterial]
+        scene.rootNode.addChildNode(flat(grass, y: -0.06))
+
+        // Asphalt lot
+        let lot = SCNPlane(width: 100, height: 50)
+        let lotMaterial = Mat.lambert(CarArt.asphaltImage(size: Levels.world))
+        lot.materials = [lotMaterial]
+        scene.rootNode.addChildNode(flat(lot, y: 0))
+
+        // Raised curbs
+        let concrete = Mat.pbr(UIColor(red: 0.78, green: 0.78, blue: 0.80, alpha: 1), rough: 0.9)
+        let curbs: [(CGFloat, CGFloat, Float, Float)] = [(101, 1.0, 0, -24.6), (101, 1.0, 0, 24.6), (1.0, 50, -49.6, 0), (1.0, 50, 49.6, 0)]
+        for curb in curbs {
+            let geometry = SCNBox(width: curb.0, height: 0.22, length: curb.1, chamferRadius: 0.06)
+            geometry.materials = [concrete]
+            let node = SCNNode(geometry: geometry)
+            node.position = SCNVector3(curb.2, 0.11, curb.3)
+            scene.rootNode.addChildNode(node)
+        }
+    }
+
+    private func buildScenery() {
+        let trees = SCNNode()
+        let trunk = SCNCylinder(radius: 0.22, height: 1.6)
+        trunk.radialSegmentCount = 5
+        trunk.materials = [Mat.lambert(UIColor(red: 0.42, green: 0.28, blue: 0.17, alpha: 1))]
+        let crownA = SCNSphere(radius: 1.7)
+        crownA.segmentCount = 5
+        crownA.materials = [Mat.lambert(UIColor(red: 0.24, green: 0.55, blue: 0.27, alpha: 1))]
+        let crownB = SCNSphere(radius: 1.2)
+        crownB.segmentCount = 4
+        crownB.materials = [Mat.lambert(UIColor(red: 0.36, green: 0.66, blue: 0.32, alpha: 1))]
+
+        var generator = SystemRandomNumberGenerator()
+        var placed = 0
+        var attempts = 0
+        while placed < 46 && attempts < 600 {
+            attempts += 1
+            let x = Float.random(in: -72...72, using: &generator)
+            let z = Float.random(in: -46...42, using: &generator)
+            if abs(x) < 54 && abs(z) < 29 { continue }
+            let tree = SCNNode()
+            tree.position = SCNVector3(x, 0, z)
+            let scale = Float.random(in: 0.8...1.4, using: &generator)
+            tree.scale = SCNVector3(scale, scale, scale)
+            let trunkNode = SCNNode(geometry: trunk)
+            trunkNode.position.y = 0.8
+            tree.addChildNode(trunkNode)
+            let crown = SCNNode(geometry: crownA)
+            crown.position.y = 2.6
+            tree.addChildNode(crown)
+            let top = SCNNode(geometry: crownB)
+            top.position = SCNVector3(0.5, 3.6, -0.3)
+            tree.addChildNode(top)
+            trees.addChildNode(tree)
+            placed += 1
+        }
+        scene.rootNode.addChildNode(trees.flattenedClone())
+
+        // Light poles at the lot corners
+        let pole = SCNCylinder(radius: 0.12, height: 6)
+        pole.radialSegmentCount = 6
+        pole.materials = [Mat.pbr(UIColor(white: 0.35, alpha: 1), metal: 0.8, rough: 0.4)]
+        let lamp = SCNBox(width: 1.2, height: 0.2, length: 0.5, chamferRadius: 0.08)
+        lamp.materials = [Mat.glow(UIColor(red: 1.0, green: 0.95, blue: 0.8, alpha: 1))]
+        for corner: (Float, Float) in [(-51.5, -26.5), (51.5, -26.5), (-51.5, 26.5), (51.5, 26.5)] {
+            let poleNode = SCNNode(geometry: pole)
+            poleNode.position = SCNVector3(corner.0, 3, corner.1)
+            scene.rootNode.addChildNode(poleNode)
+            let lampNode = SCNNode(geometry: lamp)
+            lampNode.position = SCNVector3(corner.0 + (corner.0 > 0 ? -0.6 : 0.6), 6, corner.1)
+            scene.rootNode.addChildNode(lampNode)
+        }
+    }
+
+    // MARK: Camera
+
+    /// Fits the 100 x 50 m lot into the view below a reserved HUD strip.
+    func fit(size: CGSize, insets: UIEdgeInsets, topReserved: CGFloat) {
+        viewSize = size
+        let left = max(insets.left, 6)
+        let right = max(insets.right, 6)
+        let availableWidth = size.width - left - right
+        let bottom: CGFloat = 4
+        let availableHeight = size.height - topReserved - bottom
+        let projectedDepth = 50 * sin(elevation) + 2.0 * cos(elevation)
+        pointsPerMeter = min(availableWidth / 100, availableHeight / projectedDepth)
+
+        let desiredX = left + availableWidth / 2
+        let desiredY = bottom + availableHeight / 2
+        let targetX = (size.width / 2 - desiredX) / pointsPerMeter
+        let targetZ = (desiredY - size.height / 2) / (pointsPerMeter * sin(elevation))
+        target = SCNVector3(Float(targetX), 0, Float(targetZ))
+
+        cameraNode.camera?.orthographicScale = Double(size.height / 2 / pointsPerMeter)
+        let distance: CGFloat = 120
+        cameraNode.position = SCNVector3(target.x,
+                                         Float(sin(elevation) * distance),
+                                         target.z + Float(cos(elevation) * distance))
+        cameraNode.eulerAngles = SCNVector3(-Float(elevation), 0, 0)
+    }
+
+    /// Screen position (SpriteKit coordinates) of a world point at a height in meters.
+    func project(_ point: CGPoint, height: CGFloat = 0) -> CGPoint {
+        let p = World3D.vec(point, y: height)
+        let rx = CGFloat(p.x - target.x)
+        let ry = CGFloat(p.y - target.y)
+        let rz = CGFloat(p.z - target.z)
+        let sx = rx * pointsPerMeter + viewSize.width / 2
+        let sy = (ry * cos(elevation) - rz * sin(elevation)) * pointsPerMeter + viewSize.height / 2
+        return CGPoint(x: sx, y: sy)
+    }
+
+    var metersToPoints: CGFloat { pointsPerMeter }
+
+    func shake(strength: CGFloat) {
+        let s = Float(strength) * 0.08
+        cameraNode.runAction(.sequence([
+            .moveBy(x: CGFloat(s), y: 0, z: 0, duration: 0.03),
+            .moveBy(x: CGFloat(-2 * s), y: 0, z: 0, duration: 0.03),
+            .moveBy(x: CGFloat(s), y: 0, z: 0, duration: 0.03)
+        ]))
+    }
+
+    // MARK: Level
+
+    func makeCar(color: UIColor) -> Car3D {
+        let car = Car3D(color: color)
+        scene.rootNode.addChildNode(car.node)
+        return car
+    }
+
+    func load(level: LevelDef, spotSlots: [Int], mySlot: Int) {
+        levelRoot.childNodes.forEach { $0.removeFromParentNode() }
+        fxRoot.childNodes.forEach { $0.removeFromParentNode() }
+        myNeon = nil
+        arrowNode = nil
+
+        for spotSlot in spotSlots {
+            let def = level.spots[spotSlot]
+            let color = CarArt.playerColors[spotSlot]
+            let holder = SCNNode()
+            holder.position = World3D.vec(def.center, y: 0.02)
+            holder.eulerAngles.y = Float(def.angle)
+            let plane = SCNPlane(width: def.size.width / 10, height: def.size.height / 10)
+            let material = Mat.lambert(CarArt.spotImage(size: def.size, color: color))
+            material.isDoubleSided = true
+            plane.materials = [material]
+            holder.addChildNode(flat(plane, y: 0))
+
+            let outline = SCNPlane(width: def.size.width / 10 + 0.3, height: def.size.height / 10 + 0.3)
+            let outlineMaterial = SCNMaterial()
+            outlineMaterial.lightingModel = .constant
+            outlineMaterial.diffuse.contents = CarArt.spotOutlineImage(size: CGSize(width: def.size.width + 3, height: def.size.height + 3), color: color)
+            outlineMaterial.blendMode = .add
+            outlineMaterial.writesToDepthBuffer = false
+            outlineMaterial.isDoubleSided = true
+            outline.materials = [outlineMaterial]
+            let neon = flat(outline, y: 0.02)
+            holder.addChildNode(neon)
+            if spotSlot == mySlot {
+                neon.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.35, duration: 0.7), .fadeOpacity(to: 1.0, duration: 0.7)])))
+                myNeon = neon
+            } else {
+                neon.opacity = 0.5
+            }
+            levelRoot.addChildNode(holder)
+
+            if spotSlot == mySlot {
+                let pyramid = SCNPyramid(width: 1.3, height: 1.5, length: 1.3)
+                pyramid.materials = [Mat.glow(color.lighter(by: 0.2))]
+                let arrow = SCNNode(geometry: pyramid)
+                arrow.eulerAngles.x = Float.pi
+                let arrowHolder = SCNNode()
+                arrowHolder.position = World3D.vec(def.center, y: 4.6)
+                arrowHolder.addChildNode(arrow)
+                arrowHolder.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.8, z: 0, duration: 0.45),
+                                                                 .moveBy(x: 0, y: -0.8, z: 0, duration: 0.45)])))
+                arrowHolder.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 2.5)))
+                levelRoot.addChildNode(arrowHolder)
+                arrowNode = arrowHolder
+            }
+        }
+
+        let concrete = Mat.pbr(UIColor(red: 0.74, green: 0.74, blue: 0.77, alpha: 1), rough: 0.85)
+        let coneOrange = Mat.pbr(UIColor(red: 1.0, green: 0.42, blue: 0.08, alpha: 1), rough: 0.5)
+        let coneWhite = Mat.pbr(UIColor(white: 0.95, alpha: 1), rough: 0.5)
+        let coneBase = Mat.pbr(UIColor(white: 0.1, alpha: 1), rough: 0.8)
+
+        for obstacle in level.obstacles {
+            switch obstacle.kind {
+            case .car:
+                let car = Car3D(color: CarArt.parkedColors[obstacle.tint % CarArt.parkedColors.count])
+                car.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
+                levelRoot.addChildNode(car.node)
+            case .wall:
+                let geometry = SCNBox(width: obstacle.size.width / 10, height: 1.1,
+                                      length: obstacle.size.height / 10, chamferRadius: 0.06)
+                geometry.chamferSegmentCount = 1
+                let top = Mat.lambert(CarArt.wallImage(size: obstacle.size))
+                geometry.materials = [concrete, concrete, concrete, concrete, top, concrete]
+                let node = SCNNode(geometry: geometry)
+                node.position = World3D.vec(obstacle.center, y: 0.55)
+                node.eulerAngles.y = Float(obstacle.angle)
+                levelRoot.addChildNode(node)
+            case .cone:
+                let holder = SCNNode()
+                holder.position = World3D.vec(obstacle.center)
+                let base = SCNBox(width: 1.0, height: 0.08, length: 1.0, chamferRadius: 0.05)
+                base.materials = [coneBase]
+                let baseNode = SCNNode(geometry: base)
+                baseNode.position.y = 0.04
+                holder.addChildNode(baseNode)
+                let body = SCNCone(topRadius: 0.06, bottomRadius: 0.4, height: 1.0)
+                body.radialSegmentCount = 8
+                body.materials = [coneOrange]
+                let bodyNode = SCNNode(geometry: body)
+                bodyNode.position.y = 0.58
+                holder.addChildNode(bodyNode)
+                let band = SCNCone(topRadius: 0.2, bottomRadius: 0.26, height: 0.16)
+                band.radialSegmentCount = 8
+                band.materials = [coneWhite]
+                let bandNode = SCNNode(geometry: band)
+                bandNode.position.y = 0.66
+                holder.addChildNode(bandNode)
+                levelRoot.addChildNode(holder)
+            }
+        }
+    }
+
+    func markParked() {
+        arrowNode?.isHidden = true
+        myNeon?.removeAllActions()
+        myNeon?.opacity = 1
+        if let material = myNeon?.geometry?.firstMaterial {
+            material.multiply.contents = UIColor(red: 0.5, green: 1.0, blue: 0.6, alpha: 1)
+        }
+    }
+
+    func addSkid(at point: CGPoint) {
+        let mark = SCNNode(geometry: skidGeometry)
+        mark.eulerAngles.x = -Float.pi / 2
+        mark.position = World3D.vec(point, y: 0.015)
+        fxRoot.addChildNode(mark)
+        mark.runAction(.sequence([.wait(duration: 3), .fadeOut(duration: 2), .removeFromParentNode()]))
+    }
+}

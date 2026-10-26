@@ -1,13 +1,14 @@
 # ParkPark
 
-Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SpriteKit, yatay ekran). Repo adı ve bundle ID tarihsel olarak `hop`.
+Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 3D dünya + SpriteKit HUD, yatay ekran). Repo adı ve bundle ID tarihsel olarak `hop`.
 
 - **Oynanış:** Kuşbakışı otoparkta arabanı kendi renginde işaretli yere park et. Araba tamamen çizgilerin içinde, yönü hizalı ve durmuş halde 1 saniye kalınca park sayılır. 10 bölüm, kolaydan zora: düz park, dik park, araba arası, açılı park, etrafından dolaşma, paralel park, labirent, dar yerler, sıkı paralel, final garaj.
 - **Online:** "Oda Kur" 4 harfli kod üretir, arkadaşın "Odaya Katıl" ile kodu girer. İkiniz aynı haritada, herkesin kendi park yeri var; ikiniz de park edince bölüm geçilir, önce park eden 👑 alır. Süre ve çarpma sayısı karşılaştırılır.
 - **Tek başına:** Aynı bölümler, sadece kendi yerin.
 - **Kontroller:** Sol altta sürüklenerek çevrilen direksiyon (bırakınca ortalanır), sağ altta İLERİ ve GERİ pedalları. Otomatik vites (D/R): ters pedal önce fren yapar, durunca vites değişir; pedal bırakılınca araba yavaşça süzülür. Üstte ✕ menü, ↻ arabayı başa alır.
 - **Sürüş modeli:** Bisiklet modeli + hıza bağlı direksiyon açısı, azalan motor ivmesi, yuvarlanma ve hava direnci, frende/gazda/virajda gövde yatması, stop ve geri lambaları, fren izi, lastik dumanı, çarpınca seken geri tepme.
-- **Grafik:** Tüm dokular kodla çiziliyor (`Hop/CarArt.swift`): katmanlı arabalar (gölge, tekerlek, gövde, ışık), kaldırımlı asfalt, ağaçlar, vinyet, neon park yerleri, cam efektli HUD/menü.
+- **Grafik:** Low-poly 3D dünya (`Hop/World3D.swift`): eğik ortografik kamera, güneş ışığı ve gölgeler, ilkel geometrilerden arabalar (dönen ve direksiyonla dönen tekerlekler, stop/geri lambaları, gövde yatması), duvarlar, dubalar, ağaçlar, direkler. Dokular kodla çiziliyor (`Hop/CarArt.swift`). HUD ve kontroller 2D (SpriteKit) katmanda.
+- **Ses:** Özgün, kodla sentezlenmiş döngü müziği ve efektler (`Hop/Audio`): hıza göre perdesi değişen motor sesi, çarpma, park, geri sayım. Menüde ve oyunda ses kapatma düğmesi. Ses kategorisi `ambient`: telefon sessizdeyse ses çıkmaz.
 - **Dil:** Cihaz Türkçe ise Türkçe, değilse İngilizce.
 - **Gereksinimler (Ekim 2026):** Xcode 26 / iOS 26 SDK ile derlenir (`macos-15` runner + Xcode 26.x), minimum iOS 17, privacy manifest (UserDefaults · `CA92.1`), `ITSAppUsesNonExemptEncryption = NO` (yalnızca sistemin standart TLS'i kullanılıyor), tek boyutlu 1024px ikon.
 
@@ -21,6 +22,9 @@ Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SpriteKit
 | `Hop/ParkingScene.swift` | Oyun: araba fiziği, çarpışma, park algılama, kontroller, bölüm akışı |
 | `Hop/Levels.swift` | 10 bölümün haritaları (1000×500 dünya) |
 | `Hop/Geometry.swift` | Döndürülmüş kutu (OBB) çarpışma hesapları |
+| `Hop/World3D.swift` | 3D sahne, kamera, araba modeli, bölüm nesneleri |
+| `Hop/AudioManager.swift` | Müzik, motor sesi ve efektler (AVAudioEngine) |
+| `Hop/Audio/` | Sentezlenmiş müzik ve ses dosyaları |
 | `Hop/CarArt.swift` | Kodla çizilen dokular |
 | `Hop/NetClient.swift` | Oda sunucusuna WebSocket bağlantısı |
 | `Hop/Strings.swift` | TR/EN metinler |

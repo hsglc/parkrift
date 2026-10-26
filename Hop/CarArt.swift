@@ -210,7 +210,11 @@ enum CarArt {
     // MARK: Ground and scenery
 
     static func asphalt(size: CGSize) -> SKTexture {
-        render(size, scale: 2) { context, s in
+        SKTexture(image: asphaltImage(size: size))
+    }
+
+    static func asphaltImage(size: CGSize) -> UIImage {
+        image(size, scale: 2) { context, s in
             let full = CGRect(origin: .zero, size: s)
             fill(context, path: CGPath(rect: full, transform: nil),
                  colors: [UIColor(red: 0.27, green: 0.29, blue: 0.33, alpha: 1), UIColor(red: 0.22, green: 0.24, blue: 0.28, alpha: 1)],
@@ -297,7 +301,11 @@ enum CarArt {
     }
 
     static func spot(size: CGSize, color: UIColor) -> SKTexture {
-        render(size) { context, s in
+        SKTexture(image: spotImage(size: size, color: color))
+    }
+
+    static func spotImage(size: CGSize, color: UIColor) -> UIImage {
+        image(size) { context, s in
             let rect = CGRect(origin: .zero, size: s)
             fill(context, path: CGPath(rect: rect, transform: nil),
                  colors: [color.withAlphaComponent(0.10), color.withAlphaComponent(0.30)],
@@ -318,7 +326,11 @@ enum CarArt {
 
     /// Concrete block seen from above: light top face plus a darker visible side.
     static func wall(size: CGSize) -> SKTexture {
-        render(size) { context, s in
+        SKTexture(image: wallImage(size: size))
+    }
+
+    static func wallImage(size: CGSize) -> UIImage {
+        image(size) { context, s in
             let rect = CGRect(origin: .zero, size: s)
             let side: CGFloat = min(5, min(s.width, s.height) * 0.3)
             let sideRect = CGRect(x: 0, y: s.height - side, width: s.width, height: side)
@@ -422,7 +434,11 @@ enum CarArt {
     }
 
     static func grass(size: CGSize) -> SKTexture {
-        render(size, scale: 1) { context, s in
+        SKTexture(image: grassImage(size: size))
+    }
+
+    static func grassImage(size: CGSize) -> UIImage {
+        image(size, scale: 1) { context, s in
             fill(context, path: CGPath(rect: CGRect(origin: .zero, size: s), transform: nil),
                  colors: [UIColor(red: 0.33, green: 0.56, blue: 0.32, alpha: 1), UIColor(red: 0.24, green: 0.45, blue: 0.27, alpha: 1)],
                  from: .zero, to: CGPoint(x: s.width, y: s.height))
@@ -567,6 +583,32 @@ enum CarArt {
             context.setStrokeColor(UIColor.white.withAlphaComponent(0.35).cgColor)
             context.setLineWidth(1.5)
             context.strokePath()
+        }
+    }
+    // MARK: 3D surface helpers
+
+    /// Glowing outline for a parking bay (drawn additively over the bay).
+    static func spotOutlineImage(size: CGSize, color: UIColor) -> UIImage {
+        image(size) { context, s in
+            let rect = CGRect(origin: .zero, size: s)
+            context.setStrokeColor(color.lighter(by: 0.25).withAlphaComponent(0.35).cgColor)
+            context.setLineWidth(10)
+            context.stroke(rect.insetBy(dx: 5, dy: 5))
+            context.setStrokeColor(color.lighter(by: 0.35).cgColor)
+            context.setLineWidth(3.5)
+            context.stroke(rect.insetBy(dx: 4, dy: 4))
+        }
+    }
+
+    /// Soft sky gradient used as the image-based lighting environment.
+    static func skyImage() -> UIImage {
+        image(CGSize(width: 128, height: 64), scale: 1) { context, s in
+            fill(context, path: CGPath(rect: CGRect(origin: .zero, size: s), transform: nil),
+                 colors: [UIColor(red: 0.52, green: 0.72, blue: 0.98, alpha: 1),
+                          UIColor(red: 0.90, green: 0.94, blue: 1.00, alpha: 1),
+                          UIColor(red: 0.62, green: 0.66, blue: 0.62, alpha: 1)],
+                 locations: [0, 0.5, 1],
+                 from: .zero, to: CGPoint(x: 0, y: s.height))
         }
     }
 }
