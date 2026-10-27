@@ -19,74 +19,337 @@ struct MenuBackdrop: View {
 // MARK: - Menu
 
 struct MenuView: View {
+    enum Page: Equatable {
+        case home
+        case levels
+        case city
+        case online
+    }
+
     @EnvironmentObject var model: AppModel
+    @State private var page: Page = .home
     @State private var showJoin = false
+
+    private let pageAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86)
 
     var body: some View {
         ZStack {
             MenuBackdrop()
-            HStack(alignment: .center, spacing: 18) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Logo(size: 50)
-                    Text(Strings.tagline)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.78))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 330, alignment: .leading)
-                    LevelPicker()
-                        .padding(.top, 4)
-                }
-
-                VStack(spacing: 10) {
-                    if showJoin {
-                        JoinPanel(showJoin: $showJoin)
+            VStack(spacing: 10) {
+                topBar
+                ZStack {
+                    if page == .home {
+                        home
+                            .transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity),
+                                                    removal: .move(edge: .leading).combined(with: .opacity)))
                     } else {
-                        Button { model.playSolo() } label: {
-                            Label(Strings.playSolo, systemImage: "car.fill")
-                        }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 46, fontSize: 18))
-                        Button { model.playCity() } label: {
-                            Label(Strings.cityDrive, systemImage: "building.2.fill")
-                        }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 44, fontSize: 17))
-                        Button { model.playRace() } label: {
-                            Label(Strings.carRace, systemImage: "flag.checkered")
-                        }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 44, fontSize: 17))
-                        Button { model.createRoom() } label: {
-                            Label(Strings.createRoom, systemImage: "person.2.fill")
-                        }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.blueButton, height: 44, fontSize: 17))
-                        Button { withAnimation(.spring(response: 0.3)) { showJoin = true } } label: {
-                            Label(Strings.joinRoom, systemImage: "keyboard.fill")
-                        }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.green, height: 44, fontSize: 17))
-                    }
-                    if model.connecting {
-                        HStack(spacing: 8) {
-                            ProgressView().tint(.white)
-                            Text(Strings.connecting)
-                        }
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.8))
-                    }
-                    if let error = model.errorText {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.55))
-                            .fixedSize(horizontal: false, vertical: true)
+                        detail
+                            .id(page)
+                            .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
+                                                    removal: .move(edge: .trailing).combined(with: .opacity)))
                     }
                 }
-                .frame(width: 230)
-                .panel()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                statusLine
             }
             .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
         }
-        .overlay(alignment: .topTrailing) {
+        .onChange(of: model.errorText) { _, error in
+            if error != nil { withAnimation(pageAnimation) { page = .online } }
+        }
+    }
+
+    private func go(_ target: Page) {
+        AudioManager.shared.play("click", volume: 0.6)
+        withAnimation(pageAnimation) {
+            page = target
+            if target != .online { showJoin = false }
+        }
+    }
+
+    // MARK: Top bar
+
+    private var totalStars: Int {
+        (0..<Levels.all.count).reduce(0) { $0 + model.stars(for: $1) }
+    }
+
+    private var pageTitle: String {
+        switch page {
+        case .home: return ""
+        case .levels: return Strings.modeSoloTitle
+        case .city: return Strings.modeCityTitle
+        case .online: return Strings.modeOnlineTitle
+        }
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .leading) {
+                if page == .home {
+                    HStack(alignment: .lastTextBaseline, spacing: 12) {
+                        Logo(size: 34)
+                        Text(Strings.tagline)
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.65))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .transition(.opacity)
+                } else {
+                    HStack(spacing: 12) {
+                        RoundIconButton(systemImage: "chevron.left") { go(.home) }
+                        Text(pageTitle)
+                            .font(.system(size: 26, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 0, y: 2)
+                    }
+                    .transition(.opacity)
+                }
+            }
+            Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: "star.fill").foregroundStyle(Palette.gold)
+                Text("\(totalStars)")
+                    .monospacedDigit()
+            }
+            .font(.system(size: 15, weight: .black, design: .rounded))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .frame(height: 42)
+            .background(Capsule().fill(Palette.ink.opacity(0.75)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
             SoundToggle()
-                .padding(.top, 12)
-                .padding(.trailing, 16)
         }
+        .frame(height: 46)
+    }
+
+    // MARK: Home: three mode cards
+
+    private var home: some View {
+        HStack(spacing: 14) {
+            ModeCard(title: Strings.modeSoloTitle, subtitle: Strings.modeSoloSub, icon: "parkingsign.circle.fill",
+                     chips: [Strings.levelsCount(Levels.all.count), "★ \(totalStars)/\(Levels.all.count * 3)"],
+                     colors: [Color(red: 1.0, green: 0.55, blue: 0.28), Color(red: 0.86, green: 0.22, blue: 0.22)]) { go(.levels) }
+            ModeCard(title: Strings.modeCityTitle, subtitle: Strings.modeCitySub, icon: "building.2.crop.circle.fill",
+                     chips: [Strings.carRace, Strings.parkRace],
+                     colors: [Color(red: 0.55, green: 0.42, blue: 1.0), Color(red: 0.26, green: 0.20, blue: 0.72)]) { go(.city) }
+            ModeCard(title: Strings.modeOnlineTitle, subtitle: Strings.modeOnlineSub, icon: "person.2.circle.fill",
+                     chips: [Strings.twoPlayersOnline],
+                     colors: [Color(red: 0.25, green: 0.78, blue: 0.62), Color(red: 0.08, green: 0.45, blue: 0.52)]) { go(.online) }
+        }
+    }
+
+    // MARK: Detail pages
+
+    @ViewBuilder
+    private var detail: some View {
+        switch page {
+        case .home:
+            EmptyView()
+        case .levels:
+            levelsPage
+        case .city:
+            HStack(spacing: 14) {
+                OptionCard(title: Strings.carRace, subtitle: Strings.carRaceInfo, icon: "flag.checkered",
+                           tint: Color(red: 1.0, green: 0.78, blue: 0.2), buttonTitle: Strings.play,
+                           buttonColors: Palette.orange) { model.playRace() }
+                OptionCard(title: Strings.parkRace, subtitle: Strings.cityRaceInfo, icon: "parkingsign",
+                           tint: Color(red: 0.5, green: 0.75, blue: 1.0), buttonTitle: Strings.play,
+                           buttonColors: Palette.blueButton) { model.playCity() }
+            }
+        case .online:
+            HStack(spacing: 14) {
+                OptionCard(title: Strings.createRoom, subtitle: Strings.createRoomSub, icon: "plus.circle.fill",
+                           tint: Color(red: 0.5, green: 0.75, blue: 1.0), buttonTitle: Strings.createRoom,
+                           buttonColors: Palette.blueButton) { model.createRoom() }
+                ZStack {
+                    if showJoin {
+                        JoinPanel(showJoin: $showJoin)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .panel()
+                            .transition(.scale(scale: 0.92).combined(with: .opacity))
+                    } else {
+                        OptionCard(title: Strings.joinRoom, subtitle: Strings.joinRoomSub, icon: "keyboard.fill",
+                                   tint: Color(red: 0.45, green: 0.95, blue: 0.65), buttonTitle: Strings.enterCode,
+                                   buttonColors: Palette.green) {
+                            withAnimation(pageAnimation) { showJoin = true }
+                        }
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                    }
+                }
+            }
+        }
+    }
+
+    private var levelsPage: some View {
+        let index = model.selectedLevel
+        let level = Levels.all[min(index, Levels.all.count - 1)]
+        return HStack(spacing: 14) {
+            LevelPicker()
+            VStack(alignment: .leading, spacing: 10) {
+                Text(Strings.level(index + 1, of: Levels.all.count).uppercased())
+                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .tracking(1.2)
+                Text(level.name)
+                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .id(index)
+                    .transition(.opacity)
+                StarsRow(filled: model.stars(for: index), size: 20, spacing: 4)
+                HStack(spacing: 6) {
+                    Image(systemName: "stopwatch.fill").foregroundStyle(Palette.gold)
+                    Text(Strings.bestLabel + ": " + (model.bestTime(for: index).map { String(format: "%.1f s", $0) } ?? "–"))
+                }
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.8))
+                Spacer(minLength: 0)
+                Button { model.playSolo() } label: {
+                    Label(Strings.play, systemImage: "play.fill")
+                }
+                .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 52, fontSize: 20))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .panel()
+            .animation(.easeOut(duration: 0.2), value: index)
+        }
+    }
+
+    @ViewBuilder
+    private var statusLine: some View {
+        if model.connecting {
+            HStack(spacing: 8) {
+                ProgressView().tint(.white)
+                Text(Strings.connecting)
+            }
+            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.8))
+        } else if let error = model.errorText {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.55))
+        }
+    }
+}
+
+/// Big tappable mode card on the home page.
+private struct ModeCard: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let chips: [String]
+    let colors: [Color]
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .topLeading) {
+                // Large faded icon as decoration
+                Image(systemName: icon)
+                    .font(.system(size: 130, weight: .black))
+                    .foregroundStyle(.white.opacity(0.12))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .offset(x: 26, y: 26)
+                VStack(alignment: .leading, spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 26, weight: .black))
+                        .foregroundStyle(.white)
+                        .frame(width: 50, height: 50)
+                        .background(Circle().fill(Color.white.opacity(0.2)))
+                    Spacer(minLength: 0)
+                    Text(title)
+                        .font(.system(size: 24, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2)
+                    HStack(spacing: 6) {
+                        ForEach(chips, id: \.self) { chip in
+                            Text(chip)
+                                .font(.system(size: 10, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.black.opacity(0.22)))
+                        }
+                    }
+                    HStack {
+                        Spacer()
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+                .padding(16)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0.05)],
+                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1.2)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .shadow(color: (colors.last ?? .black).opacity(0.5), radius: 18, y: 10)
+        }
+        .buttonStyle(PressableCardStyle())
+    }
+}
+
+/// Option inside a mode page: icon, title, description and a play button.
+private struct OptionCard: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let tint: Color
+    let buttonTitle: String
+    let buttonColors: Palette.ButtonColors
+    let action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .black))
+                .foregroundStyle(tint)
+                .frame(width: 48, height: 48)
+                .background(Circle().fill(tint.opacity(0.16)))
+            Text(title)
+                .font(.system(size: 22, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+            Text(subtitle)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(action: action) {
+                Label(buttonTitle, systemImage: "play.fill")
+            }
+            .buttonStyle(ChunkyButtonStyle(colors: buttonColors, height: 48, fontSize: 18))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .panel()
+    }
+}
+
+/// Cards shrink slightly while pressed.
+private struct PressableCardStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .brightness(configuration.isPressed ? -0.04 : 0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 

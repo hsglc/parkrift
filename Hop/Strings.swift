@@ -105,4 +105,16 @@ enum Strings {
                      "Your friend hears your horn.",
                      "To park, slow down and hold still for a second."]
     }
+    static var modeSoloTitle: String { t("Park Ustası", "Park Master") }
+    static var modeSoloSub: String { t("Tek başına 10 bölüm, 3 yıldızı topla", "10 solo levels, collect all the stars") }
+    static var modeCityTitle: String { t("Şehir", "City") }
+    static var modeCitySub: String { t("Trafikte yarış ya da en hızlı park et", "Race through traffic or park fastest") }
+    static var modeOnlineTitle: String { t("Arkadaşınla", "With a Friend") }
+    static var modeOnlineSub: String { t("Oda kur, kodu paylaş, birlikte yarışın", "Make a room, share the code, race together") }
+    static func levelsCount(_ n: Int) -> String { t("\(n) bölüm", "\(n) levels") }
+    static var twoPlayersOnline: String { t("2 oyuncu · online", "2 players · online") }
+    static var play: String { t("Oyna", "Play") }
+    static var enterCode: String { t("Kodu gir", "Enter code") }
+    static var createRoomSub: String { t("Bir oda kodu oluştur ve arkadaşına gönder.", "Create a room code and send it to your friend.") }
+    static var joinRoomSub: String { t("Arkadaşının verdiği 4 harfli kodu yaz.", "Type the 4-letter code your friend gave you.") }
 }

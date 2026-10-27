@@ -285,8 +285,10 @@ struct RootView: View {
             switch model.screen {
             case .menu:
                 MenuView()
+                    .transition(.opacity.combined(with: .scale(scale: 1.04)))
             case .lobby:
                 LobbyView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
             case .game:
                 ZStack {
                 if let scene = model.scene, let world = model.world {
@@ -307,8 +309,10 @@ struct RootView: View {
                         .transition(.opacity)
                 }
                 }
+                .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.35), value: model.screen)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .onAppear {
