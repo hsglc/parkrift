@@ -125,6 +125,17 @@ enum CarArt {
         })
     }
 
+    /// The street tile turned 90° so the lane lines run along V (for north-south streets).
+    static func roadImageVertical() -> UIImage {
+        let source = roadImage()
+        return image(CGSize(width: source.size.height, height: source.size.width), scale: 1) { context, s in
+            context.translateBy(x: s.width / 2, y: s.height / 2)
+            context.rotate(by: CGFloat.pi / 2)
+            source.draw(in: CGRect(x: -source.size.width / 2, y: -source.size.height / 2,
+                                   width: source.size.width, height: source.size.height))
+        }
+    }
+
     static func image(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false

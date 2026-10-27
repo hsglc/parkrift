@@ -1399,14 +1399,20 @@ final class World3D {
             node.position.z = center.z
             ground.addChildNode(node)
         }
+        // North-south streets: a plane laid out along z with a texture drawn along V
+        // (rotating the east-west plane left these streets invisible).
+        let verticalTexture = CarArt.roadImageVertical()
         for x in city.xs {
-            let plane = SCNPlane(width: world.height / 10, height: roadWidth / 10)
-            plane.materials = [roadMaterial(length: world.height)]
-            let holder = SCNNode()
-            holder.position = World3D.vec(CGPoint(x: x, y: world.height / 2), y: 0.02)
-            holder.eulerAngles.y = Float.pi / 2
-            holder.addChildNode(flat(plane, y: 0))
-            ground.addChildNode(holder)
+            let plane = SCNPlane(width: roadWidth / 10, height: world.height / 10)
+            let material = Mat.lambert(verticalTexture)
+            material.diffuse.wrapT = .repeat
+            material.diffuse.contentsTransform = SCNMatrix4MakeScale(1, Float(world.height / roadWidth), 1)
+            plane.materials = [material]
+            let node = flat(plane, y: 0.02)
+            let center = World3D.vec(CGPoint(x: x, y: world.height / 2))
+            node.position.x = center.x
+            node.position.z = center.z
+            ground.addChildNode(node)
         }
         let junction = SCNPlane(width: roadWidth / 10, height: roadWidth / 10)
         junction.materials = [Mat.lambert(UIColor(red: 0.27, green: 0.28, blue: 0.31, alpha: 1))]
