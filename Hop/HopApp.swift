@@ -84,9 +84,13 @@ final class AppModel: ObservableObject {
     init() {
         World3D.prewarmCars()
         CarModels.prewarmRetroTextures()
+        PedestrianModels.preload()
         // Car models load in the background; then the garage studio is built while the menu is idle
         CarModels.preload { [weak self] in
             GarageStage.prewarm(using: self?.menuWorld.renderer)
+        }
+        NotificationCenter.default.addObserver(forName: .languageChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.objectWillChange.send() }
         }
         net.onMessage = { [weak self] message in self?.handle(message) }
         net.onClose = { [weak self] _ in self?.connectionClosed() }
@@ -201,6 +205,23 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Fades the loading screen in over the running game, then runs `build` under it (the scene
+    /// hides it again through `sceneReady` once the new level is warmed up).
+    func showCurtain(level: Int, then build: @escaping () -> Void) {
+        loadingLevel = level
+        // Between rounds the curtain needs less time than at the first start
+        loadingStartedAt = Date().addingTimeInterval(-(AppModel.minimumLoading - 1.0))
+        withAnimation(.easeIn(duration: 0.25)) {
+            results = nil
+            loading = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self = self, self.screen == .game else { return }
+            self.world?.setRenderingPaused(false)
+            build()
+        }
+    }
+
     /// The loading screen always stays at least this long, whatever the mode.
     static let minimumLoading: TimeInterval = 2.0
     private var loadingStartedAt = Date()
@@ -256,13 +277,10 @@ final class AppModel: ObservableObject {
     }
 
     func retryLevel() {
-        results = nil
-        world?.setRenderingPaused(false)
         scene?.retryLevel()
     }
 
     func nextLevel() {
-        results = nil
         scene?.nextLevel()
     }
 
@@ -309,7 +327,7 @@ final class AppModel: ObservableObject {
         case "lvl":
             let level = message["n"] as? Int ?? 0
             if screen == .game, let scene = scene {
-                scene.load(level: level)
+                scene.loadBehindCurtain(level: level)
             } else {
                 beginGame(level: level)
             }
@@ -364,6 +382,8 @@ struct RootView: View {
                                 .transition(.opacity)
                         }
                     }
+                    // The results card fades in and out instead of popping
+                    .animation(.easeOut(duration: 0.3), value: model.results?.id)
                 }
                 if model.loading {
                     LoadingView(level: model.loadingLevel)

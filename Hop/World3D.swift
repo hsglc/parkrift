@@ -1803,13 +1803,25 @@ final class World3D {
         return result.map { (position: $0.0, toward: $0.1) }
     }
 
+    /// The traffic light model, read once (in the background at launch, see CarModels.preload).
+    static let signalTemplate: SCNNode? = CarModels.load("signal")
+
+    /// Lens centers of the traffic light model (game axes, from tools/convert_meshy_props.py),
+    /// just in front of the glass: red, amber, green.
+    static let signalLenses: [SIMD3<Float>] = [SIMD3(0.075, 4.248, 0), SIMD3(0.075, 3.896, 0), SIMD3(0.075, 3.522, 0)]
+    /// The lit lens: a thin glowing disc (turned to face along the light's x).
+    static let signalLensDisc: SCNGeometry = {
+        let disc = SCNCylinder(radius: 0.125, height: 0.02)
+        disc.radialSegmentCount = 16
+        return disc
+    }()
+
     private func buildStreetFurniture(_ city: CityMap, world: CGSize) {
         cityMap = city
         signalHeads.removeAll()
         let mesh = MeshBuilder()
         let poleMaterial = Mat.pbr(UIColor(white: 0.22, alpha: 1), metal: 0.6, rough: 0.45)
         let headMaterial = Mat.pbr(UIColor(white: 0.08, alpha: 1), metal: 0.2, rough: 0.6)
-        let lensMaterial = Mat.pbr(UIColor(white: 0.16, alpha: 1), metal: 0.1, rough: 0.3)
         let curbMaterial = Mat.pbr(UIColor(white: 0.82, alpha: 1), rough: 0.85)
         let lampGlow = Mat.glow(UIColor(red: 1.0, green: 0.92, blue: 0.75, alpha: 1))
         lampGlow.diffuse.intensity = 1.4
@@ -1818,8 +1830,7 @@ final class World3D {
             mesh.addBox(center: SIMD3(c.x, c.y, c.z), width: w, height: h, length: l, angle: 0, wall: m, roof: m,
                         wallRepeats: { _ in SIMD2(1, 1) })
         }
-        let lensVertical = SCNBox(width: 0.06, height: 0.3, length: 0.3, chamferRadius: 0.03)
-        let lensSideways = SCNBox(width: 0.3, height: 0.3, length: 0.06, chamferRadius: 0.03)
+        let signalModel = World3D.signalTemplate
 
         for j in 0..<city.rows {
             for i in 0..<city.cols {
@@ -1832,19 +1843,36 @@ final class World3D {
                     (CGPoint(x: 112, y: -112), SIMD2(0, 1), false, j > 0),            // faces south: northbound
                     (CGPoint(x: -112, y: 112), SIMD2(0, -1), false, j < city.rows - 1) // faces north: southbound
                 ]
+                // The lights of one intersection are merged (one draw call, still culled when off screen)
+                let signalHolder = SCNNode()
+                defer {
+                    if !signalHolder.childNodes.isEmpty {
+                        let merged = signalHolder.flattenedClone()
+                        merged.castsShadow = false
+                        levelRoot.addChildNode(merged)
+                    }
+                }
                 for (offset, facing, horizontal, exists) in corners where exists {
                     let base = World3D.vec(CGPoint(x: center.x + offset.x, y: center.y + offset.y))
-                    box(base, 0.16, 4.3, 0.16, poleMaterial)
-                    box(SCNVector3(base.x, 3.35, base.z), 0.42, 1.25, 0.42, headMaterial)
-                    var slots: [SCNVector3] = []
-                    for (k, height) in [Float(4.33), 3.97, 3.61].enumerated() {
-                        let lens = SCNVector3(base.x + facing.x * 0.22, height, base.z + facing.y * 0.22)
-                        box(SCNVector3(lens.x, height - 0.15, lens.z), facing.x != 0 ? 0.05 : 0.29, 0.29, facing.x != 0 ? 0.29 : 0.05, lensMaterial)
-                        slots.append(SCNVector3(base.x + facing.x * 0.245, height, base.z + facing.y * 0.245))
-                        _ = k
+                    // Realistic traffic light model (Meshy AI, lenses face +x), turned to face traffic
+                    let yaw = atan2(-facing.y, facing.x)
+                    func place(_ local: SIMD3<Float>) -> SCNVector3 {
+                        let c = cos(yaw), sn = sin(yaw)
+                        return SCNVector3(base.x + local.x * c + local.z * sn, local.y, base.z - local.x * sn + local.z * c)
                     }
+                    if let model = signalModel {
+                        let copy = model.clone()
+                        copy.position = SCNVector3(base.x, 0, base.z)
+                        copy.eulerAngles.y = yaw
+                        signalHolder.addChildNode(copy)
+                    } else {
+                        box(base, 0.16, 4.3, 0.16, poleMaterial)
+                        box(SCNVector3(base.x, 3.35, base.z), 0.42, 1.25, 0.42, headMaterial)
+                    }
+                    let slots = World3D.signalLenses.map { place($0) }
                     // Own geometry copy: each lamp gets its own color
-                    let lamp = SCNNode(geometry: (facing.x != 0 ? lensVertical : lensSideways).copy() as? SCNGeometry)
+                    let lamp = SCNNode(geometry: World3D.signalLensDisc.copy() as? SCNGeometry)
+                    lamp.eulerAngles = SCNVector3(0, yaw, Float.pi / 2)
                     lamp.castsShadow = false
                     levelRoot.addChildNode(lamp)
                     signalHeads.append((node, horizontal, lamp, slots, -1))
@@ -1873,6 +1901,7 @@ final class World3D {
         for point in World3D.streetLampPoints(city: city, world: world) {
             lamp(at: point.position, toward: point.toward)
         }
+
 
         // Raised curbs around every block
         for block in city.blocks {

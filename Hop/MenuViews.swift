@@ -571,9 +571,15 @@ private struct LevelTile: View {
 
 // MARK: - About
 
+extension Notification.Name {
+    /// The player picked another language: every screen redraws its texts.
+    static let languageChanged = Notification.Name("languageChanged")
+}
+
 /// Privacy policy, support and the 3D model licenses (attribution required by CC BY).
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var language = Strings.languageChoice
     static let site = "https://parkpark.huseyinglc0-946.workers.dev"
 
     private struct Credit: Identifiable {
@@ -584,18 +590,31 @@ struct AboutView: View {
         let link: String
     }
 
-    private let credits: [Credit] = [
+    private var credits: [Credit] { [
         Credit(what: "Rosso GT, Strada S, Tempesta, Arrow GT, Bison, Classico 87",
-               author: Strings.isTurkish ? "Özgün tasarım, Meshy AI ile üretildi" : "Original designs made with Meshy AI",
+               author: Strings.pick("Özgün tasarım, Meshy AI ile üretildi", "Original designs made with Meshy AI", "Diseños originales hechos con Meshy AI"),
                license: "CC BY 4.0", link: "https://www.meshy.ai"),
         Credit(what: "Vector X", author: "Khronos Group (Unity Fan)", license: "CC BY 4.0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
         Credit(what: "Hot Rod 55", author: "Khronos Group", license: "CC0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
-        Credit(what: Strings.isTurkish ? "Trafik araçları" : "Traffic vehicles", author: "Kenney (Car Kit)", license: "CC0", link: "https://kenney.nl/assets/car-kit")
-    ]
+        Credit(what: Strings.pick("Trafik araçları", "Traffic vehicles", "Vehículos del tráfico"), author: "Kenney (Car Kit)", license: "CC0", link: "https://kenney.nl/assets/car-kit")
+    ] }
 
     var body: some View {
         NavigationStack {
             List {
+                Section(Strings.languageTitle) {
+                    Picker(Strings.languageTitle, selection: $language) {
+                        ForEach(AppLanguage.allCases) { option in
+                            Text(option.displayName).tag(option)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    .onChange(of: language) { _, newValue in
+                        Strings.languageChoice = newValue
+                        NotificationCenter.default.post(name: .languageChanged, object: nil)
+                    }
+                }
                 Section {
                     Text(Strings.aboutText)
                         .font(.system(size: 14))
@@ -617,8 +636,9 @@ struct AboutView: View {
                             }
                         }
                     }
-                    Text(Strings.isTurkish ? "Modeller oyun için değiştirildi (küçültüldü, logolar kaldırıldı). Lisans: creativecommons.org/licenses/by/4.0"
-                                           : "Models were modified for the game (simplified, logos removed). License: creativecommons.org/licenses/by/4.0")
+                    Text(Strings.pick("Modeller oyun için değiştirildi (küçültüldü, logolar kaldırıldı). Lisans: creativecommons.org/licenses/by/4.0",
+                                      "Models were modified for the game (simplified, logos removed). License: creativecommons.org/licenses/by/4.0",
+                                      "Los modelos se adaptaron al juego (simplificados, sin logotipos). Licencia: creativecommons.org/licenses/by/4.0"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }

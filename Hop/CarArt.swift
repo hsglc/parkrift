@@ -267,6 +267,92 @@ enum CarArt {
         }
     }
 
+    // MARK: Finish titles
+
+    /// One texture per letter of a big finish title (race font, white, with a soft dark shadow so
+    /// it reads over any scene), plus each letter's advance, for letter-by-letter animation.
+    static func titleGlyphs(_ text: String, size: CGFloat) -> [(texture: SKTexture, advance: CGFloat)] {
+        let font = raceFont(size)
+        let pad: CGFloat = size * 0.3
+        var result: [(SKTexture, CGFloat)] = []
+        for character in text {
+            let string = String(character) as NSString
+            let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
+            let measured = string.size(withAttributes: attributes)
+            let canvas = CGSize(width: ceil(measured.width + pad * 2), height: ceil(measured.height + pad * 2))
+            let texture = render(canvas, scale: 2) { context, _ in
+                context.setShadow(offset: CGSize(width: 0, height: 3), blur: size * 0.18,
+                                  color: UIColor.black.withAlphaComponent(0.55).cgColor)
+                string.draw(at: CGPoint(x: pad, y: pad), withAttributes: attributes)
+            }
+            result.append((texture, character == " " ? size * 0.28 : measured.width * 0.94))
+        }
+        return result
+    }
+
+    /// Rounded glass chip with an SF Symbol and a value, for the finish stats.
+    static func statChip(icon: String, text: String, accent: UIColor) -> SKTexture {
+        let font = UIFont.monospacedDigitSystemFont(ofSize: 17, weight: .heavy)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
+        let textSize = (text as NSString).size(withAttributes: attributes)
+        let symbol = UIImage(systemName: icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .bold))?
+            .withTintColor(accent, renderingMode: .alwaysOriginal)
+        let iconWidth = (symbol?.size.width ?? 0) + 8
+        let size = CGSize(width: ceil(textSize.width + iconWidth + 32), height: 38)
+        return render(size, scale: 2) { context, s in
+            let rect = CGRect(origin: .zero, size: s).insetBy(dx: 1, dy: 1)
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2)
+            context.setFillColor(UIColor(red: 0.05, green: 0.06, blue: 0.10, alpha: 0.72).cgColor)
+            context.addPath(path.cgPath)
+            context.fillPath()
+            context.setStrokeColor(accent.withAlphaComponent(0.55).cgColor)
+            context.setLineWidth(1.2)
+            context.addPath(path.cgPath)
+            context.strokePath()
+            var x: CGFloat = 16
+            if let symbol = symbol {
+                symbol.draw(at: CGPoint(x: x, y: (s.height - symbol.size.height) / 2))
+                x += iconWidth
+            }
+            (text as NSString).draw(at: CGPoint(x: x, y: (s.height - textSize.height) / 2), withAttributes: attributes)
+        }
+    }
+
+    /// Dark edges, clear middle: focuses the finish title.
+    static let finishVignette: SKTexture = render(CGSize(width: 256, height: 128), scale: 1) { context, s in
+        let colors = [UIColor.black.withAlphaComponent(0).cgColor, UIColor.black.withAlphaComponent(0.25).cgColor,
+                      UIColor.black.withAlphaComponent(0.7).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.55, 1]) {
+            context.saveGState()
+            context.scaleBy(x: 1, y: s.height / s.width)
+            let center = CGPoint(x: s.width / 2, y: s.width / 2)
+            context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: s.width * 0.62,
+                                       options: [.drawsAfterEndLocation])
+            context.restoreGState()
+        }
+    }
+
+    /// Soft horizontal light band behind the title (additive).
+    static let finishBand: SKTexture = render(CGSize(width: 256, height: 64), scale: 1) { context, s in
+        let colors = [UIColor.white.withAlphaComponent(0.9).cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+            context.saveGState()
+            context.scaleBy(x: 1, y: s.height / s.width)
+            let center = CGPoint(x: s.width / 2, y: s.width / 2)
+            context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: s.width / 2, options: [])
+            context.restoreGState()
+        }
+    }
+
+    /// Slanted white bar with soft edges: the shine that sweeps over the title.
+    static let sheenTexture: SKTexture = render(CGSize(width: 64, height: 128), scale: 1) { context, s in
+        let colors = [UIColor.white.withAlphaComponent(0).cgColor, UIColor.white.withAlphaComponent(0.85).cgColor,
+                      UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.5, 1]) {
+            context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: s.width, y: 0), options: [])
+        }
+    }
+
     /// Nitro flame strip: bright white-cyan at the nozzle (right) fading to deep blue and black at
     /// the tip (left), soft at the top and bottom edges, with a few streaks. Drawn opaque on black
     /// for additive blending.

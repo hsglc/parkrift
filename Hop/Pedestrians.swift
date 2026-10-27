@@ -343,47 +343,65 @@ final class PedestrianSystem {
 
 // MARK: - Models
 
-/// Low-poly people: one merged mesh per pose and outfit, so a person is one node whose geometry
-/// is swapped to animate the walk.
+/// Realistic people (original characters made with Meshy AI, see tools/convert_meshy_people.py).
+/// Each character is a set of pose meshes baked from its rigged walk and run clips; a person is
+/// one node whose geometry is swapped to animate (cheap for dozens of people, no skinning).
 enum PedestrianModels {
     enum Pose: Int, CaseIterable {
+        case walk0, walk1, walk2, walk3, walk4, walk5, walk6, walk7
         case stand
-        case stepLeft
-        case pass
-        case stepRight
-        case armsUp
+        case startled
+
+        static let walkCycle: [Pose] = [.walk0, .walk1, .walk2, .walk3, .walk4, .walk5, .walk6, .walk7]
     }
 
-    static let outfitCount = 8
+    static let outfitCount = 6
+    /// World units walked per full walk cycle (two steps).
+    static let cycleLength: CGFloat = 13
 
-    private static let skins = [UIColor(red: 0.96, green: 0.80, blue: 0.66, alpha: 1), UIColor(red: 0.80, green: 0.60, blue: 0.45, alpha: 1),
-                                UIColor(red: 0.55, green: 0.38, blue: 0.27, alpha: 1)]
-    private static let shirts = [UIColor(red: 0.85, green: 0.25, blue: 0.25, alpha: 1), UIColor(red: 0.20, green: 0.45, blue: 0.80, alpha: 1),
-                                 UIColor(red: 0.95, green: 0.75, blue: 0.20, alpha: 1), UIColor(red: 0.25, green: 0.65, blue: 0.40, alpha: 1),
-                                 UIColor(red: 0.92, green: 0.92, blue: 0.94, alpha: 1), UIColor(red: 0.55, green: 0.30, blue: 0.70, alpha: 1),
-                                 UIColor(red: 0.95, green: 0.50, blue: 0.20, alpha: 1), UIColor(red: 0.18, green: 0.20, blue: 0.24, alpha: 1)]
-    private static let pants = [UIColor(red: 0.18, green: 0.24, blue: 0.40, alpha: 1), UIColor(red: 0.22, green: 0.22, blue: 0.24, alpha: 1),
-                                UIColor(red: 0.55, green: 0.48, blue: 0.38, alpha: 1)]
-    private static let hairs = [UIColor(red: 0.12, green: 0.09, blue: 0.07, alpha: 1), UIColor(red: 0.45, green: 0.30, blue: 0.16, alpha: 1),
-                                UIColor(red: 0.85, green: 0.70, blue: 0.40, alpha: 1), UIColor(white: 0.7, alpha: 1)]
-
-    private static var materials: [String: SCNMaterial] = [:]
-    private static func material(_ color: UIColor) -> SCNMaterial {
-        let key = CarFactory.colorKey(color)
-        if let cached = materials[key] { return cached }
-        let material = Mat.pbr(color, rough: 0.85)
-        materials[key] = material
-        return material
-    }
-
+    private static let lock = NSLock()
     private static var cache: [Int: SCNGeometry] = [:]
+    private static var loaded = Set<Int>()
 
     static func geometry(pose: Pose, outfit: Int) -> SCNGeometry? {
-        let key = outfit * 10 + pose.rawValue
-        if let cached = cache[key] { return cached }
-        let built = build(pose: pose, outfit: outfit)
-        cache[key] = built
-        return built
+        let character = outfit % outfitCount
+        lock.lock()
+        defer { lock.unlock() }
+        if !loaded.contains(character) { load(character) }
+        return cache[character * 16 + pose.rawValue]
+    }
+
+    /// Reads one character's pose meshes (each with its transform baked in).
+    private static func load(_ character: Int) {
+        loaded.insert(character)
+        guard let url = Bundle.main.url(forResource: "person_p\(character)", withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return }
+        for pose in Pose.allCases {
+            let name = "p\(pose.rawValue)"
+            var found: SCNNode?
+            scene.rootNode.enumerateHierarchy { node, stop in
+                if node.name == name, node.geometry != nil { found = node; stop.pointee = true }
+            }
+            guard let node = found, let geometry = node.geometry else { continue }
+            let baked = SCNNode(geometry: geometry)
+            baked.transform = node.worldTransform
+            let wrapper = SCNNode()
+            wrapper.addChildNode(baked)
+            guard let flat = wrapper.flattenedClone().geometry else { continue }
+            for material in flat.materials {
+                material.lightingModel = .physicallyBased
+                material.roughness.contents = NSNumber(value: 0.8)
+                material.metalness.contents = NSNumber(value: 0)
+            }
+            cache[character * 16 + pose.rawValue] = flat
+        }
+    }
+
+    /// Loads every character on a background thread (called at launch).
+    static func preload() {
+        DispatchQueue.global(qos: .utility).async {
+            for character in 0..<outfitCount { _ = geometry(pose: .stand, outfit: character) }
+        }
     }
 
     static var all: [SCNGeometry] {
@@ -394,54 +412,5 @@ enum PedestrianModels {
             }
         }
         return result
-    }
-
-    private static func rotationZ(_ angle: Float) -> simd_float3x3 {
-        let c = cos(angle), s = sin(angle)
-        return simd_float3x3(SIMD3(c, s, 0), SIMD3(-s, c, 0), SIMD3(0, 0, 1))
-    }
-
-    /// Faces +x, feet at y = 0, about 1.72 m tall.
-    private static func build(pose: Pose, outfit: Int) -> SCNGeometry? {
-        let mesh = MeshBuilder()
-        let skin = material(skins[outfit % skins.count])
-        let shirt = material(shirts[outfit % shirts.count])
-        let pant = material(pants[(outfit / 2) % pants.count])
-        let hair = material(hairs[(outfit * 3) % hairs.count])
-        let shoe = material(UIColor(white: 0.12, alpha: 1))
-
-        let swing: Float
-        switch pose {
-        case .stepLeft: swing = 0.42
-        case .stepRight: swing = -0.42
-        default: swing = 0
-        }
-        let hipY: Float = 0.86
-        let legLength: Float = 0.82
-        for (side, angle) in [(Float(1), swing), (-1, -swing)] {
-            let rot = rotationZ(angle)
-            let hip = SIMD3<Float>(0, hipY, side * 0.09)
-            let center = hip + rot * SIMD3<Float>(0, -legLength / 2, 0)
-            mesh.addOrientedBox(center: center, size: SIMD3(0.14, legLength, 0.13), rotation: rot, material: pant)
-            let foot = hip + rot * SIMD3<Float>(0.05, -legLength + 0.04, 0)
-            mesh.addOrientedBox(center: foot, size: SIMD3(0.26, 0.08, 0.12), rotation: rot, material: shoe)
-        }
-        // Torso and head
-        mesh.addOrientedBox(center: SIMD3(0, 1.14, 0), size: SIMD3(0.24, 0.58, 0.38), rotation: matrix_identity_float3x3, material: shirt)
-        mesh.addOrientedBox(center: SIMD3(0, 1.47, 0), size: SIMD3(0.09, 0.08, 0.09), rotation: matrix_identity_float3x3, material: skin)
-        mesh.addBall(center: SIMD3(0.01, 1.6, 0), radius: 0.12, squash: 1.1, material: skin, rings: 4, segments: 6)
-        mesh.addBall(center: SIMD3(-0.03, 1.66, 0), radius: 0.125, squash: 0.75, material: hair, rings: 3, segments: 6)
-        // Arms swing opposite to the legs (or go up when startled)
-        for (side, angle) in [(Float(1), -swing * 0.9), (-1, swing * 0.9)] {
-            let up = pose == .armsUp
-            let rot = up ? simd_float3x3(SIMD3(1, 0, 0), SIMD3(0, cos(side * 2.6), sin(side * 2.6)), SIMD3(0, -sin(side * 2.6), cos(side * 2.6)))
-                         : rotationZ(angle)
-            let shoulder = SIMD3<Float>(0, 1.4, side * 0.25)
-            let center = shoulder + rot * SIMD3<Float>(0, -0.29, 0)
-            mesh.addOrientedBox(center: center, size: SIMD3(0.1, 0.58, 0.1), rotation: rot, material: shirt)
-            let hand = shoulder + rot * SIMD3<Float>(0, -0.6, 0)
-            mesh.addOrientedBox(center: hand, size: SIMD3(0.08, 0.09, 0.08), rotation: rot, material: skin)
-        }
-        return mesh.build()
     }
 }

@@ -462,6 +462,10 @@ struct Bot {
     var waiting: CGFloat = 0
     var ignoreBots: CGFloat = 0
     var braking = false
+    /// Knocked by a crash: slides and spins for a moment before driving on.
+    var stunned: CGFloat = 0
+    var shove = CGVector.zero
+    var spin: CGFloat = 0
     let tint: Int
 
     var box: OBB { OBB(center: position, size: Levels.carSize, angle: heading) }
@@ -491,11 +495,34 @@ final class Traffic {
         }
     }
 
+    /// A player crashed into bot `index`: it is shoved and spun, then drives on.
+    func hit(_ index: Int, shove: CGVector, spin: CGFloat) {
+        guard bots.indices.contains(index) else { return }
+        bots[index].stunned = 1.1
+        bots[index].shove = shove
+        bots[index].spin = spin
+        bots[index].speed = 0
+    }
+
     /// `blockers`: player car centers the bots must not drive into.
     func step(_ dt: CGFloat, blockers: [CGPoint]) {
         clock += dt
         for index in bots.indices {
             var bot = bots[index]
+            if bot.stunned > 0 {
+                // Sliding and spinning after a hit, then back to its lane
+                bot.stunned -= dt
+                bot.position.x += bot.shove.dx * dt
+                bot.position.y += bot.shove.dy * dt
+                bot.heading += bot.spin * dt
+                let fade = exp(-dt * 3.2)
+                bot.shove = CGVector(dx: bot.shove.dx * fade, dy: bot.shove.dy * fade)
+                bot.spin *= fade
+                bot.speed = 0
+                bot.braking = true
+                bots[index] = bot
+                continue
+            }
             if bot.waypoints.isEmpty {
                 var options = map.neighbors(bot.to).filter { $0 != bot.from }
                 if options.isEmpty { options = map.neighbors(bot.to) }

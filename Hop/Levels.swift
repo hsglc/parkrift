@@ -42,11 +42,25 @@ struct LevelDef {
     var bots: [BotStart] = []
     var race: Bool = false
 
-    var name: String { Strings.isTurkish ? nameTR : nameEN }
+    var name: String { Strings.pick(nameTR, nameEN, Levels.spanishNames[nameEN] ?? nameEN) }
 }
 
 /// All levels share a 1000 x 500 world; y grows upwards, angles are in degrees in the builders.
 enum Levels {
+    /// Spanish level names (keyed by the English name).
+    static let spanishNames: [String: String] = [
+        "First Park": "Primer aparcamiento",
+        "Turn In": "En batería",
+        "Between Cars": "Entre coches",
+        "Angled Bays": "Plazas en diagonal",
+        "Go Around": "Rodea",
+        "Parallel Park": "Aparcamiento en línea",
+        "Maze": "Laberinto",
+        "Tight Bays": "Plazas estrechas",
+        "Tight Parallel": "Línea ajustada",
+        "Final: Garage": "Final: Garaje",
+    ]
+
     static let world = CGSize(width: 1000, height: 500)
     static let carSize = CGSize(width: 44, height: 22)
 

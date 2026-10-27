@@ -208,6 +208,7 @@ enum CarModels {
                 _ = wheel(id)
             }
             TrafficVehicles.preload()
+            _ = World3D.signalTemplate
             DispatchQueue.main.async { completion() }
         }
     }
@@ -223,8 +224,18 @@ enum CarModels {
         return result
     }
 
-    static let tire = Mat.pbr(UIColor(white: 0.05, alpha: 1), metal: 0, rough: 0.85)
-    static let rim = Mat.pbr(UIColor(white: 0.78, alpha: 1), metal: 0.95, rough: 0.22)
+    /// Both sides drawn: the generated wheels have open tyre walls and rim barrels that showed
+    /// holes from some angles with back faces culled.
+    static let tire: SCNMaterial = {
+        let material = Mat.pbr(UIColor(white: 0.07, alpha: 1), metal: 0, rough: 0.85)
+        material.isDoubleSided = true
+        return material
+    }()
+    static let rim: SCNMaterial = {
+        let material = Mat.pbr(UIColor(white: 0.72, alpha: 1), metal: 0.95, rough: 0.25)
+        material.isDoubleSided = true
+        return material
+    }()
     /// Simplified cabin seen through the windows.
     static let interior = Mat.pbr(UIColor(white: 0.07, alpha: 1), metal: 0, rough: 0.8)
     /// Brake discs and calipers: dark metal (bright yellow covered the whole wheel face).
@@ -340,6 +351,8 @@ enum CarModels {
         material.clearCoat.contents = NSNumber(value: 0.8)
         material.clearCoatRoughness.contents = NSNumber(value: 0.08)
         material.shaderModifiers = [.surface: paintShader]
+        // Generated bodies have a few open shells (mirrors, spoilers): draw both sides
+        material.isDoubleSided = true
         if let mask = image(maskName) {
             material.setValue(SCNMaterialProperty(contents: mask), forKey: "paintMask")
         }
