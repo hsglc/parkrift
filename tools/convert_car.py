@@ -179,8 +179,8 @@ def normals(v, f):
     length[length == 0] = 1
     return n / length
 
-BUDGET = {'paint': 22000, 'glass': 2500, 'chrome': 3500, 'taillight': 3000, 'headlight': 1200, 'carbon': 2500,
-          'darkplastic': 3500, 'metal': 1200, 'badge': 300, 'tire': 900, 'rim': 2600, 'caliper': 500, 'hub': 300}
+BUDGET = {'paint': 30000, 'glass': 7000, 'chrome': 4000, 'taillight': 3000, 'headlight': 1200, 'carbon': 3000,
+          'darkplastic': 6000, 'metal': 1500, 'badge': 300, 'tire': 900, 'rim': 2600, 'caliper': 500, 'hub': 300}
 
 def write(parts, path, wheel_mode=False):
     stage = Usd.Stage.CreateNew(path.replace('.usdz', '.usdc'))

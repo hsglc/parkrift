@@ -601,7 +601,14 @@ private enum RacerModel {
         ]
         holder.enumerateHierarchy { node, _ in
             guard let geometry = node.geometry, let name = node.name, let material = materials[name] else { return }
-            geometry.materials = [material]
+            if name == "glass" {
+                // Thin shells: draw both sides so decimation gaps do not show the inside
+                let glass = material.copy() as! SCNMaterial
+                glass.isDoubleSided = true
+                geometry.materials = [glass]
+            } else {
+                geometry.materials = [material]
+            }
             if name == "tire" || name == "rim" || name == "hub" || name == "caliper" { node.castsShadow = false }
         }
         return holder
