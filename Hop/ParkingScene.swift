@@ -570,7 +570,11 @@ final class ParkingScene: SKScene {
         // Screen effects for the boost
         speedLines.removeAll()
         for _ in 0..<30 {
-            let line = SKSpriteNode(color: .white, size: CGSize(width: 2.5, height: 80))
+            let line = SKSpriteNode(texture: CarArt.speedLineTexture)
+            line.size = CGSize(width: 3, height: 110)
+            line.color = UIColor(red: 0.75, green: 0.92, blue: 1.0, alpha: 1)
+            line.colorBlendFactor = 0.6
+            line.blendMode = .add
             line.alpha = 0
             line.zPosition = 45
             addChild(line)
@@ -1032,6 +1036,19 @@ final class ParkingScene: SKScene {
         audio.play("nitro", volume: 0.8)
         bumpHaptic.impactOccurred(intensity: 1.0)
         world?.shake(strength: 3)
+        boostVisual = 1.3   // lens punch, eases back to 1
+        // Shockwave ring from behind the car
+        let ring = SKShapeNode(circleOfRadius: 40)
+        ring.strokeColor = UIColor(red: 0.45, green: 0.85, blue: 1.0, alpha: 1)
+        ring.lineWidth = 5
+        ring.glowWidth = 6
+        ring.fillColor = .clear
+        ring.position = CGPoint(x: size.width / 2, y: size.height * 0.35)
+        ring.zPosition = 46
+        addChild(ring)
+        let expand = SKAction.group([.scale(to: 9, duration: 0.45), .fadeOut(withDuration: 0.45)])
+        expand.timingMode = .easeOut
+        ring.run(.sequence([expand, .removeFromParent()]))
         let banner = makeLabel(Strings.nitroGo, size: 34, color: UIColor(red: 0.45, green: 0.9, blue: 1.0, alpha: 1))
         banner.position = CGPoint(x: size.width / 2, y: size.height * 0.62)
         banner.zPosition = 20
@@ -1372,6 +1389,7 @@ final class ParkingScene: SKScene {
             var blockers = [carPosition]
             if friendPresent && remoteTarget != nil { blockers.append(remotePosition) }
             traffic.step(dt, blockers: blockers)
+            world?.updateSignals(time: traffic.clock)
             let detailRange = PerfSettings.carDetailDistance * 10
             for (index, bot) in traffic.bots.enumerated() where index < botCars.count {
                 let near = abs(bot.position.x - carPosition.x) < detailRange && abs(bot.position.y - carPosition.y) < detailRange

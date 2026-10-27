@@ -244,6 +244,66 @@ private enum CarShapes {
         return (body, cabin)
     }
 
+    /// Additive material for glowing effects (HDR intensity lets bloom pick it up).
+    static func additive(_ contents: Any, intensity: CGFloat = 1.6, tint: UIColor? = nil) -> SCNMaterial {
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = contents
+        material.diffuse.intensity = intensity
+        if let tint = tint { material.multiply.contents = tint }
+        material.blendMode = .add
+        material.writesToDepthBuffer = false
+        material.isDoubleSided = true
+        return material
+    }
+
+    static let flamePlane: SCNGeometry = {
+        let plane = SCNPlane(width: 1.7, height: 0.42)
+        plane.materials = [additive(CarArt.flameImage, intensity: 2.2)]
+        return plane
+    }()
+    static let glowSprite: SCNGeometry = {
+        let plane = SCNPlane(width: 1, height: 1)
+        plane.materials = [additive(CarArt.glowParticle(), intensity: 2.0, tint: UIColor(red: 0.45, green: 0.8, blue: 1.0, alpha: 1))]
+        return plane
+    }()
+    static let groundGlow: SCNGeometry = {
+        let plane = SCNPlane(width: 3.4, height: 2.2)
+        plane.materials = [additive(CarArt.glowParticle(), intensity: 1.2, tint: UIColor(red: 0.2, green: 0.55, blue: 1.0, alpha: 1))]
+        return plane
+    }()
+
+    /// One exhaust flame: two crossed textured planes, a hot glow at the nozzle and three shock
+    /// diamonds. Pointing along -x from the node's origin.
+    static func makeFlame() -> (root: SCNNode, diamonds: [SCNNode]) {
+        let root = SCNNode()
+        for angle: Float in [0, Float.pi / 2] {
+            let plane = SCNNode(geometry: flamePlane)
+            plane.position = SCNVector3(-0.85, 0, 0)
+            plane.eulerAngles.x = angle
+            plane.castsShadow = false
+            root.addChildNode(plane)
+        }
+        let billboard = SCNBillboardConstraint()
+        let core = SCNNode(geometry: glowSprite)
+        core.scale = SCNVector3(0.75, 0.75, 0.75)
+        core.constraints = [billboard]
+        core.castsShadow = false
+        root.addChildNode(core)
+        var diamonds: [SCNNode] = []
+        for (k, x) in [Float(-0.35), -0.7, -1.05].enumerated() {
+            let diamond = SCNNode(geometry: glowSprite)
+            let size = 0.26 - Float(k) * 0.05
+            diamond.scale = SCNVector3(size, size, size)
+            diamond.position = SCNVector3(x, 0, 0)
+            diamond.constraints = [billboard]
+            diamond.castsShadow = false
+            root.addChildNode(diamond)
+            diamonds.append(diamond)
+        }
+        return (root, diamonds)
+    }
+
     static let flameOuter: SCNGeometry = {
         let cone = SCNCone(topRadius: 0, bottomRadius: 0.16, height: 1.0)
         cone.radialSegmentCount = 10
@@ -627,6 +687,9 @@ final class Car3D {
     private var spin: CGFloat = 0
     private var lastPosition: CGPoint?
     private var flames: [SCNNode] = []
+    private var flameDiamonds: [SCNNode] = []
+    private var boostGlow: SCNNode?
+    private var flameClock: Float = 0
     private var nitroOn = false
     private var lastBraking: Bool?
     private var lastReversing: Bool?
@@ -673,20 +736,23 @@ final class Car3D {
 
         if style == .racer {
             for z: Float in (model != nil ? [0.13, -0.13] : [0.24, -0.24]) {
-                let flame = SCNNode()
-                flame.position = model != nil ? SCNVector3(-2.28, 0.42, z) : SCNVector3(-2.3, 0.33, z)
-                let outer = SCNNode(geometry: CarShapes.flameOuter)
-                outer.eulerAngles.z = Float.pi / 2
-                outer.position = SCNVector3(-0.5, 0, 0)
-                flame.addChildNode(outer)
-                let inner = SCNNode(geometry: CarShapes.flameInner)
-                inner.eulerAngles.z = Float.pi / 2
-                inner.position = SCNVector3(-0.3, 0, 0)
-                flame.addChildNode(inner)
-                flame.isHidden = true
+                let made = CarShapes.makeFlame()
+                let flame = made.root
+                flame.position = model != nil ? SCNVector3(-2.26, 0.42, z) : SCNVector3(-2.3, 0.33, z)
+                // Kept in the scene but shrunk to nothing when off, so its shaders are compiled
+                // with the level instead of on the first nitro
+                flame.scale = SCNVector3(0.001, 0.001, 0.001)
                 body.addChildNode(flame)
                 flames.append(flame)
+                flameDiamonds += made.diamonds
             }
+            let glow = SCNNode(geometry: CarShapes.groundGlow)
+            glow.eulerAngles.x = -Float.pi / 2
+            glow.position = SCNVector3(-2.6, 0.05, 0)
+            glow.scale = SCNVector3(0.001, 0.001, 0.001)
+            glow.castsShadow = false
+            node.addChildNode(glow)
+            boostGlow = glow
         }
 
         // Lights that change at runtime stay separate
@@ -794,11 +860,19 @@ final class Car3D {
             reverseMaterial.emission.contents = reversing ? UIColor.white : UIColor(white: 0.35, alpha: 1)
         }
         if nitroOn {
+            flameClock += 1
             for flame in flames {
-                let length = Float.random(in: 0.75...1.35)
-                let width = Float.random(in: 0.85...1.15)
+                let length = Float.random(in: 0.8...1.3)
+                let width = Float.random(in: 0.88...1.12)
                 flame.scale = SCNVector3(length, width, width)
             }
+            for (k, diamond) in flameDiamonds.enumerated() {
+                let pulse = 0.75 + 0.35 * sin(flameClock * 0.9 + Float(k) * 1.7)
+                let base: Float = 0.26 - Float(k % 3) * 0.05
+                diamond.scale = SCNVector3(base * pulse, base * pulse, base * pulse)
+            }
+            let flicker = Float.random(in: 0.85...1.1)
+            boostGlow?.scale = SCNVector3(flicker, flicker, flicker)
         }
     }
 
@@ -814,7 +888,9 @@ final class Car3D {
     func setNitro(_ on: Bool) {
         guard on != nitroOn else { return }
         nitroOn = on
-        for flame in flames { flame.isHidden = !on }
+        let off = SCNVector3(0.001, 0.001, 0.001)
+        for flame in flames { flame.scale = on ? SCNVector3(1, 1, 1) : off }
+        boostGlow?.scale = on ? SCNVector3(1, 1, 1) : off
     }
 
     var isHidden: Bool {
@@ -833,6 +909,9 @@ final class World3D {
     let cameraNode = SCNNode()
     private let levelRoot = SCNNode()
     private var parkedCars3D: [(car: Car3D, position: CGPoint)] = []
+    /// Lit lamp of every traffic light head, moved between the red/yellow/green slots.
+    private var signalHeads: [(node: Int, horizontal: Bool, lamp: SCNNode, slots: [SCNVector3], state: Int)] = []
+    private var cityMap: CityMap?
     /// Classic parking lot ground, curbs, trees and poles (hidden in the city).
     private let lotRoot = SCNNode()
     private let fxRoot = SCNNode()
@@ -872,6 +951,23 @@ final class World3D {
         camera.projectionDirection = .vertical
         camera.zNear = 0.3
         camera.zFar = 260
+        if PerfSettings.optimized {
+            // Always-on post-processing (set once, never toggled, so no mid-game pipeline rebuilds):
+            // HDR with bloom so LEDs, lamps and nitro flames glow, ambient occlusion for contact
+            // shadows, and a light color grade
+            camera.wantsHDR = true
+            camera.wantsExposureAdaptation = false
+            camera.exposureOffset = 0.15
+            camera.bloomIntensity = 0.55
+            camera.bloomThreshold = 0.85
+            camera.bloomBlurRadius = 8
+            camera.screenSpaceAmbientOcclusionIntensity = 0.8
+            camera.screenSpaceAmbientOcclusionRadius = 0.6
+            camera.screenSpaceAmbientOcclusionNormalThreshold = 0.3
+            camera.screenSpaceAmbientOcclusionDepthThreshold = 0.25
+            camera.saturation = 1.1
+            camera.contrast = 0.08
+        }
         cameraNode.camera = camera
         scene.rootNode.addChildNode(cameraNode)
         follow(position: CGPoint(x: 500, y: 250), heading: 0, dt: 0, snap: true)
@@ -1233,6 +1329,8 @@ final class World3D {
         parkedCars3D.removeAll()
         arrowNode = nil
         lotRoot.isHidden = level.city != nil
+        cityMap = nil
+        signalHeads.removeAll()
         if let city = level.city {
             buildCity(city, world: level.world)
         }
@@ -1566,6 +1664,148 @@ final class World3D {
             ground.addChildNode(node)
         }
         levelRoot.addChildNode(ground.flattenedClone())
+        buildStreetFurniture(city, world: world)
+    }
+
+    // MARK: Street furniture and traffic lights
+
+    private static let signalMaterials: [SCNMaterial] = {
+        let colors = [UIColor(red: 1.0, green: 0.15, blue: 0.1, alpha: 1), UIColor(red: 1.0, green: 0.75, blue: 0.1, alpha: 1),
+                      UIColor(red: 0.2, green: 1.0, blue: 0.45, alpha: 1)]
+        return colors.map { color in
+            let material = Mat.glow(color)
+            material.diffuse.intensity = 1.8
+            material.emission.intensity = 1.8
+            return material
+        }
+    }()
+
+    /// Traffic lights at every corner of every intersection, stop lines, street lamps and curbs.
+    /// Static parts are written into one mesh; only the lit lamps are separate nodes.
+    private func buildStreetFurniture(_ city: CityMap, world: CGSize) {
+        cityMap = city
+        signalHeads.removeAll()
+        let mesh = MeshBuilder()
+        let poleMaterial = Mat.pbr(UIColor(white: 0.22, alpha: 1), metal: 0.6, rough: 0.45)
+        let headMaterial = Mat.pbr(UIColor(white: 0.08, alpha: 1), metal: 0.2, rough: 0.6)
+        let lensMaterial = Mat.pbr(UIColor(white: 0.16, alpha: 1), metal: 0.1, rough: 0.3)
+        let curbMaterial = Mat.pbr(UIColor(white: 0.82, alpha: 1), rough: 0.85)
+        let lampGlow = Mat.glow(UIColor(red: 1.0, green: 0.92, blue: 0.75, alpha: 1))
+        lampGlow.diffuse.intensity = 1.4
+        let stopLine = Mat.lambert(UIColor(white: 0.95, alpha: 1))
+        func box(_ c: SCNVector3, _ w: Float, _ h: Float, _ l: Float, _ m: SCNMaterial) {
+            mesh.addBox(center: SIMD3(c.x, c.y, c.z), width: w, height: h, length: l, angle: 0, wall: m, roof: m,
+                        wallRepeats: { _ in SIMD2(1, 1) })
+        }
+        let lensVertical = SCNBox(width: 0.06, height: 0.3, length: 0.3, chamferRadius: 0.03)
+        let lensSideways = SCNBox(width: 0.3, height: 0.3, length: 0.06, chamferRadius: 0.03)
+
+        for j in 0..<city.rows {
+            for i in 0..<city.cols {
+                let node = city.node(i, j)
+                let center = CGPoint(x: city.xs[i], y: city.ys[j])
+                // (corner offset, facing direction in scene space, controls east-west traffic?)
+                let corners: [(CGPoint, SIMD2<Float>, Bool, Bool)] = [
+                    (CGPoint(x: -112, y: -112), SIMD2(-1, 0), true, i > 0),          // faces west: eastbound
+                    (CGPoint(x: 112, y: 112), SIMD2(1, 0), true, i < city.cols - 1),  // faces east: westbound
+                    (CGPoint(x: 112, y: -112), SIMD2(0, 1), false, j > 0),            // faces south: northbound
+                    (CGPoint(x: -112, y: 112), SIMD2(0, -1), false, j < city.rows - 1) // faces north: southbound
+                ]
+                for (offset, facing, horizontal, exists) in corners where exists {
+                    let base = World3D.vec(CGPoint(x: center.x + offset.x, y: center.y + offset.y))
+                    box(base, 0.16, 4.3, 0.16, poleMaterial)
+                    box(SCNVector3(base.x, 3.35, base.z), 0.42, 1.25, 0.42, headMaterial)
+                    var slots: [SCNVector3] = []
+                    for (k, height) in [Float(4.33), 3.97, 3.61].enumerated() {
+                        let lens = SCNVector3(base.x + facing.x * 0.22, height, base.z + facing.y * 0.22)
+                        box(SCNVector3(lens.x, height - 0.15, lens.z), facing.x != 0 ? 0.05 : 0.29, 0.29, facing.x != 0 ? 0.29 : 0.05, lensMaterial)
+                        slots.append(SCNVector3(base.x + facing.x * 0.245, height, base.z + facing.y * 0.245))
+                        _ = k
+                    }
+                    // Own geometry copy: each lamp gets its own color
+                    let lamp = SCNNode(geometry: (facing.x != 0 ? lensVertical : lensSideways).copy() as? SCNGeometry)
+                    lamp.castsShadow = false
+                    levelRoot.addChildNode(lamp)
+                    signalHeads.append((node, horizontal, lamp, slots, -1))
+                }
+                // Stop lines across the approach lanes
+                let approaches: [(CGPoint, Bool, Bool)] = [
+                    (CGPoint(x: -118, y: -35), true, i > 0), (CGPoint(x: 118, y: 35), true, i < city.cols - 1),
+                    (CGPoint(x: 35, y: -118), false, j > 0), (CGPoint(x: -35, y: 118), false, j < city.rows - 1)
+                ]
+                for (offset, horizontal, exists) in approaches where exists {
+                    let p = World3D.vec(CGPoint(x: center.x + offset.x, y: center.y + offset.y))
+                    box(SCNVector3(p.x, 0.025, p.z), horizontal ? 0.45 : 6.6, 0.012, horizontal ? 6.6 : 0.45, stopLine)
+                }
+            }
+        }
+
+        // Street lamps on the sidewalks, arms reaching over the road
+        func lamp(at point: CGPoint, toward direction: SIMD2<Float>) {
+            let base = World3D.vec(point)
+            box(base, 0.14, 5.6, 0.14, poleMaterial)
+            let arm = SCNVector3(base.x + direction.x * 0.7, 5.5, base.z + direction.y * 0.7)
+            box(arm, direction.x != 0 ? 1.4 : 0.1, 0.1, direction.x != 0 ? 0.1 : 1.4, poleMaterial)
+            let head = SCNVector3(base.x + direction.x * 1.35, 5.38, base.z + direction.y * 1.35)
+            box(head, 0.5, 0.14, 0.5, lampGlow)
+        }
+        for (j, y) in city.ys.enumerated() {
+            var x: CGFloat = 260
+            while x < world.width - 200 {
+                let nearNode = city.xs.contains { abs($0 - x) < 170 }
+                if !nearNode {
+                    if j > 0 { lamp(at: CGPoint(x: x, y: y - 108), toward: SIMD2(0, -1)) }
+                    if j < city.rows - 1 { lamp(at: CGPoint(x: x + 200, y: y + 108), toward: SIMD2(0, 1)) }
+                }
+                x += 400
+            }
+        }
+        for (i, x) in city.xs.enumerated() {
+            var y: CGFloat = 260
+            while y < world.height - 200 {
+                let nearNode = city.ys.contains { abs($0 - y) < 170 }
+                if !nearNode {
+                    if i > 0 { lamp(at: CGPoint(x: x - 108, y: y), toward: SIMD2(1, 0)) }
+                    if i < city.cols - 1 { lamp(at: CGPoint(x: x + 108, y: y + 200), toward: SIMD2(-1, 0)) }
+                }
+                y += 400
+            }
+        }
+
+        // Raised curbs around every block
+        for block in city.blocks {
+            let edges: [(CGPoint, Float, Float)] = [
+                (CGPoint(x: block.midX, y: block.minY), Float(block.width / 10), 0.3),
+                (CGPoint(x: block.midX, y: block.maxY), Float(block.width / 10), 0.3),
+                (CGPoint(x: block.minX, y: block.midY), 0.3, Float(block.height / 10)),
+                (CGPoint(x: block.maxX, y: block.midY), 0.3, Float(block.height / 10))
+            ]
+            for (point, w, l) in edges {
+                box(World3D.vec(point), w, 0.16, l, curbMaterial)
+            }
+        }
+        if let geometry = mesh.build() {
+            levelRoot.addChildNode(SCNNode(geometry: geometry))
+        }
+        updateSignals(time: 0)
+    }
+
+    /// Moves each lit lamp to red/yellow/green for the given level time.
+    func updateSignals(time: CGFloat) {
+        guard let city = cityMap else { return }
+        for index in signalHeads.indices {
+            let head = signalHeads[index]
+            let state: Int
+            switch city.signal(at: head.node, horizontal: head.horizontal, time: time) {
+            case .red: state = 0
+            case .yellow: state = 1
+            case .green: state = 2
+            }
+            guard state != head.state else { continue }
+            head.lamp.position = head.slots[state]
+            head.lamp.geometry?.materials = [World3D.signalMaterials[state]]
+            signalHeads[index].state = state
+        }
     }
 
     /// Menu backdrop: a level with both cars parked and a camera slowly circling the lot.

@@ -168,6 +168,65 @@ enum CarArt {
         return texture
     }
 
+    /// Nitro flame strip: bright white-cyan at the nozzle (right) fading to deep blue and black at
+    /// the tip (left), soft at the top and bottom edges, with a few streaks. Drawn opaque on black
+    /// for additive blending.
+    static let flameImage: UIImage = {
+        let size = CGSize(width: 256, height: 64)
+        return image(size, scale: 1) { context, s in
+            context.setFillColor(UIColor.black.cgColor)
+            context.fill(CGRect(origin: .zero, size: s))
+            let colors = [UIColor(red: 0.0, green: 0.05, blue: 0.25, alpha: 1).cgColor,
+                          UIColor(red: 0.1, green: 0.35, blue: 1.0, alpha: 1).cgColor,
+                          UIColor(red: 0.45, green: 0.85, blue: 1.0, alpha: 1).cgColor,
+                          UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1).cgColor] as CFArray
+            guard let along = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.45, 0.8, 1]) else { return }
+            // Flame body: a teardrop that is wide at the nozzle and thin at the tip
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: 0, y: s.height / 2))
+            path.addCurve(to: CGPoint(x: s.width, y: s.height * 0.1), control1: CGPoint(x: s.width * 0.45, y: s.height * 0.42),
+                          control2: CGPoint(x: s.width * 0.8, y: s.height * 0.05))
+            path.addLine(to: CGPoint(x: s.width, y: s.height * 0.9))
+            path.addCurve(to: CGPoint(x: 0, y: s.height / 2), control1: CGPoint(x: s.width * 0.8, y: s.height * 0.95),
+                          control2: CGPoint(x: s.width * 0.45, y: s.height * 0.58))
+            context.saveGState()
+            context.addPath(path)
+            context.clip()
+            context.drawLinearGradient(along, start: .zero, end: CGPoint(x: s.width, y: 0), options: [])
+            // Darken toward the edges for a soft, round look
+            if let edge = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                     colors: [UIColor(white: 0, alpha: 0.85).cgColor, UIColor(white: 0, alpha: 0).cgColor,
+                                              UIColor(white: 0, alpha: 0).cgColor, UIColor(white: 0, alpha: 0.85).cgColor] as CFArray,
+                                     locations: [0, 0.35, 0.65, 1]) {
+                context.drawLinearGradient(edge, start: .zero, end: CGPoint(x: 0, y: s.height), options: [])
+            }
+            // Hot streaks
+            var generator = SystemRandomNumberGenerator()
+            context.setStrokeColor(UIColor(white: 1, alpha: 0.35).cgColor)
+            context.setLineWidth(1.5)
+            for _ in 0..<9 {
+                let y = CGFloat.random(in: s.height * 0.38...s.height * 0.62, using: &generator)
+                let start = CGFloat.random(in: s.width * 0.3...s.width * 0.6, using: &generator)
+                context.move(to: CGPoint(x: start, y: y))
+                context.addLine(to: CGPoint(x: s.width, y: y + CGFloat.random(in: -3...3, using: &generator)))
+            }
+            context.strokePath()
+            context.restoreGState()
+        }
+    }()
+
+    /// Speed line: bright head fading into a long transparent tail (for the 2D boost overlay).
+    static let speedLineTexture: SKTexture = {
+        SKTexture(image: image(CGSize(width: 6, height: 128), scale: 1) { context, s in
+            let colors = [UIColor(white: 1, alpha: 0).cgColor, UIColor(white: 1, alpha: 0.9).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+                context.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: s), cornerWidth: 3, cornerHeight: 3, transform: nil))
+                context.clip()
+                context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: s.height), options: [])
+            }
+        })
+    }()
+
     static func image(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false

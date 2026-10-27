@@ -119,6 +119,27 @@ struct CityMap {
         return (start, end, atan2(d.y, d.x))
     }
 
+    // MARK: Traffic lights
+
+    enum Signal {
+        case green
+        case yellow
+        case red
+    }
+
+    /// One 18 s cycle per intersection: east-west green 7 s, yellow 1.5 s, all red 0.5 s, then the
+    /// same for north-south. Each intersection starts at its own offset so the city is not in sync.
+    static let signalCycle: CGFloat = 18
+
+    func signal(at node: Int, horizontal: Bool, time: CGFloat) -> Signal {
+        let offset = CGFloat((node * 7919) % 180) / 10
+        var t = (time + offset).truncatingRemainder(dividingBy: CityMap.signalCycle)
+        if !horizontal { t = (t + CityMap.signalCycle / 2).truncatingRemainder(dividingBy: CityMap.signalCycle) }
+        if t < 7 { return .green }
+        if t < 8.5 { return .yellow }
+        return .red
+    }
+
     /// Building blocks between the streets (inner rectangles, without the street area).
     var blocks: [CGRect] {
         var result: [CGRect] = []
@@ -431,6 +452,8 @@ final class Traffic {
     private var rng: SplitMix64
 
     private let cruise: CGFloat = 78
+    /// Seconds since the level started; drives the traffic lights.
+    private(set) var clock: CGFloat = 0
     private let cornerSpeed: CGFloat = 42
 
     init(map: CityMap, starts: [BotStart], seed: UInt64) {
@@ -447,6 +470,7 @@ final class Traffic {
 
     /// `blockers`: player car centers the bots must not drive into.
     func step(_ dt: CGFloat, blockers: [CGPoint]) {
+        clock += dt
         for index in bots.indices {
             var bot = bots[index]
             if bot.waypoints.isEmpty {
@@ -463,7 +487,17 @@ final class Traffic {
             let dy = target.y - bot.position.y
             let distance = hypot(dx, dy)
             let ahead = dx * cos(bot.heading) + dy * sin(bot.heading)
-            if distance < 24 || (distance < 70 && ahead < 0) {
+            // Approaching the stop line (end of the lane) on a red or late yellow light?
+            var mustStop = false
+            if bot.waypoints.count == 1 && distance < 90 {
+                let horizontal = bot.from / map.cols == bot.to / map.cols
+                switch map.signal(at: bot.to, horizontal: horizontal, time: clock) {
+                case .green: mustStop = false
+                case .yellow: mustStop = distance > 40 || bot.speed < 20
+                case .red: mustStop = true
+                }
+            }
+            if !mustStop && (distance < 24 || (distance < 70 && ahead < 0)) {
                 bot.waypoints.removeFirst()
                 bots[index] = bot
                 continue
@@ -474,6 +508,11 @@ final class Traffic {
             bot.heading += max(-maxTurn, min(maxTurn, error))
 
             var targetSpeed = abs(error) > 0.35 ? cornerSpeed : cruise
+            if mustStop {
+                // Ease to a stop just before the line
+                targetSpeed = min(targetSpeed, max(0, (distance - 10) * 1.4))
+                bot.braking = true
+            }
             var blockedByBot = false
             var blocked = false
             func check(_ point: CGPoint) -> Bool {
