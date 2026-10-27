@@ -1235,7 +1235,11 @@ final class World3D {
         // are drawn once now
         for entry in parkedCars3D { entry.car.setDetail(true) }
     }
-    func endWarmupSweep() { sweepClock = -1 }
+    func endWarmupSweep() {
+        sweepClock = -1
+        cameraNode.camera?.zFar = 260
+        cameraNode.camera?.fieldOfView = fieldOfView
+    }
 
     func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
         let carPoint = World3D.vec(position)
@@ -1249,9 +1253,22 @@ final class World3D {
                 }
             }
             sweepClock += Float(dt)
-            let turn: Float = 1.4
+            let turn: Float = 1.2
+            let phase = Int(sweepClock / turn) % 3
+            if phase == 0, let map = cityMap {
+                // Straight down over the whole map: every car and building in view at once
+                let world = CGSize(width: map.xs.last.map { $0 + 100 } ?? 1000, height: map.ys.last.map { $0 + 100 } ?? 500)
+                let center = World3D.vec(CGPoint(x: world.width / 2, y: world.height / 2))
+                cameraNode.camera?.zFar = 420
+                cameraNode.camera?.fieldOfView = 75
+                cameraNode.simdPosition = SIMD3<Float>(center.x, 200, center.z)
+                cameraNode.simdLook(at: SIMD3<Float>(center.x, 0, center.z), up: SIMD3<Float>(0, 0, -1), localFront: SIMD3<Float>(0, 0, -1))
+                return
+            }
+            cameraNode.camera?.zFar = 260
+            cameraNode.camera?.fieldOfView = fieldOfView
             let angle = sweepClock / turn * 2 * .pi
-            let high = Int(sweepClock / turn) % 2 == 1
+            let high = phase == 2
             let eye = SIMD3<Float>(carPoint.x, high ? 30 : 4.5, carPoint.z)
             let look = SIMD3<Float>(carPoint.x + cos(angle) * 40, high ? 0 : 3, carPoint.z - sin(angle) * 40)
             cameraNode.simdPosition = eye
