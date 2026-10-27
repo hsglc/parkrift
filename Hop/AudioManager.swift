@@ -85,7 +85,7 @@ final class AudioManager {
             loopNodes[name] = node
         }
         let effectFormat = buffers["bump"]?.format
-        for _ in 0..<4 {
+        for _ in 0..<6 {
             let node = AVAudioPlayerNode()
             engine.attach(node)
             engine.connect(node, to: engine.mainMixerNode, format: effectFormat)
@@ -130,10 +130,11 @@ final class AudioManager {
         guard engine.isRunning, let buffer = buffers[name], !effectNodes.isEmpty else { return }
         let node = effectNodes[nextEffect]
         nextEffect = (nextEffect + 1) % effectNodes.count
-        node.stop()
+        // No stop(): it waits for the audio thread (8-10 ms on the main thread in the benchmark,
+        // on every crash). The node keeps playing and the new sound interrupts what it had queued.
         node.volume = volume
         node.scheduleBuffer(buffer, at: nil, options: [.interrupts], completionHandler: nil)
-        node.play()
+        if !node.isPlaying { node.play() }
     }
 
     /// Sets a looping layer's volume (0 silences it); `rate` is not used for now.
