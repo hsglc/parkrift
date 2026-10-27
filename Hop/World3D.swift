@@ -962,13 +962,9 @@ final class World3D {
         let side = SIMD3<Float>(sin(Float(heading)), 0, cos(Float(heading)))
         shotAEye = SIMD3<Float>(p.x, p.y, p.z) + forward * 16 + side * 3.4 + SIMD3<Float>(0, 0.75, 0)
         celebrationPoint = World3D.vec(finishLine, y: 6.4)
-        if let camera = cameraNode.camera {
-            camera.fieldOfView = 38
-            camera.wantsDepthOfField = true
-            camera.fStop = 1.6
-            camera.focalBlurSampleCount = 6
-            camera.motionBlurIntensity = 0.4
-        }
+        // Only the lens changes: post-processing (depth of field, HDR, bloom) would make the GPU
+        // rebuild its pipelines mid-frame and stall
+        cameraNode.camera?.fieldOfView = 38
     }
 
     /// Shot B: hard cut to an orbit around the car, fireworks, confetti and a graded, glowing image.
@@ -977,20 +973,20 @@ final class World3D {
         cinematicTime = 0
         let toCamera = shotAEye - cameraFocus
         cinematicAngle = atan2(-toCamera.z, toCamera.x) + 0.6
-        if let camera = cameraNode.camera {
-            camera.fieldOfView = 52
-            camera.fStop = 2.8
-            camera.motionBlurIntensity = 0
-            camera.wantsHDR = true
-            camera.bloomIntensity = 0.9
-            camera.bloomThreshold = 0.75
-            camera.bloomBlurRadius = 10
-            camera.vignettingIntensity = 0.9
-            camera.vignettingPower = 0.6
-            camera.saturation = 1.25
-            camera.contrast = 0.12
+        cameraNode.camera?.fieldOfView = 52
+        if celebration.isEmpty { prepareCelebration() }
+        for item in celebration {
+            let system = item.system
+            item.node.runAction(.sequence([.wait(duration: item.delay), .run { $0.addParticleSystem(system) }]))
         }
-        let finish = celebrationPoint
+        celebration.removeAll()
+    }
+
+    /// Confetti and firework systems, built before the finish so nothing is created mid-animation.
+    private var celebration: [(node: SCNNode, system: SCNParticleSystem, delay: TimeInterval)] = []
+    private var finishPoint: SCNVector3?
+
+    private static func confettiSystem() -> SCNParticleSystem {
         let confetti = SCNParticleSystem()
         confetti.birthRate = 900
         confetti.emissionDuration = 0.35
@@ -1010,56 +1006,69 @@ final class World3D {
         confetti.particleAngularVelocity = 400
         confetti.particleAngularVelocityVariation = 300
         confetti.particleImage = CarArt.squareParticle()
+        return confetti
+    }
+
+    private static func fireworkSystem(color: UIColor) -> SCNParticleSystem {
+        let burst = SCNParticleSystem()
+        burst.birthRate = 1400
+        burst.emissionDuration = 0.08
+        burst.loops = false
+        burst.particleLifeSpan = 1.3
+        burst.particleLifeSpanVariation = 0.4
+        burst.particleVelocity = 9
+        burst.particleVelocityVariation = 2
+        burst.spreadingAngle = 180
+        burst.acceleration = SCNVector3(0, -3, 0)
+        burst.dampingFactor = 1.5
+        burst.particleSize = 0.22
+        burst.blendMode = .additive
+        burst.particleColor = color
+        burst.particleColorVariation = SCNVector4(0.05, 0.1, 0.1, 0)
+        burst.particleImage = CarArt.glowParticle()
+        let propertyAnimation = CAKeyframeAnimation()
+        propertyAnimation.values = [1.0, 1.0, 0.0]
+        propertyAnimation.keyTimes = [0, 0.6, 1]
+        burst.propertyControllers = [.opacity: SCNParticlePropertyController(animation: propertyAnimation)]
+        return burst
+    }
+
+    /// Builds the celebration for the current finish line and fires a tiny invisible burst of each
+    /// particle kind so their shaders are compiled during loading, not at the finish.
+    private func prepareCelebration() {
+        celebration.removeAll()
+        guard let finish = finishPoint else { return }
         let confettiNode = SCNNode()
         confettiNode.position = finish
-        confettiNode.addParticleSystem(confetti)
         fxRoot.addChildNode(confettiNode)
-
-        // Three firework bursts above the finish line
+        celebration.append((confettiNode, World3D.confettiSystem(), 0))
+        let colors = [UIColor(red: 1, green: 0.82, blue: 0.2, alpha: 1), UIColor(red: 0.3, green: 0.85, blue: 1, alpha: 1),
+                      UIColor(red: 1, green: 0.35, blue: 0.6, alpha: 1)]
         for (index, offset) in [SIMD3<Float>(-5, 9, 0), SIMD3<Float>(4, 11, 2), SIMD3<Float>(0, 13, -3)].enumerated() {
-            let burst = SCNParticleSystem()
-            burst.birthRate = 1400
-            burst.emissionDuration = 0.08
-            burst.loops = false
-            burst.particleLifeSpan = 1.3
-            burst.particleLifeSpanVariation = 0.4
-            burst.particleVelocity = 9
-            burst.particleVelocityVariation = 2
-            burst.spreadingAngle = 180
-            burst.acceleration = SCNVector3(0, -3, 0)
-            burst.dampingFactor = 1.5
-            burst.particleSize = 0.22
-            burst.blendMode = .additive
-            burst.particleColor = [UIColor(red: 1, green: 0.82, blue: 0.2, alpha: 1),
-                                   UIColor(red: 0.3, green: 0.85, blue: 1, alpha: 1),
-                                   UIColor(red: 1, green: 0.35, blue: 0.6, alpha: 1)][index]
-            burst.particleColorVariation = SCNVector4(0.05, 0.1, 0.1, 0)
-            burst.particleImage = CarArt.glowParticle()
-            let propertyAnimation = CAKeyframeAnimation()
-            propertyAnimation.values = [1.0, 1.0, 0.0]
-            propertyAnimation.keyTimes = [0, 0.6, 1]
-            let controller = SCNParticlePropertyController(animation: propertyAnimation)
-            burst.propertyControllers = [.opacity: controller]
             let node = SCNNode()
             node.position = SCNVector3(finish.x + offset.x, offset.y, finish.z + offset.z)
             fxRoot.addChildNode(node)
-            node.runAction(.sequence([.wait(duration: 0.25 + Double(index) * 0.45), .run { $0.addParticleSystem(burst) }]))
+            celebration.append((node, World3D.fireworkSystem(color: colors[index]), 0.15 + Double(index) * 0.45))
+        }
+        // Warm-up: one tiny, short burst of each kind
+        for warm in [World3D.confettiSystem(), World3D.fireworkSystem(color: colors[0])] {
+            warm.birthRate = 20
+            warm.emissionDuration = 0.05
+            warm.particleLifeSpan = 0.1
+            warm.particleLifeSpanVariation = 0
+            warm.particleSize = 0.001
+            warm.particleSizeVariation = 0
+            let node = SCNNode()
+            node.position = finish
+            fxRoot.addChildNode(node)
+            node.addParticleSystem(warm)
         }
     }
 
     func stopCinematic() {
         cinematicActive = false
         cinematicShotB = false
-        if let camera = cameraNode.camera {
-            camera.fieldOfView = fieldOfView
-            camera.wantsDepthOfField = false
-            camera.motionBlurIntensity = 0
-            camera.wantsHDR = false
-            camera.bloomIntensity = 0
-            camera.vignettingIntensity = 0
-            camera.saturation = 1
-            camera.contrast = 0
-        }
+        cameraNode.camera?.fieldOfView = fieldOfView
     }
 
     func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
@@ -1152,7 +1161,14 @@ final class World3D {
             buildCity(city, world: level.world)
         }
 
-        if level.race { buildFinish(level.spots[0]) }
+        if level.race {
+            buildFinish(level.spots[0])
+            finishPoint = World3D.vec(level.spots[0].center, y: 6.4)
+            prepareCelebration()
+        } else {
+            finishPoint = nil
+            celebration.removeAll()
+        }
         for spotSlot in (level.race ? [] : spotSlots) {
             let def = level.spots[spotSlot]
             let color = CarArt.playerColors[spotSlot]

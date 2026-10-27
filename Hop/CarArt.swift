@@ -95,14 +95,18 @@ enum CarArt {
         }
     }
 
-    static func squareParticle() -> UIImage {
+    private static let squareParticleImage: UIImage = makeSquareParticle()
+    static func squareParticle() -> UIImage { squareParticleImage }
+    private static func makeSquareParticle() -> UIImage {
         image(CGSize(width: 8, height: 8), scale: 1) { context, s in
             context.setFillColor(UIColor.white.cgColor)
             context.fill(CGRect(x: 0, y: 1, width: s.width, height: s.height - 2))
         }
     }
 
-    static func glowParticle() -> UIImage {
+    private static let glowParticleImage: UIImage = makeGlowParticle()
+    static func glowParticle() -> UIImage { glowParticleImage }
+    private static func makeGlowParticle() -> UIImage {
         image(CGSize(width: 32, height: 32), scale: 1) { context, s in
             let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
             if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
@@ -113,7 +117,9 @@ enum CarArt {
     }
 
     /// Strip of 16 x 2 checker cells for the finish banners.
-    static func checkerStrip() -> SKTexture {
+    static let checkerStripTexture: SKTexture = makeCheckerStrip()
+    static func checkerStrip() -> SKTexture { checkerStripTexture }
+    private static func makeCheckerStrip() -> SKTexture {
         SKTexture(image: image(CGSize(width: 512, height: 64), scale: 1) { context, s in
             let cell = s.height / 2
             for row in 0..<2 {
@@ -134,6 +140,32 @@ enum CarArt {
             source.draw(in: CGRect(x: -source.size.width / 2, y: -source.size.height / 2,
                                    width: source.size.width, height: source.size.height))
         }
+    }
+
+    private static var glowTitles: [String: SKTexture] = [:]
+
+    /// Big title text with a soft colored glow, rendered once into a texture (a live blur filter
+    /// would cost a frame stall the first time it is shown).
+    static func glowTitle(_ text: String, fontSize: CGFloat, color: UIColor) -> SKTexture {
+        let key = "\(text)-\(fontSize)"
+        if let cached = glowTitles[key] { return cached }
+        let font = UIFont(name: "AvenirNext-Heavy", size: fontSize) ?? UIFont.systemFont(ofSize: fontSize, weight: .heavy)
+        let plain: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let textSize = (text as NSString).size(withAttributes: plain)
+        let pad: CGFloat = 40
+        let canvas = CGSize(width: ceil(textSize.width + pad * 2), height: ceil(textSize.height + pad * 2))
+        let rendered = image(canvas, scale: 2) { context, _ in
+            let origin = CGPoint(x: pad, y: pad)
+            context.saveGState()
+            context.setShadow(offset: .zero, blur: 22, color: color.withAlphaComponent(0.95).cgColor)
+            for _ in 0..<3 { (text as NSString).draw(at: origin, withAttributes: plain) }
+            context.restoreGState()
+            context.setShadow(offset: CGSize(width: 0, height: 5), blur: 0, color: UIColor.black.withAlphaComponent(0.45).cgColor)
+            (text as NSString).draw(at: origin, withAttributes: plain)
+        }
+        let texture = SKTexture(image: rendered)
+        glowTitles[key] = texture
+        return texture
     }
 
     static func image(_ size: CGSize, scale: CGFloat? = nil, _ draw: (CGContext, CGSize) -> Void) -> UIImage {
