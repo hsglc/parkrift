@@ -6,9 +6,17 @@ import simd
 /// Rendering switches. `-legacy` on the command line restores the old (unoptimized) paths so the
 /// benchmark can compare both in the same build.
 enum PerfSettings {
+    // The measuring modes exist only in benchmark builds (the benchmark workflow compiles with the
+    // BENCHMARK condition); App Store builds contain no hidden modes (guideline 2.5.19).
+    #if BENCHMARK
     static let optimized = !CommandLine.arguments.contains("-legacy")
     static let benchmark = CommandLine.arguments.contains("-benchmark")
     static let finishTest = CommandLine.arguments.contains("-finishtest")
+    #else
+    static let optimized = true
+    static let benchmark = false
+    static let finishTest = false
+    #endif
 
     /// Cars farther than this (meters) use the simple body and skip wheels/lights.
     static let carDetailDistance: CGFloat = 38

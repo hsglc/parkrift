@@ -30,6 +30,9 @@ CARS = [
          tire=r'Scene_-_Root', red=r'brakelight'),
 ]
 
+# Maker badges, logos and number plates are removed (no third-party trademarks in the game)
+REMOVE = r'badge|logo|ManufacturerPlate|plate'
+
 BODY_BUDGET = 70000
 WHEEL_BUDGET = 5000
 TEXTURE_SIZE = 512
@@ -61,6 +64,24 @@ def flatten():
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     bpy.ops.object.join()
     return bpy.context.view_layer.objects.active
+
+
+def remove_faces(obj, pattern):
+    """Deletes every face whose material name matches `pattern`."""
+    regex = re.compile(pattern, re.I)
+    slots = {i for i, slot in enumerate(obj.material_slots) if slot.material and regex.search(slot.material.name)}
+    if not slots:
+        return 0
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode='EDIT')
+    bm = bmesh.from_edit_mesh(obj.data)
+    doomed = [f for f in bm.faces if f.material_index in slots]
+    bmesh.ops.delete(bm, geom=doomed, context='FACES')
+    bmesh.update_edit_mesh(obj.data)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    return len(doomed)
 
 
 def material_faces(obj, pattern):
@@ -194,14 +215,17 @@ def simplify_materials(car):
     red = re.compile(car['red'], re.I)
     for mat in bpy.data.materials:
         name = mat.name
-        if name.startswith(('paint_', 'glass_', 'redlight_')):
+        index = bpy.data.materials.find(name)
+        if name.startswith(('paint_', 'glass_', 'redlight_', 'mat_')):
             pass
         elif paint.search(name):
-            mat.name = 'paint_' + name[:20]
+            mat.name = f'paint_{index}'
         elif glass.search(name):
-            mat.name = 'glass_' + name[:20]
+            mat.name = f'glass_{index}'
         elif red.search(name):
-            mat.name = 'redlight_' + name[:20]
+            mat.name = f'redlight_{index}'
+        else:
+            mat.name = f'mat_{index}'   # source names carry maker names
         if not mat.use_nodes:
             continue
         nodes = mat.node_tree.nodes
@@ -220,6 +244,16 @@ def simplify_materials(car):
 
 
 def export(objects, path):
+    # Generic names only (source names carry maker names)
+    for o in objects:
+        o.data.name = o.name
+        for k, uv in enumerate(o.data.uv_layers):
+            uv.name = 'st' if k == 0 else f'st{k}'
+        for k, attr in enumerate(list(o.data.attributes)):
+            if not attr.name.startswith(('.', 'position', 'sharp', 'material_index', 'st')) and attr.domain == 'CORNER' and attr.data_type == 'BYTE_COLOR':
+                pass
+    for image in bpy.data.images:
+        image.name = f'tex_{bpy.data.images.find(image.name)}'
     bpy.ops.object.select_all(action='DESELECT')
     for o in objects:
         o.select_set(True)
@@ -237,9 +271,11 @@ def convert(car, src, out):
     bpy.ops.import_scene.gltf(filepath=os.path.join(src, car['file']))
     obj = flatten()
     obj.name = car['id']
+    removed = remove_faces(obj, REMOVE)
+    print(f"  {car['id']}: removed {removed} badge/logo faces")
     orient(obj, car)
-    simplify_materials(car)
     wheels = find_wheels(obj, car)
+    simplify_materials(car)
     if len(wheels) != 4:
         print(f"!! {car['id']}: found {len(wheels)} tyre clusters")
     parts = {}

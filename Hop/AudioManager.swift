@@ -43,7 +43,8 @@ final class AudioManager {
         guard !prepared else { return }
         prepared = true
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        // Ambient: game sounds follow the Silent switch and mix with other apps' audio
+        try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
         try? session.setActive(true)
 
         buffers["music"] = load("music", ext: "m4a")

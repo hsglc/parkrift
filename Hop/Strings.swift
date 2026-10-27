@@ -117,8 +117,15 @@ enum Strings {
     static var enterCode: String { t("Kodu gir", "Enter code") }
     static var createRoomSub: String { t("Bir oda kodu oluştur ve arkadaşına gönder.", "Create a room code and send it to your friend.") }
     static var joinRoomSub: String { t("Arkadaşının verdiği 4 harfli kodu yaz.", "Type the 4-letter code your friend gave you.") }
-    static var credits: String { t("Araba modelleri: \"Ferrari 458 Italia\" — vicent091036, CC BY 4.0 · \"Car Concept\" — Khronos Group, CC BY 4.0 · \"Toy Car\" — Khronos, CC0 · Car Kit — Kenney, CC0 · RES1N, Galaxy Car Showroom, Ddiaz Design, Black Snow — CC BY 4.0 (değiştirildi)",
-                                     "Car models: \"Ferrari 458 Italia\" by vicent091036, CC BY 4.0 · \"Car Concept\" by Khronos Group, CC BY 4.0 · \"Toy Car\" by Khronos, CC0 · Car Kit by Kenney, CC0 · RES1N, Galaxy Car Showroom, Ddiaz Design, Black Snow — CC BY 4.0 (modified)") }
+    static var credits: String { t("Araba modelleri: vicent091036, Khronos Group, RES1N, Galaxy Car Showroom, Ddiaz Design, Black Snow (CC BY 4.0) · Kenney, Khronos (CC0) · değiştirildi",
+                                     "Car models: vicent091036, Khronos Group, RES1N, Galaxy Car Showroom, Ddiaz Design, Black Snow (CC BY 4.0) · Kenney, Khronos (CC0) · modified") }
+    static var about: String { t("Hakkında", "About") }
+    static var privacyPolicy: String { t("Gizlilik Politikası", "Privacy Policy") }
+    static var support: String { t("Destek", "Support") }
+    static var licenses: String { t("3D modeller ve lisanslar", "3D models and licenses") }
+    static var aboutText: String { t("ParkPark kişisel veri toplamaz; hesap, reklam ve takip yoktur. Online oyunda yalnızca oda kodu ve araba hareketleri arkadaşına iletilir.",
+                                     "ParkPark collects no personal data: no accounts, ads or tracking. In online play only the room code and car movements are relayed to your friend.") }
+    static var close: String { t("Kapat", "Close") }
 
     // Garage
     static var garage: String { t("Garaj", "Garage") }

@@ -62,7 +62,7 @@ Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 
 
 Garage cars (converted with `tools/convert_cars.py`, files `Hop/Models/*_body.usdz`, `*_wheel.usdz`):
 
-- "Italia GT": "Ferrari 458 Italia" by vicent091036 (https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6),
+- "Rosso GT": "Ferrari 458 Italia" by vicent091036 (https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6),
   CC BY 4.0, taken from the three.js examples. Modified: maker badges removed, closed hardtop roof added,
   simplified interior, decimated, converted to USDZ.
 - "Vector X": "Car Concept" from the Khronos glTF Sample Assets (https://github.com/KhronosGroup/glTF-Sample-Assets),
@@ -72,10 +72,17 @@ Garage cars (converted with `tools/convert_cars.py`, files `Hop/Models/*_body.us
   wheels cut out to spin, paint areas made tintable, decimated, converted to USDZ.
 - Traffic and parked vehicles: Kenney's "Car Kit" (https://kenney.nl/assets/car-kit), CC0. Converted with
   `tools/convert_kenney.py` (stretched a little). Files `Hop/Models/kenney_*`.
-- Garage cars converted with `tools/convert_garage_cars.py` (Blender; wheels cut out, decimated, textures shrunk),
+- Garage cars converted with `tools/convert_garage_cars.py` (Blender; maker badges, logos and plates removed, wheels cut out, decimated, textures shrunk),
   taken from https://github.com/supercar3d/supercar_3D_asssets. All CC BY 4.0, modified:
-  - "Strada M": "Bmw m4 competition" (https://skfb.ly/pANyt) by RES1N
-  - "Toro EVO": "2019 Lamborghini Huracán EVO" (https://skfb.ly/pBZKS) by Galaxy Car Showroom
-  - "Arrow 570": "2016 McLaren 570S Coupe" (https://skfb.ly/prYpp) by Ddiaz Design
+  - "Strada S": "Bmw m4 competition" (https://skfb.ly/pANyt) by RES1N
+  - "Tempesta": "2019 Lamborghini Huracán EVO" (https://skfb.ly/pBZKS) by Galaxy Car Showroom
+  - "Arrow GT": "2016 McLaren 570S Coupe" (https://skfb.ly/prYpp) by Ddiaz Design
   - "Bison": "2019 Lamborghini Urus" (https://skfb.ly/pqVNU) by Ddiaz Design
-  - "Classico 40": "Ferrari f40" (https://skfb.ly/oRnMV) by Black Snow
+  - "Classico 87": "Ferrari f40" (https://skfb.ly/oRnMV) by Black Snow
+
+## App Store
+
+- Privacy policy: https://parkpark.huseyinglc0-946.workers.dev/privacy
+- Support: https://parkpark.huseyinglc0-946.workers.dev/support
+- Both pages are served by the room server (`server/index.js`).
+- The benchmark modes only exist in builds compiled with the `BENCHMARK` condition (benchmark workflow).

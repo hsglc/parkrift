@@ -32,7 +32,7 @@ jobs:
           set -o pipefail
           xcodebuild -project Hop.xcodeproj -scheme Hop -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build > build.log 2>&1 || {
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS=BENCHMARK build > build.log 2>&1 || {
               grep -E "error:" build.log | head -40 | while read -r line; do echo "::error::$line"; done
               exit 1
             }

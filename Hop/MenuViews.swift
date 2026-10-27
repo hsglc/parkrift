@@ -29,6 +29,7 @@ struct MenuView: View {
     @EnvironmentObject var model: AppModel
     @State private var page: Page = .home
     @State private var showJoin = false
+    @State private var showAbout = false
 
     private let pageAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86)
 
@@ -56,6 +57,7 @@ struct MenuView: View {
             .padding(.top, 8)
             .padding(.bottom, 10)
         }
+        .sheet(isPresented: $showAbout) { AboutView() }
         .onChange(of: model.errorText) { _, error in
             if error != nil { withAnimation(pageAnimation) { page = .online } }
         }
@@ -150,6 +152,10 @@ struct MenuView: View {
             .frame(height: 42)
             .background(Capsule().fill(Palette.ink.opacity(0.75)))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+            RoundIconButton(systemImage: "info") {
+                AudioManager.shared.play("click", volume: 0.6)
+                showAbout = true
+            }
             SoundToggle()
         }
         .frame(height: 46)
@@ -163,9 +169,8 @@ struct MenuView: View {
             Text(Strings.credits)
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.45))
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-                .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
     }
 
@@ -561,6 +566,74 @@ private struct LevelTile: View {
         }
         .buttonStyle(.plain)
         .disabled(!unlocked)
+    }
+}
+
+// MARK: - About
+
+/// Privacy policy, support and the 3D model licenses (attribution required by CC BY).
+struct AboutView: View {
+    @Environment(\.dismiss) private var dismiss
+    static let site = "https://parkpark.huseyinglc0-946.workers.dev"
+
+    private struct Credit: Identifiable {
+        let id = UUID()
+        let what: String
+        let author: String
+        let license: String
+        let link: String
+    }
+
+    private let credits: [Credit] = [
+        Credit(what: "Rosso GT", author: "vicent091036", license: "CC BY 4.0", link: "https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6"),
+        Credit(what: "Vector X", author: "Khronos Group (Unity Fan)", license: "CC BY 4.0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
+        Credit(what: "Hot Rod 55", author: "Khronos Group", license: "CC0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
+        Credit(what: "Strada S", author: "RES1N", license: "CC BY 4.0", link: "https://skfb.ly/pANyt"),
+        Credit(what: "Tempesta", author: "Galaxy Car Showroom", license: "CC BY 4.0", link: "https://skfb.ly/pBZKS"),
+        Credit(what: "Arrow GT", author: "Ddiaz Design", license: "CC BY 4.0", link: "https://skfb.ly/prYpp"),
+        Credit(what: "Bison", author: "Ddiaz Design", license: "CC BY 4.0", link: "https://skfb.ly/pqVNU"),
+        Credit(what: "Classico 87", author: "Black Snow", license: "CC BY 4.0", link: "https://skfb.ly/oRnMV"),
+        Credit(what: Strings.isTurkish ? "Trafik araçları" : "Traffic vehicles", author: "Kenney (Car Kit)", license: "CC0", link: "https://kenney.nl/assets/car-kit")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text(Strings.aboutText)
+                        .font(.system(size: 14))
+                    Link(destination: URL(string: AboutView.site + "/privacy")!) {
+                        Label(Strings.privacyPolicy, systemImage: "hand.raised.fill")
+                    }
+                    Link(destination: URL(string: AboutView.site + "/support")!) {
+                        Label(Strings.support, systemImage: "envelope.fill")
+                    }
+                }
+                Section(Strings.licenses) {
+                    ForEach(credits) { credit in
+                        Link(destination: URL(string: credit.link)!) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(credit.what).font(.system(size: 15, weight: .semibold))
+                                Text("\(credit.author) · \(credit.license)")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    Text(Strings.isTurkish ? "Modeller oyun için değiştirildi (küçültüldü, logolar kaldırıldı). Lisans: creativecommons.org/licenses/by/4.0"
+                                           : "Models were modified for the game (simplified, logos removed). License: creativecommons.org/licenses/by/4.0")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle(Strings.about)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(Strings.close) { dismiss() }
+                }
+            }
+        }
     }
 }
 
