@@ -2340,7 +2340,7 @@ final class ParkingScene: SKScene {
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine)
         // The card covers the world: stop drawing it (a frozen frame) until the next level loads
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self, self.model?.results != nil else { return }
             self.worldFrozen = true
             self.world?.setRenderingPaused(true)
