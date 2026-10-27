@@ -953,18 +953,14 @@ final class World3D {
         camera.zFar = 260
         if PerfSettings.optimized {
             // Always-on post-processing (set once, never toggled, so no mid-game pipeline rebuilds):
-            // HDR with bloom so LEDs, lamps and nitro flames glow, ambient occlusion for contact
-            // shadows, and a light color grade
+            // HDR with bloom so LEDs, lamps and nitro flames glow, and a light color grade
+            // (ambient occlusion was tried and dropped: about twice the render cost)
             camera.wantsHDR = true
             camera.wantsExposureAdaptation = false
             camera.exposureOffset = 0.15
             camera.bloomIntensity = 0.55
             camera.bloomThreshold = 0.85
             camera.bloomBlurRadius = 8
-            camera.screenSpaceAmbientOcclusionIntensity = 0.8
-            camera.screenSpaceAmbientOcclusionRadius = 0.6
-            camera.screenSpaceAmbientOcclusionNormalThreshold = 0.3
-            camera.screenSpaceAmbientOcclusionDepthThreshold = 0.25
             camera.saturation = 1.1
             camera.contrast = 0.08
         }
