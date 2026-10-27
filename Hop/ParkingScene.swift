@@ -2156,6 +2156,17 @@ final class ParkingScene: SKScene {
 
     private func finishShotB(layer: SKNode) {
         world?.celebrate()
+        // 2D fireworks and confetti (sprites sharing one texture: no first-use stall)
+        let colors = [UIColor(red: 1, green: 0.82, blue: 0.2, alpha: 1), UIColor(red: 0.3, green: 0.85, blue: 1, alpha: 1),
+                      UIColor(red: 1, green: 0.35, blue: 0.6, alpha: 1)]
+        let spots = [CGPoint(x: size.width * 0.26, y: size.height * 0.66), CGPoint(x: size.width * 0.74, y: size.height * 0.7),
+                     CGPoint(x: size.width * 0.5, y: size.height * 0.8)]
+        for index in 0..<3 {
+            layer.run(.wait(forDuration: 0.1 + Double(index) * 0.4)) { [weak self] in
+                self?.firework(at: spots[index], color: colors[index], in: layer)
+            }
+        }
+        confettiRain(in: layer)
         audio.play("park", volume: 0.9)
         bumpHaptic.impactOccurred(intensity: 1.0)
         let flash = SKSpriteNode(color: .white, size: size)
@@ -2164,6 +2175,53 @@ final class ParkingScene: SKScene {
         flash.zPosition = -1
         layer.addChild(flash)
         flash.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+    }
+
+    private func firework(at center: CGPoint, color: UIColor, in layer: SKNode) {
+        let count = 34
+        for index in 0..<count {
+            let spark = SKSpriteNode(texture: dotTexture)
+            spark.size = CGSize(width: 9, height: 9)
+            spark.color = color
+            spark.colorBlendFactor = 1
+            spark.blendMode = .add
+            spark.position = center
+            layer.addChild(spark)
+            let angle = CGFloat(index) / CGFloat(count) * 2 * CGFloat.pi + CGFloat.random(in: -0.08...0.08)
+            let distance = CGFloat.random(in: 95...140)
+            let burst = SKAction.move(by: CGVector(dx: cos(angle) * distance, dy: sin(angle) * distance), duration: 0.7)
+            burst.timingMode = .easeOut
+            spark.run(.sequence([
+                .group([burst, .sequence([.wait(forDuration: 0.45), .fadeOut(withDuration: 0.5)]),
+                        .sequence([.wait(forDuration: 0.5), .moveBy(x: 0, y: -26, duration: 0.45)]),
+                        .scale(to: 0.4, duration: 0.95)]),
+                .removeFromParent()
+            ]))
+        }
+        let core = SKSpriteNode(texture: dotTexture)
+        core.size = CGSize(width: 60, height: 60)
+        core.color = color
+        core.colorBlendFactor = 0.4
+        core.blendMode = .add
+        core.position = center
+        layer.addChild(core)
+        core.run(.sequence([.group([.scale(to: 2.2, duration: 0.25), .fadeOut(withDuration: 0.3)]), .removeFromParent()]))
+    }
+
+    private func confettiRain(in layer: SKNode) {
+        let colors: [UIColor] = [CarArt.playerColors[0], CarArt.playerColors[1], UIColor(red: 1, green: 0.85, blue: 0.3, alpha: 1),
+                                 UIColor(red: 0.4, green: 1, blue: 0.6, alpha: 1), .white]
+        for index in 0..<70 {
+            let piece = SKSpriteNode(color: colors[index % colors.count], size: CGSize(width: 8, height: 5))
+            piece.position = CGPoint(x: CGFloat.random(in: 0...size.width), y: size.height + CGFloat.random(in: 0...80))
+            piece.zRotation = CGFloat.random(in: 0...CGFloat.pi)
+            layer.addChild(piece)
+            let fall = SKAction.moveBy(x: CGFloat.random(in: -60...60), y: -(size.height + 120), duration: Double.random(in: 2.2...3.2))
+            fall.timingMode = .easeIn
+            piece.run(.sequence([.wait(forDuration: Double.random(in: 0...0.6)),
+                                 .group([fall, .rotate(byAngle: CGFloat.random(in: -10...10), duration: 3)]),
+                                 .removeFromParent()]))
+        }
     }
 
     private func confetti(at point: CGPoint) {
@@ -2272,6 +2330,11 @@ final class ParkingScene: SKScene {
                                      entries: entries, footer: footer, newBest: newBest,
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine)
+        // The card covers the world: stop drawing it (a frozen frame) until the next level loads
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self = self, self.model?.results != nil else { return }
+            self.world?.setRenderingPaused(true)
+        }
     }
 
     private func showToast(_ text: String) {

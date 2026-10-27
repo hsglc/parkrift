@@ -208,6 +208,7 @@ final class AppModel: ObservableObject {
 
     func retryLevel() {
         results = nil
+        world?.setRenderingPaused(false)
         scene?.retryLevel()
     }
 

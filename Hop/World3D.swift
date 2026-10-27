@@ -973,13 +973,15 @@ final class World3D {
         cinematicTime = 0
         let toCamera = shotAEye - cameraFocus
         cinematicAngle = atan2(-toCamera.z, toCamera.x) + 0.6
+        // Fireworks and confetti are drawn by the 2D layer: 3D particle systems stalled a frame
+        // the first time they appeared
         cameraNode.camera?.fieldOfView = 52
-        if celebration.isEmpty { prepareCelebration() }
-        for item in celebration {
-            let system = item.system
-            item.node.runAction(.sequence([.wait(duration: item.delay), .run { $0.addParticleSystem(system) }]))
-        }
-        celebration.removeAll()
+    }
+
+    /// Stops (or resumes) drawing the 3D view, e.g. while the results card covers it.
+    func setRenderingPaused(_ paused: Bool) {
+        renderer?.isPlaying = !paused
+        renderer?.rendersContinuously = !paused
     }
 
     /// Confetti and firework systems, built before the finish so nothing is created mid-animation.
@@ -1154,6 +1156,7 @@ final class World3D {
         fxRoot.childNodes.forEach { $0.removeFromParentNode() }
         myNeon = nil
         stopCinematic()
+        setRenderingPaused(false)
         parkedCars3D.removeAll()
         arrowNode = nil
         lotRoot.isHidden = level.city != nil
@@ -1164,7 +1167,6 @@ final class World3D {
         if level.race {
             buildFinish(level.spots[0])
             finishPoint = World3D.vec(level.spots[0].center, y: 6.4)
-            prepareCelebration()
         } else {
             finishPoint = nil
             celebration.removeAll()
