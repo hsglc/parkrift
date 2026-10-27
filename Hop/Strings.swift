@@ -283,6 +283,22 @@ enum Strings {
     static func unlockFor(_ price: Int) -> String { t("\(price) PARAYA AÇ", "UNLOCK · \(price)", "DESBLOQUEAR · \(price)") }
     static func needMoreCoins(_ missing: Int) -> String { t("\(missing) para daha gerek", "\(missing) more coins needed", "Faltan \(missing) monedas") }
     static var locked: String { t("Kilitli", "Locked", "Bloqueado") }
+    static var quickMatch: String { t("Hızlı eşleşme", "Quick match", "Partida rápida") }
+    static var quickMatchSub: String { t("Rastgele bir rakiple hemen yarış", "Race a random opponent right away", "Compite ya contra un rival al azar") }
+    static var searching: String { t("Rakip aranıyor…", "Finding an opponent…", "Buscando rival…") }
+    static var noOpponent: String { t("Şu an rakip bulunamadı, biraz sonra tekrar dene.", "No opponent found right now, try again soon.", "No hay rivales ahora, inténtalo pronto.") }
+    static var weekendBonus: String { t("Hafta sonu x2", "Weekend x2", "Fin de semana x2") }
+    static var weekendEvent: String { t("HAFTA SONU ETKİNLİĞİ · 2x PARA", "WEEKEND EVENT · 2x COINS", "EVENTO DE FIN DE SEMANA · 2x MONEDAS") }
+    static var upgrade: String { t("Geliştir", "Upgrade", "Mejorar") }
+    static var upgradeHint: String { t("Geliştirmeler tek kişilik ve şehir modlarında geçerli; online yarışlar herkes için eşit.", "Upgrades count in solo and city modes; online races stay equal for everyone.", "Las mejoras cuentan en solitario y ciudad; las carreras online son iguales para todos.") }
+    static var upgradeEngine: String { t("Motor", "Engine", "Motor") }
+    static var upgradeGrip: String { t("Yol tutuş", "Grip", "Agarre") }
+    static var upgradeNitro: String { t("Nitro", "Nitro", "Nitro") }
+    static var upgradeEngineInfo: String { t("Daha yüksek son hız ve çekiş", "Higher top speed and pull", "Más velocidad punta y empuje") }
+    static var upgradeGripInfo: String { t("Virajda daha az kayma", "Less sliding in corners", "Menos derrape en curvas") }
+    static var upgradeNitroInfo: String { t("Daha güçlü ve hızlı dolan nitro", "Stronger nitro that fills faster", "Nitro más fuerte y rápido") }
+    static var maxLevel: String { t("MAKS", "MAX", "MÁX") }
+    static var rims: String { t("Jant", "Rims", "Llantas") }
     static func taskTitle(_ kind: Progression.TaskKind) -> String {
         switch kind {
         case .drift: return t("Toplam \(kind.target) drift puanı", "Score \(kind.target) drift points", "Suma \(kind.target) puntos de derrape")

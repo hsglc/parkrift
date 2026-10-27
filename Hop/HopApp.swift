@@ -162,6 +162,64 @@ final class AppModel: ObservableObject {
         net.connect(code: roomCode, asHost: isHost)
     }
 
+    // MARK: Quick match
+
+    /// Looking for a random opponent (no server change needed: players meet in rooms whose codes
+    /// come from the clock, so everyone searching in the same minute tries the same few rooms).
+    @Published var matchmaking = false
+    private var matchCandidates: [(code: String, host: Bool)] = []
+    private var matchTimeout: DispatchWorkItem?
+
+    private static func matchCode(window: Int, index: Int) -> String {
+        let letters = Array("ABCDEFGHJKLMNPQRSTUVWXYZ")
+        var value = UInt64(window) &* 2_654_435_761 &+ UInt64(index) &* 40_503
+        var code = "Q"
+        for _ in 0..<3 {
+            code.append(letters[Int(value % UInt64(letters.count))])
+            value /= UInt64(letters.count)
+        }
+        return code
+    }
+
+    func quickMatch() {
+        let window = Int(Date().timeIntervalSince1970 / 20)
+        // First join anyone already waiting (the last minute), then wait in a room of our own
+        var candidates: [(String, Bool)] = []
+        for w in [window - 2, window - 1, window] {
+            for i in 0..<3 { candidates.append((AppModel.matchCode(window: w, index: i), false)) }
+        }
+        for i in 0..<3 { candidates.append((AppModel.matchCode(window: window, index: i), true)) }
+        matchCandidates = candidates.map { (code: $0.0, host: $0.1) }
+        matchmaking = true
+        errorText = nil
+        tryNextMatch()
+    }
+
+    private func tryNextMatch() {
+        guard matchmaking else { return }
+        guard !matchCandidates.isEmpty else {
+            stopMatchmaking(error: Strings.noOpponent)
+            return
+        }
+        let next = matchCandidates.removeFirst()
+        roomCode = next.code
+        isHost = next.host
+        connect()
+    }
+
+    private func stopMatchmaking(error: String?) {
+        matchmaking = false
+        matchTimeout?.cancel()
+        matchTimeout = nil
+        if let error = error {
+            net.disconnect()
+            connecting = false
+            online = false
+            errorText = error
+            screen = .menu
+        }
+    }
+
     func startOnlineGame() {
         guard isHost, friendHere else { return }
         let start = onlineMode == .race ? Levels.raceBase : Levels.cityBase
@@ -170,6 +228,8 @@ final class AppModel: ObservableObject {
     }
 
     func leaveToMenu() {
+        matchmaking = false
+        matchTimeout?.cancel()
         results = nil
         loading = false
         Task { @MainActor in AudioManager.shared.stopLoops() }
@@ -341,6 +401,20 @@ final class AppModel: ObservableObject {
             mySlot = message["slot"] as? Int ?? 0
             let peers = message["peers"] as? [Int] ?? []
             friendHere = !peers.isEmpty
+            if matchmaking {
+                // Slot 0 waits for an opponent (and starts the game); slot 1 joined someone
+                isHost = mySlot == 0
+                if isHost {
+                    let timeout = DispatchWorkItem { [weak self] in
+                        guard let self = self, self.matchmaking, !self.friendHere else { return }
+                        self.stopMatchmaking(error: Strings.noOpponent)
+                    }
+                    matchTimeout = timeout
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: timeout)
+                } else {
+                    stopMatchmaking(error: nil)
+                }
+            }
             screen = .lobby
             net.send(carChoice.message)
         case "join":
@@ -348,9 +422,17 @@ final class AppModel: ObservableObject {
             if isHost { net.send(["t": "mode", "m": onlineMode.rawValue]) }
             net.send(carChoice.message)
             scene?.friendJoined()
+            if matchmaking && isHost {
+                // Matched: start a city race shortly
+                stopMatchmaking(error: nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.startOnlineGame() }
+            }
         case "leave":
             friendHere = false
             scene?.friendLeft()
+        case "noroom" where matchmaking, "full" where matchmaking:
+            net.disconnect()
+            tryNextMatch()
         case "noroom":
             net.disconnect()
             connecting = false

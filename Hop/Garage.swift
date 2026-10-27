@@ -150,6 +150,7 @@ final class GarageStage {
         ringMaterial.emission.contents = accent
         floorGlow.multiply.contents = accent
         car.setPaint(choice.color)
+        car.setRim(choice.rimColor)
         guard previous?.model != choice.model else { return }
 
         let tiny = SCNVector3(0.001, 0.001, 0.001)
@@ -329,6 +330,7 @@ struct GarageView: View {
     @EnvironmentObject var model: AppModel
     @State private var choice = CarChoice.saved
     @State private var statsShown = false
+    @State private var showUpgrades = false
     private let stage = GarageStage.shared
 
     private var spec: CarSpec { choice.spec }
@@ -370,6 +372,7 @@ struct GarageView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
+        .sheet(isPresented: $showUpgrades) { UpgradeView(choice: $choice).environmentObject(model) }
         .onAppear {
             choice = model.carChoice
             stage.show(choice, animated: false)
@@ -537,6 +540,23 @@ struct GarageView: View {
                 Text(spec.fixedLivery ? Strings.factoryLivery.uppercased() : CarSpec.paints[choice.paint].name.uppercased())
                     .font(.race(13, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.85))
+                if Progression.owns(choice.model) {
+                    Button {
+                        AudioManager.shared.play("click", volume: 0.6)
+                        showUpgrades = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                            Text(Strings.upgrade.uppercased())
+                        }
+                        .font(.system(size: 11, weight: .black, design: .rounded))
+                        .foregroundStyle(Palette.ink)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Palette.gold))
+                    }
+                    .buttonStyle(PressScaleStyle())
+                }
             }
             .padding(.top, 4)
             HStack(spacing: 4) {

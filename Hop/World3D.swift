@@ -694,6 +694,23 @@ final class Car3D {
         headlight?.isHidden = !on
     }
 
+    /// Rim colour: the wheels get their own rim material (one per car).
+    private var rimMaterial: SCNMaterial?
+    func setRim(_ color: UIColor) {
+        if rimMaterial == nil {
+            let material = CarModels.rim.copy() as! SCNMaterial
+            rimMaterial = material
+            for spinner in spinNodes {
+                spinner.enumerateHierarchy { node, _ in
+                    guard node.name == "rim", let geometry = node.geometry?.copy() as? SCNGeometry else { return }
+                    geometry.materials = [material]
+                    node.geometry = geometry
+                }
+            }
+        }
+        rimMaterial?.diffuse.contents = color
+    }
+
     /// Swaps the paint material only (no new geometry, no new shader).
     func setPaint(_ color: UIColor) {
         paintedNode?.geometry?.materials = [CarFactory.racerPaint(color)]

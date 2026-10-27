@@ -75,6 +75,46 @@ enum Progression {
         return true
     }
 
+    // MARK: Upgrades
+
+    /// Engine, grip and nitro levels (0...3) of one car.
+    struct Upgrades: Equatable {
+        var engine = 0
+        var grip = 0
+        var nitro = 0
+    }
+
+    enum UpgradeKind: Int, CaseIterable { case engine, grip, nitro }
+
+    static let maxUpgrade = 3
+
+    /// Price of the next level (level 0 -> 1 costs the first).
+    static func upgradePrice(_ level: Int) -> Int { [200, 400, 700][max(0, min(2, level))] }
+
+    static func upgrades(for id: CarModelID) -> Upgrades {
+        let all = defaults.dictionary(forKey: "pp.upgrades") as? [String: [Int]] ?? [:]
+        let levels = all[String(id.rawValue)] ?? [0, 0, 0]
+        return Upgrades(engine: levels[0], grip: levels[1], nitro: levels[2])
+    }
+
+    /// Buys the next level of one upgrade; false at the top or without the coins.
+    @discardableResult
+    static func buyUpgrade(_ kind: UpgradeKind, for id: CarModelID) -> Bool {
+        var current = upgrades(for: id)
+        let level = [current.engine, current.grip, current.nitro][kind.rawValue]
+        guard level < maxUpgrade, coins >= upgradePrice(level) else { return false }
+        coins -= upgradePrice(level)
+        switch kind {
+        case .engine: current.engine += 1
+        case .grip: current.grip += 1
+        case .nitro: current.nitro += 1
+        }
+        var all = defaults.dictionary(forKey: "pp.upgrades") as? [String: [Int]] ?? [:]
+        all[String(id.rawValue)] = [current.engine, current.grip, current.nitro]
+        defaults.set(all, forKey: "pp.upgrades")
+        return true
+    }
+
     // MARK: Round rewards
 
     /// Pays a finished round, counts it toward today's tasks and pays any task it completes.
@@ -89,10 +129,23 @@ enum Progression {
         if run.nearMisses > 0 { lines.append((Strings.rewardNearMiss, run.nearMisses * 10)) }
         if run.escapes > 0 { lines.append((Strings.rewardEscape, run.escapes * 75)) }
         lines = lines.filter { $0.coins > 0 }
+        // Weekend event: every round pays double
+        if isWeekendEvent {
+            let base = lines.reduce(0) { $0 + $1.coins }
+            if base > 0 { lines.append((Strings.weekendBonus, base)) }
+        }
         let done = advanceTasks(with: run)
         let reward = RunReward(lines: lines, tasksDone: done)
         coins += reward.total
         return reward
+    }
+
+    // MARK: Weekend event
+
+    /// Friday to Sunday every round pays double coins.
+    static var isWeekendEvent: Bool {
+        let weekday = Calendar.current.component(.weekday, from: Date())   // 1 = Sunday
+        return weekday == 1 || weekday == 6 || weekday == 7
     }
 
     // MARK: Daily tasks

@@ -183,6 +183,17 @@ struct MenuView: View {
 
     private var home: some View {
         VStack(spacing: 6) {
+            if Progression.isWeekendEvent {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                    Text(Strings.weekendEvent)
+                }
+                .font(.system(size: 11, weight: .black, design: .rounded))
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .leading, endPoint: .trailing)))
+            }
             homeCards
             Text(Strings.credits)
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
@@ -224,6 +235,8 @@ struct MenuView: View {
             }
         case .online:
             HStack(spacing: 12) {
+                OptionTile(title: Strings.quickMatch, subtitle: Strings.quickMatchSub, icon: "bolt.fill",
+                           accent: Palette.gold, buttonTitle: Strings.playNow) { model.quickMatch() }
                 OptionTile(title: Strings.createRoom, subtitle: Strings.createRoomSub, icon: "plus.circle.fill",
                            accent: Palette.neon, buttonTitle: Strings.createRoom) { model.createRoom() }
                 ZStack {
@@ -288,7 +301,7 @@ struct MenuView: View {
         if model.connecting {
             HStack(spacing: 8) {
                 ProgressView().tint(.white)
-                Text(Strings.connecting)
+                Text(model.matchmaking ? Strings.searching : Strings.connecting)
             }
             .font(.system(size: 13, weight: .bold, design: .rounded))
             .foregroundStyle(.white.opacity(0.8))
@@ -526,16 +539,23 @@ struct LevelPicker: View {
             .foregroundStyle(.white.opacity(0.7))
 
             let columns = Array(repeating: GridItem(.fixed(54), spacing: 8), count: 5)
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(0..<Levels.all.count, id: \.self) { index in
-                    LevelTile(index: index,
-                              unlocked: index < model.unlockedLevels,
-                              selected: model.selectedLevel == index,
-                              stars: model.stars(for: index)) {
-                        model.selectedLevel = index
-                        AudioManager.shared.play("click", volume: 0.6)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                        ForEach(0..<Levels.all.count, id: \.self) { index in
+                            LevelTile(index: index,
+                                      unlocked: index < model.unlockedLevels,
+                                      selected: model.selectedLevel == index,
+                                      stars: model.stars(for: index)) {
+                                model.selectedLevel = index
+                                AudioManager.shared.play("click", volume: 0.6)
+                            }
+                            .id(index)
+                        }
                     }
+                    .padding(.vertical, 2)
                 }
+                .onAppear { proxy.scrollTo(model.selectedLevel, anchor: .center) }
             }
         }
         .frame(width: 302)
@@ -705,7 +725,14 @@ struct LobbyView: View {
                                     .strokeBorder(Color.white.opacity(0.22), lineWidth: 1))
                         }
                     }
-                    if model.isHost {
+                    if model.matchmaking {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(.white)
+                            Text(Strings.searching)
+                        }
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.8))
+                    } else if model.isHost {
                         Text(Strings.shareCode)
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundStyle(.white.opacity(0.65))

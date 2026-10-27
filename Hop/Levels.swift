@@ -69,7 +69,7 @@ struct LevelDef {
     var props: [PropDef] = []
     var weather: Weather = .day
 
-    var name: String { Strings.pick(nameTR, nameEN, Levels.spanishNames[nameEN] ?? nameEN) }
+    var name: String { Strings.pick(nameTR, nameEN, Levels.spanishNames[nameEN] ?? Levels.moreSpanishNames[nameEN] ?? nameEN) }
 }
 
 /// All levels share a 1000 x 500 world; y grows upwards, angles are in degrees in the builders.
@@ -85,35 +85,37 @@ enum Levels {
         "Maze": "Laberinto",
         "Tight Bays": "Plazas estrechas",
         "Tight Parallel": "Línea ajustada",
-        "Final: Garage": "Final: Garaje",
+        "Garage": "Garaje",
     ]
 
     static let world = CGSize(width: 1000, height: 500)
     static let carSize = CGSize(width: 44, height: 22)
 
-    private static func rad(_ degrees: CGFloat) -> CGFloat { degrees * CGFloat.pi / 180 }
+    static func rad(_ degrees: CGFloat) -> CGFloat { degrees * CGFloat.pi / 180 }
 
-    private static func start(_ x: CGFloat, _ y: CGFloat, _ degrees: CGFloat = 0) -> StartDef {
+    static func start(_ x: CGFloat, _ y: CGFloat, _ degrees: CGFloat = 0) -> StartDef {
         StartDef(position: CGPoint(x: x, y: y), heading: rad(degrees))
     }
 
-    private static func spot(_ x: CGFloat, _ y: CGFloat, _ length: CGFloat, _ width: CGFloat, _ degrees: CGFloat = 0) -> SpotDef {
+    static func spot(_ x: CGFloat, _ y: CGFloat, _ length: CGFloat, _ width: CGFloat, _ degrees: CGFloat = 0) -> SpotDef {
         SpotDef(center: CGPoint(x: x, y: y), size: CGSize(width: length, height: width), angle: rad(degrees))
     }
 
-    private static func car(_ x: CGFloat, _ y: CGFloat, _ degrees: CGFloat = 0, _ tint: Int = 0) -> ObstacleDef {
+    static func car(_ x: CGFloat, _ y: CGFloat, _ degrees: CGFloat = 0, _ tint: Int = 0) -> ObstacleDef {
         ObstacleDef(kind: .car, center: CGPoint(x: x, y: y), size: carSize, angle: rad(degrees), tint: tint)
     }
 
-    private static func wall(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> ObstacleDef {
+    static func wall(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> ObstacleDef {
         ObstacleDef(kind: .wall, center: CGPoint(x: x, y: y), size: CGSize(width: w, height: h), angle: 0, tint: 0)
     }
 
-    private static func cone(_ x: CGFloat, _ y: CGFloat) -> ObstacleDef {
+    static func cone(_ x: CGFloat, _ y: CGFloat) -> ObstacleDef {
         ObstacleDef(kind: .cone, center: CGPoint(x: x, y: y), size: CGSize(width: 14, height: 14), angle: 0, tint: 0)
     }
 
-    static let all: [LevelDef] = [
+    static let all: [LevelDef] = base + more
+
+    static let base: [LevelDef] = [
         // 1 — straight ahead
         LevelDef(nameTR: "İlk Park", nameEN: "First Park",
                  starts: [start(140, 150), start(140, 350)],
@@ -187,7 +189,7 @@ enum Levels {
                              car(600, 455, 0, 1), car(750, 455, 0, 2), car(900, 455, 0, 3)]),
 
         // 10 — the garage: low entrance, angled bays, pillars
-        LevelDef(nameTR: "Final: Garaj", nameEN: "Final: Garage",
+        LevelDef(nameTR: "Garaj", nameEN: "Garage",
                  starts: [start(100, 420), start(100, 330)],
                  spots: [spot(720, 80, 66, 34, 60), spot(860, 80, 66, 34, 60)],
                  obstacles: [wall(540, 210, 20, 180), wall(760, 300, 440, 20),

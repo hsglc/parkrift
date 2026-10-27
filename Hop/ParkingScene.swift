@@ -174,6 +174,57 @@ final class ParkingScene: SKScene {
     private let maxReverse: CGFloat = 70
     private let creepSpeed: CGFloat = 12
 
+    // Ghost: the player's best run of a solo level, replayed as a see-through car
+    private var ghostRecording: [Float] = []
+    private var ghostReplay: [Float] = []
+    private var ghostCar: Car3D?
+    private let ghostStep: TimeInterval = 0.1
+
+    private func setupGhost() {
+        ghostCar?.node.removeFromParentNode()
+        ghostCar = nil
+        ghostRecording.removeAll()
+        ghostReplay = []
+        guard !isCity, !online, !benchmark, let world = world else { return }
+        ghostReplay = UserDefaults.standard.array(forKey: "pp.ghost.\(levelIndex)") as? [Float] ?? []
+        guard ghostReplay.count >= 6 else { return }
+        let choice = model?.carChoice ?? CarChoice.defaultChoice
+        let car = world.makeCar(color: UIColor(white: 0.95, alpha: 1), style: .racer, model: choice.model)
+        car.node.opacity = 0.32
+        car.node.enumerateHierarchy { node, _ in node.castsShadow = false }
+        ghostCar = car
+        car.update(position: CGPoint(x: CGFloat(ghostReplay[0]), y: CGFloat(ghostReplay[1])), heading: CGFloat(ghostReplay[2]),
+                   steer: 0, braking: false, reversing: false)
+    }
+
+    /// Records this run every 0.1 s and moves the ghost along the best run at the same time.
+    private func updateGhost() {
+        let sample = Int(elapsed / ghostStep)
+        if !isCity && !online && ghostRecording.count / 3 <= sample && ghostRecording.count < 3 * 1800 {
+            ghostRecording += [Float(carPosition.x), Float(carPosition.y), Float(heading)]
+        }
+        guard let car = ghostCar else { return }
+        let frames = ghostReplay.count / 3
+        let t = elapsed / ghostStep
+        let i = min(frames - 1, Int(t))
+        let j = min(frames - 1, i + 1)
+        let k = Float(t - Double(i))
+        func value(_ frame: Int, _ part: Int) -> Float { ghostReplay[frame * 3 + part] }
+        let x = value(i, 0) + (value(j, 0) - value(i, 0)) * k
+        let y = value(i, 1) + (value(j, 1) - value(i, 1)) * k
+        let heading = CGFloat(value(i, 2)) + CGFloat.angleDelta(CGFloat(value(i, 2)), CGFloat(value(j, 2))) * CGFloat(k)
+        car.update(position: CGPoint(x: CGFloat(x), y: CGFloat(y)), heading: heading, steer: 0, braking: false, reversing: false)
+        if i >= frames - 1 && car.node.action(forKey: "gone") == nil {
+            car.node.runAction(.fadeOut(duration: 0.6), forKey: "gone")
+        }
+    }
+
+    private func saveGhost() {
+        guard !isCity, !online, ghostRecording.count >= 6 else { return }
+        ghostRecording += [Float(carPosition.x), Float(carPosition.y), Float(heading)]
+        UserDefaults.standard.set(ghostRecording, forKey: "pp.ghost.\(levelIndex)")
+    }
+
     // What this round earned (paid as coins at the end)
     private var runDriftPoints = 0
     private var runNearMisses = 0
@@ -189,6 +240,8 @@ final class ParkingScene: SKScene {
     private let redline: CGFloat = 7000
     /// Top speed of each gear as a share of the car's top speed (5th only with nitro).
     private let gearTops: [CGFloat] = [0.3, 0.52, 0.75, 1.08, 1.8]
+    /// Sideways force the tyres hold before the car runs wide (raised by the grip upgrade).
+    private var lateralGrip: CGFloat = 420
     /// How far the tyres are past their grip in a corner (0...1).
     private var understeer: CGFloat = 0
 
@@ -300,17 +353,23 @@ final class ParkingScene: SKScene {
         self.levelIndex = Levels.clamp(level)
         let mine = model.carChoice
         localCar = world.makeCar(color: mine.color, style: .racer, model: mine.model)
+        localCar?.setRim(mine.rimColor)
         let friend = model.friendCar ?? CarChoice.friendDefault
         remoteCar = world.makeCar(color: friend.color, style: .racer, model: friend.model)
+        remoteCar?.setRim(friend.rimColor)
         remoteChoice = friend
         // The chosen car's driving character (small differences so online races stay fair)
         let spec = mine.spec
-        maxForward = 150 * spec.topSpeed
-        engineAccel = 150 * spec.acceleration
-        maxSteer = 0.64 * min(1.1, spec.steering)
-        steerRate = 2.6 * spec.steering
-        nitroPush = 300 * spec.nitroPower
-        nitroFillTime = 10 * spec.nitroFill
+        // Upgrades bought with coins count only offline, so online races stay fair
+        let upgrade = online ? Progression.Upgrades() : Progression.upgrades(for: mine.model)
+        let engine = CGFloat(upgrade.engine), grip = CGFloat(upgrade.grip), boost = CGFloat(upgrade.nitro)
+        maxForward = 150 * spec.topSpeed * (1 + 0.025 * engine)
+        engineAccel = 150 * spec.acceleration * (1 + 0.05 * engine)
+        maxSteer = 0.64 * min(1.1, spec.steering) * (1 + 0.02 * grip)
+        steerRate = 2.6 * spec.steering * (1 + 0.04 * grip)
+        lateralGrip = 420 + 30 * grip
+        nitroPush = 300 * spec.nitroPower * (1 + 0.06 * boost)
+        nitroFillTime = 10 * spec.nitroFill * (1 - 0.06 * boost)
     }
 
     private var remoteChoice = CarChoice.friendDefault
@@ -322,6 +381,7 @@ final class ParkingScene: SKScene {
         let hidden = remoteCar?.isHidden ?? true
         remoteCar?.node.removeFromParentNode()
         remoteCar = world.makeCar(color: choice.color, style: .racer, model: choice.model)
+        remoteCar?.setRim(choice.rimColor)
         remoteCar?.isHidden = hidden
     }
 
@@ -816,6 +876,7 @@ final class ParkingScene: SKScene {
         }
         trail.removeAll()
         nearMissAt.removeAll()
+        setupGhost()
         runDriftPoints = 0
         runNearMisses = 0
         runEscapes = 0
@@ -1628,6 +1689,7 @@ final class ParkingScene: SKScene {
                 elapsed += TimeInterval(dt)
                 stepCar(dt)
                 separateFromRemote(dt)
+                updateGhost()
                 if !benchmark { checkParking(dt) }
             }
         case .finished:
@@ -2202,7 +2264,7 @@ final class ParkingScene: SKScene {
         var steerYaw = velocity / wheelBase * tan(steer)
         // The tyres can only hold so much sideways force: past it the car runs wide (understeer)
         // and the tyres squeal
-        let maxLateral: CGFloat = 420
+        let maxLateral = lateralGrip
         understeer = 0
         if !drifting && abs(velocity * steerYaw) > maxLateral {
             understeer = min(1, (abs(velocity * steerYaw) - maxLateral) / 300)
@@ -3095,6 +3157,7 @@ final class ParkingScene: SKScene {
         if !isCity {
             model?.levelCompleted(levelIndex)
             newBest = model?.record(level: levelIndex, time: localTime, hits: hits) ?? false
+            if newBest { saveGhost() }
         }
         if level.race {
             playFinishSequence()

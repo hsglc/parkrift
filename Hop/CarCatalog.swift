@@ -18,6 +18,9 @@ enum CarModelID: Int, CaseIterable {
 struct CarChoice: Equatable {
     var model: CarModelID
     var paint: Int
+    var rim: Int = 0
+
+    var rimColor: UIColor { CarSpec.rims[max(0, min(CarSpec.rims.count - 1, rim))] }
 
     var color: UIColor { CarSpec.paints[max(0, min(CarSpec.paints.count - 1, paint))].color }
     var spec: CarSpec { CarSpec.of(model) }
@@ -26,7 +29,7 @@ struct CarChoice: Equatable {
     /// What the friend drives until their choice arrives.
     static let friendDefault = CarChoice(model: .italia, paint: 1)
 
-    var message: [String: Any] { ["t": "car", "m": model.rawValue, "p": paint] }
+    var message: [String: Any] { ["t": "car", "m": model.rawValue, "p": paint, "r": rim] }
 
     init(model: CarModelID, paint: Int) {
         self.model = model
@@ -37,6 +40,7 @@ struct CarChoice: Equatable {
         guard let raw = message["m"] as? Int, let model = CarModelID(rawValue: raw) else { return nil }
         self.model = model
         self.paint = max(0, min(CarSpec.paints.count - 1, message["p"] as? Int ?? 0))
+        self.rim = max(0, min(CarSpec.rims.count - 1, message["r"] as? Int ?? 0))
     }
 
     /// Saved garage choice.
@@ -44,12 +48,15 @@ struct CarChoice: Equatable {
         get {
             let defaults = UserDefaults.standard
             guard defaults.object(forKey: "pp.car") != nil else { return defaultChoice }
-            return CarChoice(model: CarModelID(rawValue: defaults.integer(forKey: "pp.car")) ?? .italia,
-                             paint: max(0, min(CarSpec.paints.count - 1, defaults.integer(forKey: "pp.paint"))))
+            var choice = CarChoice(model: CarModelID(rawValue: defaults.integer(forKey: "pp.car")) ?? .italia,
+                                   paint: max(0, min(CarSpec.paints.count - 1, defaults.integer(forKey: "pp.paint"))))
+            choice.rim = max(0, min(CarSpec.rims.count - 1, defaults.integer(forKey: "pp.rim")))
+            return choice
         }
         set {
             UserDefaults.standard.set(newValue.model.rawValue, forKey: "pp.car")
             UserDefaults.standard.set(newValue.paint, forKey: "pp.paint")
+            UserDefaults.standard.set(newValue.rim, forKey: "pp.rim")
         }
     }
 }
@@ -105,6 +112,14 @@ struct CarSpec {
         Paint(name: Strings.paintPurple, color: UIColor(red: 0.42, green: 0.12, blue: 0.78, alpha: 1)),
         Paint(name: Strings.paintWhite, color: UIColor(red: 0.90, green: 0.91, blue: 0.93, alpha: 1)),
         Paint(name: Strings.paintBlack, color: UIColor(red: 0.05, green: 0.05, blue: 0.06, alpha: 1))
+    ]
+
+    /// Rim colours: silver, black, gold, bronze, white, red, blue.
+    static let rims: [UIColor] = [
+        UIColor(white: 0.72, alpha: 1), UIColor(white: 0.08, alpha: 1),
+        UIColor(red: 0.85, green: 0.66, blue: 0.22, alpha: 1), UIColor(red: 0.55, green: 0.36, blue: 0.2, alpha: 1),
+        UIColor(white: 0.95, alpha: 1), UIColor(red: 0.8, green: 0.08, blue: 0.08, alpha: 1),
+        UIColor(red: 0.12, green: 0.35, blue: 0.85, alpha: 1)
     ]
 
     static let all: [CarSpec] = [
