@@ -127,8 +127,11 @@ enum CarModels {
     private static var bodies: [CarModelID: SCNNode] = [:]
     private static var wheels: [CarModelID: SCNNode] = [:]
     private static var textures: [String: UIImage] = [:]
+    private static let loadLock = NSRecursiveLock()
 
     static func body(_ id: CarModelID) -> SCNNode? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
         if let cached = bodies[id] { return cached }
         let node = load(CarSpec.of(id).file + "_body")
         bodies[id] = node
@@ -136,10 +139,27 @@ enum CarModels {
     }
 
     static func wheel(_ id: CarModelID) -> SCNNode? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
         if let cached = wheels[id] { return cached }
         let node = load(CarSpec.of(id).file + "_wheel")
         wheels[id] = node
         return node
+    }
+
+    /// Reads all car models on a background thread (parsing the USDZ files blocked the menu for
+    /// a second or two); `completion` runs on the main thread when they are ready.
+    static func preload(completion: @escaping () -> Void) {
+        // Shared materials are created here on the main thread first
+        _ = [CarShapes.canopy, CarShapes.led, CarShapes.chrome, CarShapes.carbon, CarShapes.trim, CarShapes.graphite,
+             tire, rim, caliper, interior, accent, retroWheel]
+        DispatchQueue.global(qos: .userInitiated).async {
+            for id in CarModelID.allCases {
+                _ = body(id)
+                _ = wheel(id)
+            }
+            DispatchQueue.main.async { completion() }
+        }
     }
 
     /// Geometry of every loaded model, for uploading to the GPU ahead of time.
@@ -157,7 +177,8 @@ enum CarModels {
     static let rim = Mat.pbr(UIColor(white: 0.78, alpha: 1), metal: 0.95, rough: 0.22)
     /// Simplified cabin seen through the windows.
     static let interior = Mat.pbr(UIColor(white: 0.07, alpha: 1), metal: 0, rough: 0.8)
-    static let caliper = Mat.pbr(UIColor(red: 0.95, green: 0.78, blue: 0.1, alpha: 1), metal: 0.3, rough: 0.4)
+    /// Brake discs and calipers: dark metal (bright yellow covered the whole wheel face).
+    static let caliper = Mat.pbr(UIColor(white: 0.28, alpha: 1), metal: 0.8, rough: 0.35)
     /// Glossy black for the concept car's second paint tone.
     static let accent: SCNMaterial = {
         let material = Mat.pbr(UIColor(white: 0.04, alpha: 1), metal: 0.5, rough: 0.2)

@@ -1121,6 +1121,8 @@ final class World3D {
     func setRenderingPaused(_ paused: Bool) {
         renderer?.isPlaying = !paused
         renderer?.rendersContinuously = !paused
+        // Running actions (spinning pickups, arrows) would keep asking for redraws
+        scene.isPaused = paused
     }
 
     /// Confetti and firework systems, built before the finish so nothing is created mid-animation.
@@ -1824,9 +1826,6 @@ final class World3D {
     static func prewarmCars() {
         guard PerfSettings.optimized else { return }
         var jobs: [() -> Void] = []
-        for id in CarModelID.allCases {
-            jobs.append { _ = CarModels.body(id); _ = CarModels.wheel(id) }
-        }
         let saved = CarChoice.saved
         jobs.append { _ = saved.model == .retro ? CarModels.retroPaint(saved.color) : CarFactory.racerPaint(saved.color) }
         for color in CarArt.parkedColors {

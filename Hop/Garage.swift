@@ -29,7 +29,7 @@ final class GarageStage {
         // Dark satin floor (a reflective SCNFloor drew the whole scene twice)
         let floor = SCNFloor()
         floor.reflectivity = 0
-        let floorMaterial = Mat.pbr(UIColor(red: 0.05, green: 0.055, blue: 0.07, alpha: 1), metal: 0.2, rough: 0.35)
+        let floorMaterial = Mat.pbr(UIColor(red: 0.05, green: 0.055, blue: 0.07, alpha: 1), metal: 0, rough: 0.9)
         floor.materials = [floorMaterial]
         scene.rootNode.addChildNode(SCNNode(geometry: floor))
 

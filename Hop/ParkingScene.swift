@@ -964,7 +964,8 @@ final class ParkingScene: SKScene {
             FrameMonitor.shared.start()
         }
         if benchClock > 1.0 && benchClock - dt <= 1.0 { world?.saveSnapshot(named: "shot-start") }
-        if benchClock > 12 && benchClock - dt <= 12 { world?.saveSnapshot(named: "shot-mid"); saveFullSnapshot() }
+        // (not behind the results card: a snapshot of the paused 3D view stalls)
+        if benchClock > 12 && benchClock - dt <= 12 && !worldFrozen { world?.saveSnapshot(named: "shot-mid"); saveFullSnapshot() }
         if benchRecording && benchClock > 22 {
             finishBenchmark()
             return
