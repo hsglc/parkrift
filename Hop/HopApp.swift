@@ -94,6 +94,7 @@ final class AppModel: ObservableObject {
             Task { @MainActor in self?.objectWillChange.send() }
         }
         net.onMessage = { [weak self] message in self?.handle(message) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { GameCenter.authenticate() }
         net.onClose = { [weak self] _ in self?.connectionClosed() }
     }
 
@@ -317,6 +318,17 @@ final class AppModel: ObservableObject {
     func finishRun(_ stats: RunStats) -> RunReward {
         let reward = Progression.reward(for: stats)
         objectWillChange.send()
+        // Leaderboards
+        let defaults = UserDefaults.standard
+        if stats.won == true {
+            defaults.set(defaults.integer(forKey: "pp.wins") + 1, forKey: "pp.wins")
+            GameCenter.submit(defaults.integer(forKey: "pp.wins"), to: GameCenter.totalWins)
+        }
+        if stats.driftPoints > defaults.integer(forKey: "pp.bestDrift") {
+            defaults.set(stats.driftPoints, forKey: "pp.bestDrift")
+        }
+        GameCenter.submit(defaults.integer(forKey: "pp.bestDrift"), to: GameCenter.bestDrift)
+        GameCenter.submit((0..<Levels.all.count).reduce(0) { $0 + stars(for: $1) }, to: GameCenter.totalStars)
         let goodMoment = (stats.solo && stats.finished && stats.stars == 3) || stats.won == true
         if goodMoment { maybeAskForReview() }
         return reward

@@ -170,6 +170,10 @@ struct MenuView: View {
                     }
             }
             .buttonStyle(PressScaleStyle())
+            RoundIconButton(systemImage: "trophy.fill") {
+                AudioManager.shared.play("click", volume: 0.6)
+                GameCenter.showLeaderboards()
+            }
             RoundIconButton(systemImage: "info") {
                 AudioManager.shared.play("click", volume: 0.6)
                 showAbout = true

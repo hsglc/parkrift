@@ -1,0 +1,123 @@
+name: App Store release
+
+# Screenshots from the simulator, store texts, Game Center leaderboards, the latest TestFlight
+# build, and (with submit) the submission for App Review. Runs on a push to the `release` branch
+# or by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: Submit for App Review (1 = yes)
+        default: "1"
+  push:
+    branches: [release]
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 50
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID || '668Y8934S8' }}
+      ASC_ISSUER_ID: 1e043955-17da-4831-838a-b4e2d593d0b5
+      BUNDLE_ID: com.huseyingulcu.hop
+      SUBMIT: ${{ inputs.submit || '1' }}
+      REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+
+      - name: Build for simulator
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project Hop.xcodeproj -scheme Hop -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS=BENCHMARK build > build.log 2>&1 || {
+              grep -E "error:" build.log | head -40 | while read -r line; do echo "::error::$line"; done
+              exit 1
+            }
+
+      - name: Screenshots (6.9-inch iPhone)
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          best = ""
+          for runtime, devices in data.items():
+              if "iOS" in runtime:
+                  for d in devices:
+                      if d["name"].startswith("iPhone") and "Pro Max" in d["name"]:
+                          best = d["udid"]
+          print(best)
+          ')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 || true
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
+          mkdir -p raw shots
+          shoot() {
+            local label=$1; shift
+            xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+            sleep 2
+            DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data 2>/dev/null || echo "")
+            [ -n "$DATA" ] && rm -f "$DATA/Documents/bench.json"
+            xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark "$@" > "raw/$label.log" 2>&1 &
+            local pid=$!
+            DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
+            for i in $(seq 1 90); do [ -f "$DATA/Documents/bench.json" ] && break; sleep 1; done
+            for f in menu garage garage3d shot-hud shot-mid shot-finish; do
+              cp "$DATA/Documents/$f.png" "raw/$label-$f.png" 2>/dev/null || true
+            done
+            kill $pid 2>/dev/null || true
+          }
+          shoot city
+          shoot finish -finishtest
+          pip3 install --break-system-packages pillow pyjwt cryptography requests >/dev/null 2>&1 || pip3 install pillow pyjwt cryptography requests
+          python3 - <<'PY'
+          import os
+          from PIL import Image
+          order = ['city-menu', 'city-shot-hud', 'city-garage', 'finish-shot-finish', 'city-shot-mid']
+          n = 0
+          for name in order:
+              path = f'raw/{name}.png'
+              if not os.path.exists(path):
+                  print('missing', name); continue
+              im = Image.open(path).convert('RGB')
+              if im.height > im.width:
+                  im = im.rotate(90, expand=True)
+              # 6.9-inch landscape: 2868 x 1320, filled edge to edge
+              target = (2868, 1320)
+              scale = max(target[0] / im.width, target[1] / im.height)
+              im = im.resize((round(im.width * scale), round(im.height * scale)), Image.LANCZOS)
+              left = (im.width - target[0]) // 2
+              top = (im.height - target[1]) // 2
+              im = im.crop((left, top, left + target[0], top + target[1]))
+              n += 1
+              im.save(f'shots/{n:02d}-{name}.png')
+              print('shot', n, name)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots
+
+      - name: Write key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/key.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/key.p8" >> "$GITHUB_ENV"
+
+      - name: App Store Connect
+        run: SHOTS=shots python3 tools/asc_release.py
+
+      - name: Remove key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
