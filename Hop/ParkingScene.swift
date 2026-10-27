@@ -70,6 +70,8 @@ final class ParkingScene: SKScene {
     private var countdownNode = SKNode()
     private var countdownLabel = SKLabelNode()
     private var countdownShadow = SKLabelNode()
+    private var countdownDial = SKNode()
+    private var countdownRing = SKShapeNode()
     private var menuButton = SKSpriteNode()
     private var resetButton = SKSpriteNode()
     private var soundButton = SKSpriteNode()
@@ -422,6 +424,27 @@ final class ParkingScene: SKScene {
         countdownNode.addChild(countdownShadow)
         countdownLabel = makeLabel("3", size: 110, color: .white)
         countdownNode.addChild(countdownLabel)
+
+        // Dial behind the numbers: dark disc, faint track and a ring that sweeps each second
+        countdownDial = SKNode()
+        countdownDial.position = countdownNode.position
+        countdownDial.zPosition = 4
+        let disc = SKShapeNode(circleOfRadius: 70)
+        disc.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.45)
+        disc.strokeColor = .clear
+        countdownDial.addChild(disc)
+        let track = SKShapeNode(circleOfRadius: 78)
+        track.strokeColor = UIColor.white.withAlphaComponent(0.15)
+        track.lineWidth = 6
+        track.fillColor = .clear
+        countdownDial.addChild(track)
+        countdownRing = SKShapeNode()
+        countdownRing.lineWidth = 6
+        countdownRing.lineCap = .round
+        countdownRing.glowWidth = 2
+        countdownDial.addChild(countdownRing)
+        countdownDial.isHidden = true
+        hud.addChild(countdownDial)
         hud.addChild(countdownNode)
     }
 
@@ -655,6 +678,8 @@ final class ParkingScene: SKScene {
         updateCarNodes()
         countdownNode.isHidden = !ready
         if ready {
+            countdownDial.alpha = 0
+            popCountdown(go: false)
             tickHaptic.impactOccurred()
             audio.play("beep", volume: 0.6)
         }
@@ -667,6 +692,40 @@ final class ParkingScene: SKScene {
         }
     }
 
+    /// Each number grows in softly and fades out before the next; GO! zooms away.
+    private func popCountdown(go: Bool) {
+        countdownNode.removeAllActions()
+        countdownNode.isHidden = false
+        countdownNode.alpha = 0
+        countdownNode.setScale(go ? 0.6 : 0.45)
+        let appear = SKAction.group([.fadeIn(withDuration: 0.18), .scale(to: 1.0, duration: 0.34)])
+        appear.timingMode = .easeOut
+        let settle = SKAction.scale(to: go ? 1.08 : 1.04, duration: go ? 0.35 : 0.42)
+        let leave = SKAction.group([.fadeOut(withDuration: go ? 0.35 : 0.2), .scale(to: go ? 2.0 : 1.25, duration: go ? 0.35 : 0.2)])
+        leave.timingMode = .easeIn
+        countdownNode.run(.sequence([appear, settle, leave]))
+        if go {
+            countdownDial.run(.sequence([.group([.fadeOut(withDuration: 0.3), .scale(to: 1.4, duration: 0.3)]), .hide()]))
+        } else {
+            countdownDial.removeAllActions()
+            countdownDial.isHidden = false
+            if countdownDial.alpha < 1 {
+                countdownDial.setScale(0.8)
+                countdownDial.run(.group([.fadeIn(withDuration: 0.25), .scale(to: 1.0, duration: 0.25)]))
+            }
+        }
+    }
+
+    private func updateCountdownRing() {
+        var fraction = countdown - floor(countdown)
+        if fraction <= 0.001 { fraction = 1 }
+        let path = CGMutablePath()
+        path.addArc(center: .zero, radius: 78, startAngle: CGFloat.pi / 2,
+                    endAngle: CGFloat.pi / 2 - fraction * 2 * CGFloat.pi, clockwise: true)
+        countdownRing.path = path
+        countdownRing.strokeColor = countdownLabel.fontColor ?? .white
+    }
+
     private func becomeReady() {
         guard !ready else { return }
         stage("ready")
@@ -674,6 +733,8 @@ final class ParkingScene: SKScene {
         countdownNode.isHidden = false
         countdown = 3
         setCountdown("3")
+        countdownDial.alpha = 0
+        popCountdown(go: false)
         model?.sceneReady()
         tickHaptic.impactOccurred()
         audio.play("beep", volume: 0.6)
@@ -1190,16 +1251,17 @@ final class ParkingScene: SKScene {
             if countdown <= 0 {
                 phase = .driving
                 setCountdown(Strings.go)
-                countdownNode.run(.sequence([.scale(to: 1.25, duration: 0.15), .wait(forDuration: 0.3),
-                                             .group([.fadeOut(withDuration: 0.25), .scale(to: 1.6, duration: 0.25)])]))
+                popCountdown(go: true)
                 tickHaptic.impactOccurred(intensity: 1.0)
                 audio.play("go", volume: 0.7)
-            } else if after != before {
-                setCountdown("\(after)")
-                countdownNode.setScale(1.7)
-                countdownNode.run({ let a = SKAction.scale(to: 1.0, duration: 0.28); a.timingMode = .easeOut; return a }())
-                tickHaptic.impactOccurred()
-                audio.play("beep", volume: 0.6)
+            } else {
+                if after != before {
+                    setCountdown("\(after)")
+                    popCountdown(go: false)
+                    tickHaptic.impactOccurred()
+                    audio.play("beep", volume: 0.6)
+                }
+                updateCountdownRing()
             }
         case .driving:
             if !localParked {
