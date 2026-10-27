@@ -343,7 +343,8 @@ final class PedestrianSystem {
 
 // MARK: - Models
 
-/// Realistic people (original characters made with Meshy AI, see tools/convert_meshy_people.py).
+/// People: Polyfork's free low poly characters, animated with its Walk, Idle and Run clips (baked
+/// by tools/convert_polyfork_people.py).
 /// Each character is a set of pose meshes baked from its rigged walk and run clips; a person is
 /// one node whose geometry is swapped to animate (cheap for dozens of people, no skinning).
 enum PedestrianModels {
@@ -355,7 +356,7 @@ enum PedestrianModels {
         static let walkCycle: [Pose] = [.walk0, .walk1, .walk2, .walk3, .walk4, .walk5, .walk6, .walk7]
     }
 
-    static let outfitCount = 6
+    static let outfitCount = 10
     /// World units walked per full walk cycle (two steps).
     static let cycleLength: CGFloat = 13
 
@@ -378,19 +379,20 @@ enum PedestrianModels {
               let scene = try? SCNScene(url: url, options: nil) else { return }
         for pose in Pose.allCases {
             let name = "p\(pose.rawValue)"
+            // A pose is a node named pK: one mesh, or one child mesh per colour (Polyfork characters)
             var found: SCNNode?
             scene.rootNode.enumerateHierarchy { node, stop in
-                if node.name == name, node.geometry != nil { found = node; stop.pointee = true }
+                if node.name == name { found = node; stop.pointee = true }
             }
-            guard let node = found, let geometry = node.geometry else { continue }
-            let baked = SCNNode(geometry: geometry)
-            baked.transform = node.worldTransform
+            guard let node = found else { continue }
+            let baked = node.clone()
+            baked.transform = node.parent?.convertTransform(node.transform, to: nil) ?? node.transform
             let wrapper = SCNNode()
             wrapper.addChildNode(baked)
             guard let flat = wrapper.flattenedClone().geometry else { continue }
             for material in flat.materials {
                 material.lightingModel = .physicallyBased
-                material.roughness.contents = NSNumber(value: 0.8)
+                material.roughness.contents = NSNumber(value: 0.85)
                 material.metalness.contents = NSNumber(value: 0)
             }
             cache[character * 16 + pose.rawValue] = flat

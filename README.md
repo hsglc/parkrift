@@ -79,8 +79,10 @@ Garage cars:
 Street props and the police car: Polyfork (https://polyfork.dev, licence: use in commercial projects, no
 attribution required, no redistribution of the files themselves): "Site Traffic Cone", "Oil-drum", "Wire Trash
 Basket", "Police Barricade", "Police Cruiser" (free low poly editions, USDZ exports). Files `Hop/Models/pf_*.usdz`.
-Pedestrians and the traffic light: original Meshy AI models (`tools/convert_meshy_people.py`,
-`tools/convert_meshy_props.py`). Street textures and sounds: procedural (`tools/make_road_textures.py`,
+Pedestrians: ten Polyfork characters (Commuter, Salaryman Commuter, Passenger, Graduate Student, Professor,
+Backpacker, Arriving Hotel Guest, Trucker, Skate Filmer, Diner Waitress) animated with Polyfork's free Walk,
+Idle and Run clips, baked into pose meshes by `tools/convert_polyfork_people.py` (`Hop/Models/person_p*.usdz`).
+Traffic light: an original Meshy AI model (`tools/convert_meshy_props.py`). Street textures and sounds: procedural (`tools/make_road_textures.py`,
 `tools/make_crash.py`, `tools/make_arcade_sounds.py`).
 
 No car in the game is a replica of a real make or model (earlier builds used Sketchfab replicas of real

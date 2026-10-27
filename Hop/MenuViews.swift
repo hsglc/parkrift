@@ -597,9 +597,11 @@ struct AboutView: View {
         Credit(what: "Vector X", author: "Khronos Group (Unity Fan)", license: "CC BY 4.0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
         Credit(what: "Hot Rod 55", author: "Khronos Group", license: "CC0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
         Credit(what: Strings.pick("Trafik araçları", "Traffic vehicles", "Vehículos del tráfico"), author: "Kenney (Car Kit)", license: "CC0", link: "https://kenney.nl/assets/car-kit"),
-        Credit(what: Strings.pick("Koniler, variller, bariyer, polis arabası", "Cones, drums, barricade, police car", "Conos, bidones, valla, coche de policía"),
+        Credit(what: Strings.pick("Yayalar ve animasyonları, koniler, variller, bariyer, polis arabası",
+                                  "Pedestrians and their animations, cones, drums, barricade, police car",
+                                  "Peatones y sus animaciones, conos, bidones, valla, coche de policía"),
                author: "Polyfork", license: Strings.pick("Ticari kullanım", "Commercial use", "Uso comercial"), link: "https://polyfork.dev"),
-        Credit(what: Strings.pick("Yayalar ve trafik ışığı", "Pedestrians and traffic light", "Peatones y semáforo"),
+        Credit(what: Strings.pick("Trafik ışığı", "Traffic light", "Semáforo"),
                author: Strings.pick("Özgün, Meshy AI ile üretildi", "Original, made with Meshy AI", "Originales, hechos con Meshy AI"), license: "CC BY 4.0", link: "https://www.meshy.ai")
     ] }
 
