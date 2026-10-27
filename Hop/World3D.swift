@@ -1535,6 +1535,13 @@ final class World3D {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { next(0) }
     }
 
+    /// Benchmark helper: saves what the 3D view shows to Documents/<name>.png.
+    func saveSnapshot(named name: String) {
+        guard let image = renderer?.snapshot(), let data = image.pngData(),
+              let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        try? data.write(to: folder.appendingPathComponent(name + ".png"))
+    }
+
     /// Full detail only for parked cars near the player (world units).
     func updateDetail(around point: CGPoint) {
         let range = PerfSettings.carDetailDistance * 10
