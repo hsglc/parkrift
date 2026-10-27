@@ -135,6 +135,7 @@ final class ParkingScene: SKScene {
     private var myWins = 0
     private var friendWins = 0
     private var friendMarker = SKShapeNode()
+    private var policeMarker = SKShapeNode()
     private var gasPedal = SKSpriteNode()
     private var hornButton = SKSpriteNode()
 
@@ -774,6 +775,11 @@ final class ParkingScene: SKScene {
         // Arcade extras of the level
         streetProps = level.city != nil ? world.addProps(level.props) : nil
         police = nil
+        policeCooldownUntil = 0
+        if policeBanner.parent != nil {
+            policeBanner.alpha = 0
+            policeEdges.forEach { $0.alpha = 0 }
+        }
         trail.removeAll()
         nearMissAt.removeAll()
         drifting = false
@@ -1608,6 +1614,7 @@ final class ParkingScene: SKScene {
                     bumpHaptic.impactOccurred(intensity: 0.8)
                     audio.play("bump", volume: 0.6)
                     flashBonus(Strings.pedestrianHit)
+                    dispatchPolice(Strings.crimePedestrian)
                 }
                 updatePedestrianNodes()
             }
@@ -1963,6 +1970,14 @@ final class ParkingScene: SKScene {
         }
         friendMarker = marker(CarArt.playerColors[otherSlot])
         mapContent.addChild(friendMarker)
+        // The police car: a flashing dot
+        policeMarker = SKShapeNode(circleOfRadius: 4.5)
+        policeMarker.fillColor = UIColor(red: 1, green: 0.15, blue: 0.15, alpha: 1)
+        policeMarker.strokeColor = .white
+        policeMarker.lineWidth = 1.2
+        policeMarker.zPosition = 3
+        policeMarker.isHidden = true
+        mapContent.addChild(policeMarker)
         // The player: fixed in the middle, always pointing up
         myMarker = marker(CarArt.playerColors[slot])
         myMarker.setScale(1.3)
@@ -1986,6 +2001,14 @@ final class ParkingScene: SKScene {
         friendMarker.isHidden = !friendPresent
         friendMarker.position = CGPoint(x: remotePosition.x * mapScale, y: remotePosition.y * mapScale)
         friendMarker.zRotation = remoteHeading
+        if let chase = police {
+            policeMarker.isHidden = false
+            policeMarker.position = CGPoint(x: chase.position.x * mapScale, y: chase.position.y * mapScale)
+            let red = Int(lastUpdate * 6) % 2 == 0
+            policeMarker.fillColor = red ? UIColor(red: 1, green: 0.15, blue: 0.15, alpha: 1) : UIColor(red: 0.2, green: 0.45, blue: 1, alpha: 1)
+        } else {
+            policeMarker.isHidden = true
+        }
         if let bots = traffic?.bots {
             for (index, dot) in botDots.enumerated() where index < bots.count {
                 dot.position = CGPoint(x: bots[index].position.x * mapScale, y: bots[index].position.y * mapScale)
@@ -2105,8 +2128,10 @@ final class ParkingScene: SKScene {
                 slip = slip > 0 ? 1.25 : -1.25
                 travelHeading = newHeading - slip
             }
+            let before = driftClock
             driftClock += dt
             driftScore += abs(velocity) * abs(slip) * dt * 0.9
+            if before < 2.2 && driftClock >= 2.2 { dispatchPolice(Strings.crimeDrift) }
             if (!handbrake && abs(slip) < 0.07) || abs(velocity) < 20 { endDrift() }
         }
         let moveHeading = drifting ? travelHeading : newHeading
@@ -2377,13 +2402,15 @@ final class ParkingScene: SKScene {
             if trail.count > 140 { trail.removeFirst(trail.count - 140) }
         }
         if let chase = police {
-            chase.extend(carPosition)
-            let outcome = chase.step(dt, playerSpeed: abs(velocity), player: carPosition)
-            audio.setLoop("siren", volume: Float(max(0.05, 0.6 - chase.gap / 1400)))
+            let outcome = chase.step(dt, player: carPosition, playerSpeed: abs(velocity), trail: trail)
+            // The siren gets louder as the police closes in
+            audio.setLoop("siren", volume: Float(max(0.12, min(0.8, 0.85 - chase.distance / 1600))))
+            updatePoliceWarning(chase)
             switch outcome {
             case .caught:
                 hits += 2
                 hitsLabel.text = "\(hits)"
+                velocity *= 0.3
                 flashBonus(Strings.policeCaught)
                 notifyHaptic.notificationOccurred(.error)
                 endPoliceChase()
@@ -2398,20 +2425,123 @@ final class ParkingScene: SKScene {
         }
     }
 
-    private func startPoliceChase() {
-        guard level.city != nil, let world = world, trail.count > 20, !localParked else { return }
-        // Starts about six seconds back along our own path
-        let path = Array(trail.suffix(60))
-        police = PoliceChase(node: world.makePoliceNode(), trail: path)
-        flashBonus(Strings.policeChase)
+    /// A crime (crash, hitting a pedestrian, a long drift, speeding past a radar) calls the police:
+    /// a cruiser sets off from an intersection some way off and drives the streets to us with its
+    /// siren on, then chases us. Another crime during a chase keeps it going longer.
+    private func dispatchPolice(_ reason: String) {
+        guard let city = level.city, let world = world, phase == .driving, !localParked else { return }
+        if let chase = police {
+            chase.extend()
+            showPoliceWarning(reason)
+            return
+        }
+        guard lastUpdate >= policeCooldownUntil else { return }
+        // An intersection 45–90 m away, preferably behind us
+        var best: CGPoint?
+        var bestScore = CGFloat.greatestFiniteMagnitude
+        for x in city.xs {
+            for y in city.ys {
+                let point = CGPoint(x: x, y: y)
+                let d = point.distance(to: carPosition)
+                let ahead = ((x - carPosition.x) * cos(heading) + (y - carPosition.y) * sin(heading)) / max(d, 1)
+                let score = abs(d - 650) + (d < 380 ? 2000 : 0) + max(0, ahead) * 400
+                if score < bestScore {
+                    bestScore = score
+                    best = point
+                }
+            }
+        }
+        guard let start = best else { return }
+        police = PoliceChase(node: world.makePoliceNode(), map: city, start: start)
+        showPoliceWarning(reason)
         notifyHaptic.notificationOccurred(.warning)
     }
 
     private func endPoliceChase() {
         guard let chase = police else { return }
         police = nil
+        policeCooldownUntil = lastUpdate + 10
         audio.setLoop("siren", volume: 0)
+        hidePoliceWarning()
         chase.node.runAction(.sequence([.wait(duration: 1.5), .fadeOut(duration: 0.6), .removeFromParentNode()]))
+    }
+
+    // MARK: Police warning
+
+    private var policeCooldownUntil: TimeInterval = 0
+    private var policeBanner = SKNode()
+    private var policeTitle = SKLabelNode()
+    private var policeDetail = SKLabelNode()
+    private var policeBannerBack = SKShapeNode()
+    private var policeEdges: [SKShapeNode] = []
+    private var policeReason = ""
+
+    /// Built with the HUD (hidden), so the first chase does not stall on new nodes.
+    private func setupPoliceWarning() {
+        policeBanner.removeFromParent()
+        policeEdges.forEach { $0.removeFromParent() }
+        policeEdges.removeAll()
+        policeBanner = SKNode()
+        policeBanner.position = CGPoint(x: size.width / 2, y: size.height * 0.80)
+        policeBanner.zPosition = 22
+        policeBanner.alpha = 0
+        let width = min(size.width - 40, 330)
+        policeBannerBack = SKShapeNode(rect: CGRect(x: -width / 2, y: -24, width: width, height: 48), cornerRadius: 14)
+        policeBannerBack.fillColor = UIColor(red: 0.08, green: 0.02, blue: 0.04, alpha: 0.82)
+        policeBannerBack.strokeColor = UIColor(red: 1, green: 0.2, blue: 0.2, alpha: 1)
+        policeBannerBack.lineWidth = 2.5
+        policeBanner.addChild(policeBannerBack)
+        policeTitle = makeLabel(Strings.policeComing, size: 18, color: .white)
+        policeTitle.position = CGPoint(x: 0, y: 2)
+        policeBanner.addChild(policeTitle)
+        policeDetail = makeLabel("", size: 11, color: UIColor(white: 1, alpha: 0.85))
+        policeDetail.position = CGPoint(x: 0, y: -16)
+        policeBanner.addChild(policeDetail)
+        hud.addChild(policeBanner)
+        // Red and blue glow on the screen edges
+        for (index, color) in [UIColor(red: 1, green: 0.1, blue: 0.1, alpha: 1), UIColor(red: 0.15, green: 0.4, blue: 1, alpha: 1)].enumerated() {
+            let edge = SKShapeNode(rect: CGRect(x: index == 0 ? 0 : size.width - 16, y: 0, width: 16, height: size.height))
+            edge.fillColor = color
+            edge.strokeColor = .clear
+            edge.glowWidth = 0
+            edge.alpha = 0
+            edge.zPosition = 20
+            edge.blendMode = .add
+            hud.addChild(edge)
+            policeEdges.append(edge)
+        }
+    }
+
+    private func showPoliceWarning(_ reason: String) {
+        if policeBanner.parent == nil { setupPoliceWarning() }
+        policeReason = reason
+        policeBanner.removeAllActions()
+        policeBanner.alpha = 1
+        policeBanner.setScale(0.7)
+        policeBanner.run(.sequence([.scale(to: 1.08, duration: 0.14), .scale(to: 1.0, duration: 0.1)]))
+        audio.play("beep", volume: 0.6)
+    }
+
+    private func hidePoliceWarning() {
+        policeBanner.removeAllActions()
+        policeBanner.run(.fadeAlpha(to: 0, duration: 0.3))
+        policeEdges.forEach { $0.run(.fadeAlpha(to: 0, duration: 0.3)) }
+    }
+
+    private func updatePoliceWarning(_ chase: PoliceChase) {
+        let meters = Int((chase.distance / 10).rounded())
+        let title = chase.pursuing ? Strings.policeChase : Strings.policeComing
+        if policeTitle.text != title { policeTitle.text = title }
+        let detail = "\(policeReason) · \(meters) m"
+        if policeDetail.text != detail { policeDetail.text = detail }
+        let flash = Int(lastUpdate * 6) % 2 == 0
+        policeBannerBack.strokeColor = flash ? UIColor(red: 1, green: 0.2, blue: 0.2, alpha: 1) : UIColor(red: 0.25, green: 0.5, blue: 1, alpha: 1)
+        // The closer the police, the stronger the edge glow
+        let strength = max(0.25, min(0.7, 0.8 - chase.distance / 1500))
+        if policeEdges.count == 2 {
+            policeEdges[0].alpha = flash ? strength : strength * 0.15
+            policeEdges[1].alpha = flash ? strength * 0.15 : strength
+        }
     }
 
     // MARK: Collisions
@@ -2477,6 +2607,7 @@ final class ParkingScene: SKScene {
         audio.play("crash", volume: Float(min(1, 0.45 + strength * 0.6)))
         bumpHaptic.impactOccurred(intensity: min(1, 0.6 + strength * 0.4))
         world?.shake(strength: 3 + 7 * strength)
+        dispatchPolice(Strings.crimeCrash)
         sparks(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
         dust(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
     }
@@ -2514,6 +2645,7 @@ final class ParkingScene: SKScene {
         bumpHaptic.impactOccurred(intensity: 1.0)
         world?.shake(strength: 3 + 7 * strength)
         sparks(at: CGPoint(x: (carPosition.x + other.x) / 2, y: (carPosition.y + other.y) / 2))
+        dispatchPolice(hitCar ? Strings.crimeCrash : Strings.crimeReckless)
         return true
     }
 
@@ -3198,6 +3330,7 @@ final class ParkingScene: SKScene {
             bonusLabel.alpha = 0.002
             hud.addChild(bonusLabel)
         }
+        if policeBanner.parent == nil { setupPoliceWarning() }
         guard let city = level.city, let world = world else { return }
         var segments: [(mid: CGPoint, alongX: Bool)] = []
         for y in city.ys {
@@ -3256,8 +3389,8 @@ final class ParkingScene: SKScene {
             camera.flash.scale = SCNVector3(1, 1, 1)
             camera.flash.runAction(.sequence([.wait(duration: 0.12), .scale(to: 0.001, duration: 0.2)]))
             let speedText = "\(Int(kmh.rounded())) km/h"
-            if kmh >= policeThreshold && police == nil {
-                startPoliceChase()
+            if kmh >= policeThreshold {
+                dispatchPolice(Strings.crimeSpeeding(speedText))
             }
             if kmh >= cameraThreshold {
                 nitro = min(1, nitro + 0.35)

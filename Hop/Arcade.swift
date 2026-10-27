@@ -208,32 +208,36 @@ extension Array {
 
 // MARK: - Police chase
 
-/// A police car that follows the player's own path (so it never cuts through buildings), a bit
-/// faster than the player can drive without nitro. It catches the player when close enough, and
-/// gives up after a while or when far behind. The model is Polyfork's police cruiser; its light
-/// bar flashes and its wheels turn.
+/// A police car sent after the player for a crime. It sets off from an intersection some way off
+/// and drives the streets to the player with its siren on; once close it sticks to the player's
+/// own path (so it does not cut through buildings), a bit faster than the player can drive without
+/// nitro. It catches the player when close enough and gives up after a while or when far behind.
+/// The model is Polyfork's police cruiser; its light bar flashes and its wheels turn.
 final class PoliceChase {
     enum Outcome { case none, caught, escaped }
 
     let node: SCNNode
-    private var trail: [CGPoint]
-    private var position: CGPoint
-    private var heading: CGFloat
+    private let map: CityMap
+    private var waypoints: [CGPoint] = []
+    private(set) var position: CGPoint
+    private var heading: CGFloat = 0
     private var speed: CGFloat = 0
     private var clock: CGFloat = 0
+    private var planClock: CGFloat = 0
     private var spin: CGFloat = 0
     private var wheels: [SCNNode] = []
     private var redLamps: [SCNMaterial] = []
     private var blueLamps: [SCNMaterial] = []
     private(set) var finished = false
-    let duration: CGFloat = 20
+    /// Close behind the player (following its path) rather than still on the way.
+    private(set) var pursuing = false
+    private(set) var distance: CGFloat = 999
+    var duration: CGFloat = 30
 
-    init(node: SCNNode, trail: [CGPoint]) {
+    init(node: SCNNode, map: CityMap, start: CGPoint) {
         self.node = node
-        self.trail = trail
-        position = trail.first ?? .zero
-        heading = 0
-        if trail.count > 1 { heading = atan2(trail[1].y - trail[0].y, trail[1].x - trail[0].x) }
+        self.map = map
+        position = start
         node.enumerateHierarchy { child, _ in
             if let name = child.name, name.hasPrefix("wheel") { self.wheels.append(child) }
             guard let geometry = child.geometry else { return }
@@ -255,41 +259,49 @@ final class PoliceChase {
                 return material
             }
         }
+        node.position = World3D.vec(position)
     }
 
-    /// Adds the player's latest position to the path the police car follows.
-    func extend(_ point: CGPoint) {
-        if let last = trail.last, last.distance(to: point) < 8 { return }
-        trail.append(point)
+    /// Another crime during the chase: the police keeps at it longer.
+    func extend() {
+        duration = max(duration, clock + 25)
     }
 
-    /// Distance left along the trail to the player.
-    var gap: CGFloat {
-        var total: CGFloat = 0
-        var from = position
-        for p in trail {
-            total += from.distance(to: p)
-            from = p
-        }
-        return total
-    }
-
-    func step(_ dt: CGFloat, playerSpeed: CGFloat, player: CGPoint) -> Outcome {
+    /// `trail`: the player's recent positions, oldest first.
+    func step(_ dt: CGFloat, player: CGPoint, playerSpeed: CGFloat, trail: [CGPoint]) -> Outcome {
         guard !finished else { return .none }
         clock += dt
+        distance = position.distance(to: player)
         // Flashing light bar: red and blue take turns
         let redOn = Int(clock * 7) % 2 == 0
         for lamp in redLamps { lamp.emission.contents = redOn ? UIColor(red: 1, green: 0.1, blue: 0.08, alpha: 1) : UIColor.black }
         for lamp in blueLamps { lamp.emission.contents = redOn ? UIColor.black : UIColor(red: 0.15, green: 0.35, blue: 1, alpha: 1) }
-        let target = clock < 1.2 ? 120 : max(playerSpeed * 1.08, 175)
+
+        // Plan: along the streets while far, along the player's own path when close
+        planClock -= dt
+        if planClock <= 0 || waypoints.isEmpty {
+            planClock = 0.5
+            if distance > 220 {
+                pursuing = false
+                waypoints = Array(map.route(from: position, to: player).dropFirst())
+            } else {
+                pursuing = true
+                if let nearest = trail.indices.min(by: { trail[$0].distance(to: position) < trail[$1].distance(to: position) }) {
+                    waypoints = Array(trail[nearest...]) + [player]
+                } else {
+                    waypoints = [player]
+                }
+            }
+        }
+        let target: CGFloat = clock < 1.0 ? 120 : (pursuing ? max(playerSpeed * 1.08, 175) : 210)
         speed += (target - speed) * min(1, dt * 1.5)
         var move = speed * dt
         let travelled = move
-        while move > 0, let next = trail.first {
+        while move > 0, let next = waypoints.first {
             let d = position.distance(to: next)
             if d <= move {
                 position = next
-                trail.removeFirst()
+                waypoints.removeFirst()
                 move -= d
             } else {
                 let desired = atan2(next.y - position.y, next.x - position.x)
@@ -302,11 +314,11 @@ final class PoliceChase {
         node.eulerAngles.y = Float(heading)
         spin += travelled / 10 / 0.32
         for wheel in wheels { wheel.eulerAngles.x = Float(spin) }
-        if position.distance(to: player) < 34 && clock > 1.0 {
+        if distance < 34 && clock > 1.5 {
             finished = true
             return .caught
         }
-        if clock > duration || gap > 900 {
+        if clock > duration || (pursuing == false && clock > 8 && distance > 1300) {
             finished = true
             return .escaped
         }
