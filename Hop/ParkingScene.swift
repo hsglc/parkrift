@@ -227,6 +227,7 @@ final class ParkingScene: SKScene {
     }
 
     override func didMove(to view: SKView) {
+        stage("scene attached \(Int(size.width))x\(Int(size.height))")
         view.isMultipleTouchEnabled = true
         view.allowsTransparency = true
         backgroundColor = .clear
@@ -254,6 +255,7 @@ final class ParkingScene: SKScene {
     private var insets: UIEdgeInsets { view?.safeAreaInsets ?? .zero }
 
     private func build() {
+        stage("build")
         removeAllChildren()
         for layer in [fxLayer, hud, controlsLayer, overlay] {
             layer.removeAllChildren()
@@ -567,7 +569,18 @@ final class ParkingScene: SKScene {
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
         defer {
-            world.warmUp { [weak self] in self?.becomeReady() }
+            stage("level loaded")
+            world.warmUp { [weak self] in
+                self?.stage("warm-up done")
+                self?.becomeReady()
+            }
+            // Never wait on the GPU warm-up forever
+            if !ready {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    self?.stage("warm-up timeout")
+                    self?.becomeReady()
+                }
+            }
         }
 
         botCars.forEach { $0.node.removeFromParentNode() }
@@ -648,8 +661,15 @@ final class ParkingScene: SKScene {
     }
 
     /// The world is built and its shaders are compiled: hide the loading screen, start the countdown.
+    private func stage(_ text: String) {
+        if PerfSettings.benchmark {
+            FileHandle.standardError.write(("PPSTAGE " + text + "\n").data(using: .utf8)!)
+        }
+    }
+
     private func becomeReady() {
         guard !ready else { return }
+        stage("ready")
         ready = true
         countdownNode.isHidden = false
         countdown = 3
@@ -1138,7 +1158,13 @@ final class ParkingScene: SKScene {
         FrameMonitor.shared.recordUpdate(milliseconds: (CACurrentMediaTime() - started) * 1000)
     }
 
+    private var firstUpdateLogged = false
+
     private func gameUpdate(_ currentTime: TimeInterval) {
+        if !firstUpdateLogged {
+            firstUpdateLogged = true
+            stage("first update, paused=\(isPaused) viewPaused=\(view?.isPaused ?? true)")
+        }
         let rawDelta = lastUpdate == 0 ? 1.0 / 60.0 : currentTime - lastUpdate
         lastUpdate = currentTime
         guard builtSize != .zero else { return }

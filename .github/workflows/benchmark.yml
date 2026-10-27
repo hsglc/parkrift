@@ -81,13 +81,12 @@ jobs:
               echo "::notice title=bench-$label::$line"
             else
               echo "::warning title=bench-$label::no result"
+              grep -a "PPSTAGE" "results/$label.log" | head -12 | while read -r l; do echo "::warning title=stage::$l"; done
               tail -20 "results/$label.log" | while read -r l; do echo "::warning::$l"; done
             fi
           }
           run optimized-1
           run legacy-1 -legacy
-          run optimized-2
-          run legacy-2 -legacy
 
       - name: Collect crash reports
         if: always()
