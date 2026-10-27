@@ -27,10 +27,12 @@ struct RampDef {
     static let height: CGFloat = 0.9   // meters
 }
 
-/// A loose street object: 0 traffic cone, 1 barrel, 2 trash bin.
+/// A loose street object: 0 traffic cone, 1 drum, 2 trash bin, 3 police barricade.
 struct PropDef {
     let kind: Int
     let position: CGPoint
+    /// Scene yaw (radians); nil = any.
+    var yaw: CGFloat? = nil
 }
 
 enum Weather: Int {

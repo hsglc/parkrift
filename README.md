@@ -76,6 +76,13 @@ Garage cars:
 - Traffic and parked vehicles: Kenney's "Car Kit" (https://kenney.nl/assets/car-kit), CC0, generic designs.
   Converted with `tools/convert_kenney.py` (stretched a little). Files `Hop/Models/kenney_*`.
 
+Street props and the police car: Polyfork (https://polyfork.dev, licence: use in commercial projects, no
+attribution required, no redistribution of the files themselves): "Site Traffic Cone", "Oil-drum", "Wire Trash
+Basket", "Police Barricade", "Police Cruiser" (free low poly editions, USDZ exports). Files `Hop/Models/pf_*.usdz`.
+Pedestrians and the traffic light: original Meshy AI models (`tools/convert_meshy_people.py`,
+`tools/convert_meshy_props.py`). Street textures and sounds: procedural (`tools/make_road_textures.py`,
+`tools/make_crash.py`, `tools/make_arcade_sounds.py`).
+
 No car in the game is a replica of a real make or model (earlier builds used Sketchfab replicas of real
 cars; they were removed because a free model licence does not cover the car maker's design and trademark rights).
 

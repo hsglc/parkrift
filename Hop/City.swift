@@ -452,6 +452,8 @@ extension Levels {
                 let j = rng.int(map.rows)
                 let i = rng.int(map.cols - 1)
                 let x0 = map.xs[i] + 220 + rng.range(0, 200)
+                let barricade = CGPoint(x: x0 - 30, y: map.ys[j] + side * CityMap.stripOffset)
+                if free(barricade, 50) { props.append(PropDef(kind: 3, position: barricade, yaw: CGFloat.pi / 2)) }
                 for k in 0..<7 {
                     let p = CGPoint(x: x0 + CGFloat(k) * 34, y: map.ys[j] + side * (CityMap.stripOffset - CGFloat(k) * 7))
                     if free(p, 40) { props.append(PropDef(kind: 0, position: p)) }
@@ -460,6 +462,8 @@ extension Levels {
                 let i = rng.int(map.cols)
                 let j = rng.int(map.rows - 1)
                 let y0 = map.ys[j] + 220 + rng.range(0, 150)
+                let barricade = CGPoint(x: map.xs[i] + side * CityMap.stripOffset, y: y0 - 30)
+                if free(barricade, 50) { props.append(PropDef(kind: 3, position: barricade, yaw: 0)) }
                 for k in 0..<7 {
                     let p = CGPoint(x: map.xs[i] + side * (CityMap.stripOffset - CGFloat(k) * 7), y: y0 + CGFloat(k) * 34)
                     if free(p, 40) { props.append(PropDef(kind: 0, position: p)) }

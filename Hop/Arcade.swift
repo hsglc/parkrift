@@ -24,13 +24,13 @@ final class StreetProps {
 
     private var props: [Prop] = []
     private var clock: CGFloat = 0
-    static let radius: [CGFloat] = [4, 6, 6]   // world units
+    static let radius: [CGFloat] = [4, 6, 6, 10]   // world units
 
     init(defs: [PropDef], parent: SCNNode) {
         for (index, def) in defs.enumerated() {
             guard let template = StreetProps.templates[safe: def.kind] else { continue }
             let node = template.clone()
-            let yaw = CGFloat((index * 37) % 360) * CGFloat.pi / 180
+            let yaw = def.yaw ?? CGFloat((index * 37) % 360) * CGFloat.pi / 180
             node.position = World3D.vec(def.position)
             node.eulerAngles.y = Float(yaw)
             node.castsShadow = false
@@ -63,7 +63,7 @@ final class StreetProps {
                 let sideways = speed * 0.35 * side
                 p.velocity = CGVector(dx: hitter.velocity.dx / max(speed, 1) * push - sin(hitter.heading) * sideways,
                                       dy: hitter.velocity.dy / max(speed, 1) * push + cos(hitter.heading) * sideways)
-                p.climb = 18 + speed * (p.kind == 0 ? 0.32 : 0.22)
+                p.climb = 18 + speed * (p.kind == 0 ? 0.32 : (p.kind == 3 ? 0.18 : 0.22))
                 p.tumbleSpeed = (p.kind == 0 ? 9 : 6) * (Bool.random() ? 1 : -1)
                 p.spinSpeed = CGFloat.random(in: -6...6)
                 p.moving = true
@@ -95,7 +95,7 @@ final class StreetProps {
                         if hypot(p.velocity.dx, p.velocity.dy) < 1.5 && abs(p.tumbleSpeed) < 0.3 { p.moving = false }
                     }
                 }
-                let lift = p.height / 10 + (abs(sin(p.tumble)) * (p.kind == 0 ? 0.18 : 0.3))
+                let lift = p.height / 10 + (abs(sin(p.tumble)) * [0.18, 0.3, 0.3, 0.35][p.kind])
                 p.node.position = World3D.vec(p.position, y: lift)
                 p.node.eulerAngles = SCNVector3(Float(p.tumble), Float(p.yaw), 0)
             }
@@ -110,7 +110,27 @@ final class StreetProps {
 
     // MARK: Models (procedural for now, flattened to one node each)
 
-    static let templates: [SCNNode] = [cone(), barrel(), bin()]
+    /// Polyfork models (free low poly set, commercial use, no attribution; see README), with the
+    /// procedural shapes as a fallback: cone, drum, wire bin, police barricade.
+    static let templates: [SCNNode] = [
+        model("pf_cone") ?? cone(),
+        model("pf_drum") ?? barrel(),
+        model("pf_basket") ?? bin(),
+        model("pf_barricade") ?? barrel()
+    ]
+
+    /// A bundled USDZ prop (meters, y up, standing on y = 0) merged into one node.
+    static func model(_ name: String) -> SCNNode? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return nil }
+        let holder = SCNNode()
+        for child in scene.rootNode.childNodes { holder.addChildNode(child) }
+        let flat = holder.flattenedClone()
+        flat.enumerateHierarchy { node, _ in
+            for material in node.geometry?.materials ?? [] { material.lightingModel = .physicallyBased }
+        }
+        return flat
+    }
 
     private static func flat(_ build: (SCNNode) -> Void) -> SCNNode {
         let holder = SCNNode()
@@ -190,40 +210,51 @@ extension Array {
 
 /// A police car that follows the player's own path (so it never cuts through buildings), a bit
 /// faster than the player can drive without nitro. It catches the player when close enough, and
-/// gives up after a while or when far behind.
+/// gives up after a while or when far behind. The model is Polyfork's police cruiser; its light
+/// bar flashes and its wheels turn.
 final class PoliceChase {
     enum Outcome { case none, caught, escaped }
 
-    let car: Car3D
+    let node: SCNNode
     private var trail: [CGPoint]
     private var position: CGPoint
     private var heading: CGFloat
     private var speed: CGFloat = 0
     private var clock: CGFloat = 0
-    private let lights: [SCNNode]
-    private let red: SCNMaterial
-    private let blue: SCNMaterial
+    private var spin: CGFloat = 0
+    private var wheels: [SCNNode] = []
+    private var redLamps: [SCNMaterial] = []
+    private var blueLamps: [SCNMaterial] = []
     private(set) var finished = false
     let duration: CGFloat = 20
 
-    init(car: Car3D, trail: [CGPoint]) {
-        self.car = car
+    init(node: SCNNode, trail: [CGPoint]) {
+        self.node = node
         self.trail = trail
         position = trail.first ?? .zero
         heading = 0
         if trail.count > 1 { heading = atan2(trail[1].y - trail[0].y, trail[1].x - trail[0].x) }
-        red = Mat.glow(UIColor(red: 1.0, green: 0.1, blue: 0.1, alpha: 1))
-        blue = Mat.glow(UIColor(red: 0.15, green: 0.35, blue: 1.0, alpha: 1))
-        let height = Float(KenneyCatalog.all["police"]?.height ?? 1.7)
-        var bar: [SCNNode] = []
-        for side: Float in [-1, 1] {
-            let lamp = SCNNode(geometry: SCNBox(width: 0.32, height: 0.14, length: 0.42, chamferRadius: 0.04))
-            lamp.position = SCNVector3(0, height + 0.08, side * 0.26)
-            lamp.castsShadow = false
-            car.node.addChildNode(lamp)
-            bar.append(lamp)
+        node.enumerateHierarchy { child, _ in
+            if let name = child.name, name.hasPrefix("wheel") { self.wheels.append(child) }
+            guard let geometry = child.geometry else { return }
+            // Own copies of the light bar materials, found by their colors
+            geometry.materials = geometry.materials.map { material in
+                guard let color = material.diffuse.contents as? UIColor else { return material }
+                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                color.getRed(&r, green: &g, blue: &b, alpha: &a)
+                if b > 0.55 && r < 0.2 && g < 0.4 {
+                    let lamp = material.copy() as! SCNMaterial
+                    self.blueLamps.append(lamp)
+                    return lamp
+                }
+                if r > 0.7 && g < 0.15 && b < 0.15 {
+                    let lamp = material.copy() as! SCNMaterial
+                    self.redLamps.append(lamp)
+                    return lamp
+                }
+                return material
+            }
         }
-        lights = bar
     }
 
     /// Adds the player's latest position to the path the police car follows.
@@ -246,13 +277,14 @@ final class PoliceChase {
     func step(_ dt: CGFloat, playerSpeed: CGFloat, player: CGPoint) -> Outcome {
         guard !finished else { return .none }
         clock += dt
-        // Flashing light bar
-        let phase = Int(clock * 7) % 2 == 0
-        lights[0].geometry?.materials = [phase ? red : blue]
-        lights[1].geometry?.materials = [phase ? blue : red]
+        // Flashing light bar: red and blue take turns
+        let redOn = Int(clock * 7) % 2 == 0
+        for lamp in redLamps { lamp.emission.contents = redOn ? UIColor(red: 1, green: 0.1, blue: 0.08, alpha: 1) : UIColor.black }
+        for lamp in blueLamps { lamp.emission.contents = redOn ? UIColor.black : UIColor(red: 0.15, green: 0.35, blue: 1, alpha: 1) }
         let target = clock < 1.2 ? 120 : max(playerSpeed * 1.08, 175)
         speed += (target - speed) * min(1, dt * 1.5)
         var move = speed * dt
+        let travelled = move
         while move > 0, let next = trail.first {
             let d = position.distance(to: next)
             if d <= move {
@@ -266,7 +298,10 @@ final class PoliceChase {
                 move = 0
             }
         }
-        car.update(position: position, heading: heading, steer: 0, braking: false)
+        node.position = World3D.vec(position)
+        node.eulerAngles.y = Float(heading)
+        spin += travelled / 10 / 0.32
+        for wheel in wheels { wheel.eulerAngles.x = Float(spin) }
         if position.distance(to: player) < 34 && clock > 1.0 {
             finished = true
             return .caught

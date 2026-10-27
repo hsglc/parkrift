@@ -1520,11 +1520,35 @@ final class World3D {
         return node
     }
 
-    /// The police car of a chase (a Kenney police model), added to the level.
-    func makePoliceCar() -> Car3D {
-        let car = Car3D(color: .white, style: .sedan, vehicle: "police")
-        levelRoot.addChildNode(car.node)
-        return car
+    /// Polyfork's police cruiser (front along +z in the file), turned to face +x like every car.
+    static let policeTemplate: SCNNode? = {
+        guard let url = Bundle.main.url(forResource: "pf_police", withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return nil }
+        let model = SCNNode()
+        for child in scene.rootNode.childNodes { model.addChildNode(child) }
+        model.eulerAngles.y = Float.pi / 2
+        model.enumerateHierarchy { node, _ in
+            node.castsShadow = node.name?.hasPrefix("wheel") == false
+            for material in node.geometry?.materials ?? [] { material.lightingModel = .physicallyBased }
+        }
+        let holder = SCNNode()
+        holder.addChildNode(model)
+        return holder
+    }()
+
+    /// The police car of a chase, added to the level (its materials are copied per chase).
+    func makePoliceNode() -> SCNNode {
+        let node: SCNNode
+        if let template = World3D.policeTemplate {
+            node = template.clone()
+            node.enumerateHierarchy { child, _ in
+                if let geometry = child.geometry { child.geometry = geometry.copy() as? SCNGeometry }
+            }
+        } else {
+            node = Car3D(color: .white, style: .sedan, vehicle: "police").node
+        }
+        levelRoot.addChildNode(node)
+        return node
     }
 
     func load(level: LevelDef, spotSlots: [Int], mySlot: Int) {
@@ -2160,7 +2184,12 @@ final class World3D {
         }
         var objects: [Any] = [scene.rootNode] + World3D.signalMaterials
         if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries + TrafficVehicles.allGeometries }
-        if cityMap != nil { objects += PedestrianModels.all + StreetProps.allGeometries }
+        if cityMap != nil {
+            objects += PedestrianModels.all + StreetProps.allGeometries
+            World3D.policeTemplate?.enumerateHierarchy { node, _ in
+                if let geometry = node.geometry { objects.append(geometry) }
+            }
+        }
         renderer.prepare(objects) { _ in
             DispatchQueue.main.async { completion?() }
         }

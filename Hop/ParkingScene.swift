@@ -2402,7 +2402,7 @@ final class ParkingScene: SKScene {
         guard level.city != nil, let world = world, trail.count > 20, !localParked else { return }
         // Starts about six seconds back along our own path
         let path = Array(trail.suffix(60))
-        police = PoliceChase(car: world.makePoliceCar(), trail: path)
+        police = PoliceChase(node: world.makePoliceNode(), trail: path)
         flashBonus(Strings.policeChase)
         notifyHaptic.notificationOccurred(.warning)
     }
@@ -2411,7 +2411,7 @@ final class ParkingScene: SKScene {
         guard let chase = police else { return }
         police = nil
         audio.setLoop("siren", volume: 0)
-        chase.car.node.runAction(.sequence([.wait(duration: 1.5), .fadeOut(duration: 0.6), .removeFromParentNode()]))
+        chase.node.runAction(.sequence([.wait(duration: 1.5), .fadeOut(duration: 0.6), .removeFromParentNode()]))
     }
 
     // MARK: Collisions
