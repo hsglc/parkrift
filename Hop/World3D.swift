@@ -1565,10 +1565,10 @@ final class World3D {
     func makePoliceNode() -> SCNNode {
         let node: SCNNode
         if let template = World3D.policeTemplate {
+            // Shares the template's meshes and materials (already on the GPU from the warm-up):
+            // copying them made the first crash of a level stall while the copies were uploaded.
+            // Every police car's light bar therefore flashes in step.
             node = template.clone()
-            node.enumerateHierarchy { child, _ in
-                if let geometry = child.geometry { child.geometry = geometry.copy() as? SCNGeometry }
-            }
         } else {
             node = Car3D(color: .white, style: .sedan, vehicle: "police").node
         }

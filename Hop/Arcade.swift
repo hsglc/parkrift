@@ -241,22 +241,13 @@ final class PoliceChase {
         node.enumerateHierarchy { child, _ in
             if let name = child.name, name.hasPrefix("wheel") { self.wheels.append(child) }
             guard let geometry = child.geometry else { return }
-            // Own copies of the light bar materials, found by their colors
-            geometry.materials = geometry.materials.map { material in
-                guard let color = material.diffuse.contents as? UIColor else { return material }
+            // The light bar materials, found by their colors (shared by every police car)
+            for material in geometry.materials {
+                guard let color = material.diffuse.contents as? UIColor else { continue }
                 var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
                 color.getRed(&r, green: &g, blue: &b, alpha: &a)
-                if b > 0.55 && r < 0.2 && g < 0.4 {
-                    let lamp = material.copy() as! SCNMaterial
-                    self.blueLamps.append(lamp)
-                    return lamp
-                }
-                if r > 0.7 && g < 0.15 && b < 0.15 {
-                    let lamp = material.copy() as! SCNMaterial
-                    self.redLamps.append(lamp)
-                    return lamp
-                }
-                return material
+                if b > 0.55 && r < 0.2 && g < 0.4 { self.blueLamps.append(material) }
+                if r > 0.7 && g < 0.15 && b < 0.15 { self.redLamps.append(material) }
             }
         }
         node.position = World3D.vec(position)
