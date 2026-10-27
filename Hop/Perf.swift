@@ -167,6 +167,25 @@ final class MeshBuilder {
         }
     }
 
+    /// Box of `size` (x, y, z) turned by `rotation` about its own center, flat-shaded.
+    func addOrientedBox(center: SIMD3<Float>, size: SIMD3<Float>, rotation: simd_float3x3, material: SCNMaterial) {
+        let h = size / 2
+        // Faces as (normal, two in-plane axes) in the box frame
+        let faces: [(SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)] = [
+            (SIMD3(1, 0, 0), SIMD3(0, 0, -1), SIMD3(0, 1, 0)), (SIMD3(-1, 0, 0), SIMD3(0, 0, 1), SIMD3(0, 1, 0)),
+            (SIMD3(0, 1, 0), SIMD3(1, 0, 0), SIMD3(0, 0, -1)), (SIMD3(0, -1, 0), SIMD3(1, 0, 0), SIMD3(0, 0, 1)),
+            (SIMD3(0, 0, 1), SIMD3(1, 0, 0), SIMD3(0, 1, 0)), (SIMD3(0, 0, -1), SIMD3(-1, 0, 0), SIMD3(0, 1, 0))
+        ]
+        for (n, u, v) in faces {
+            let c: SIMD3<Float> = n * h
+            let du: SIMD3<Float> = u * h
+            let dv: SIMD3<Float> = v * h
+            let local: [SIMD3<Float>] = [c - du - dv, c + du - dv, c + du + dv, c - du + dv]
+            let corners = local.map { center + rotation * $0 }
+            addQuad(corners, normal: rotation * n, uv: [SIMD2(0, 1), SIMD2(1, 1), SIMD2(1, 0), SIMD2(0, 0)], material: material)
+        }
+    }
+
     var isEmpty: Bool { positions.isEmpty }
 
     func build() -> SCNGeometry? {

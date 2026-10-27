@@ -154,4 +154,5 @@ enum Strings {
     static var nitroPickup: String { t("+NİTRO", "+NITRO") }
     static func radarBonus(_ speed: String) -> String { t("RADAR \(speed) · +NİTRO", "SPEED CAM \(speed) · +NITRO") }
     static func radarSlow(_ speed: String, _ need: Int) -> String { t("RADAR \(speed) · \(need)+ gerek", "SPEED CAM \(speed) · need \(need)+") }
+    static var pedestrianHit: String { t("DİKKAT! YAYA · +1 KAZA", "WATCH OUT! · +1 CRASH") }
 }

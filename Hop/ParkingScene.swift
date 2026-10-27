@@ -691,6 +691,19 @@ final class ParkingScene: SKScene {
                                              style: CarStyle(rawValue: index % 3) ?? .sedan))
             }
         }
+        // People on the sidewalks (each player simulates their own: they are scenery that reacts)
+        pedestrians = nil
+        pedestrianNodes.removeAll()
+        pedestrianLooks.removeAll()
+        if let city = level.city {
+            let people = PedestrianSystem(map: city, count: 44, seed: UInt64(levelIndex * 131 + 5))
+            pedestrians = people
+            for _ in people.people {
+                pedestrianNodes.append(world.addPedestrianNode())
+                pedestrianLooks.append(-1)
+            }
+            updatePedestrianNodes()
+        }
         route = []
         routeClock = 0
         giveUp = 20
@@ -1172,6 +1185,7 @@ final class ParkingScene: SKScene {
     private func honk() {
         guard lastUpdate - lastHorn > 0.25 else { return }
         lastHorn = lastUpdate
+        pendingHorn = carPosition
         audio.play("horn", volume: 0.5)
         tickHaptic.impactOccurred(intensity: 0.9)
         hornButton.removeAction(forKey: "pulse")
@@ -1184,6 +1198,7 @@ final class ParkingScene: SKScene {
 
     private func remoteHonk() {
         guard friendPresent else { return }
+        pendingHorn = remotePosition
         let distance = hypot(remotePosition.x - carPosition.x, remotePosition.y - carPosition.y)
         audio.play("horn", volume: Float(max(0.45, min(0.8, 0.85 - distance / 2500))))
         bumpHaptic.impactOccurred(intensity: 0.6)
@@ -1436,6 +1451,31 @@ final class ParkingScene: SKScene {
         if let traffic = traffic {
             var blockers = [carPosition]
             if friendPresent && remoteTarget != nil { blockers.append(remotePosition) }
+            if let people = pedestrians {
+                // Cars stop for people on the road
+                blockers += people.onRoad
+                var threats = [PedestrianSystem.Threat(position: carPosition,
+                                                       velocity: CGVector(dx: cos(heading) * velocity, dy: sin(heading) * velocity),
+                                                       heading: velocity >= 0 ? heading : heading + CGFloat.pi, local: true)]
+                if friendPresent && remoteTarget != nil {
+                    let v = remoteSnapshots.last?.velocity ?? 0
+                    threats.append(PedestrianSystem.Threat(position: remotePosition,
+                                                           velocity: CGVector(dx: cos(remoteHeading) * v, dy: sin(remoteHeading) * v),
+                                                           heading: v >= 0 ? remoteHeading : remoteHeading + CGFloat.pi, local: false))
+                }
+                let knocked = people.step(dt, threats: phase == .driving && !localParked ? threats : Array(threats.dropFirst()), horn: pendingHorn)
+                pendingHorn = nil
+                if knocked > 0 && lastUpdate - lastHitAt > 0.3 {
+                    lastHitAt = lastUpdate
+                    hits += knocked
+                    hitsLabel.text = "\(hits)"
+                    velocity *= 0.6
+                    bumpHaptic.impactOccurred(intensity: 0.8)
+                    audio.play("bump", volume: 0.6)
+                    flashBonus(Strings.pedestrianHit)
+                }
+                updatePedestrianNodes()
+            }
             traffic.step(dt, blockers: blockers)
             world?.updateSignals(time: traffic.clock)
             let detailRange = PerfSettings.carDetailDistance * 10
@@ -2363,6 +2403,53 @@ final class ParkingScene: SKScene {
             guard let self = self, self.model?.results != nil else { return }
             self.worldFrozen = true
             self.world?.setRenderingPaused(true)
+        }
+    }
+
+    // MARK: Pedestrians
+
+    private var pedestrians: PedestrianSystem?
+    private var pedestrianNodes: [SCNNode] = []
+    /// Geometry key last shown per person (pose * 100 + outfit), to swap only on change.
+    private var pedestrianLooks: [Int] = []
+    private var pendingHorn: CGPoint?
+
+    private func updatePedestrianNodes() {
+        guard let people = pedestrians else { return }
+        let range: CGFloat = 700
+        for (index, person) in people.people.enumerated() where index < pedestrianNodes.count {
+            let node = pedestrianNodes[index]
+            let far = abs(person.position.x - carPosition.x) > range || abs(person.position.y - carPosition.y) > range
+            if node.isHidden != far { node.isHidden = far }
+            if far { continue }
+            let pose: PedestrianModels.Pose
+            var lift: Float = 0
+            var tilt: Float = 0
+            switch person.state {
+            case .walking, .crossing:
+                let frames: [PedestrianModels.Pose] = [.stepLeft, .pass, .stepRight, .pass]
+                let frame = Int(person.stride / 3) % 4
+                pose = frames[frame]
+                if pose == .pass { lift = 0.03 }
+            case .waiting, .browsing:
+                pose = .stand
+            case .startled:
+                pose = .armsUp
+                lift = 0.12
+            case .fallen:
+                pose = .stand
+                tilt = Float.pi / 2
+                lift = 0.13
+            }
+            let look = pose.rawValue * 100 + person.outfit
+            if pedestrianLooks[index] != look {
+                pedestrianLooks[index] = look
+                node.geometry = PedestrianModels.geometry(pose: pose, outfit: person.outfit)
+            }
+            var p = World3D.vec(person.position)
+            p.y = lift
+            node.position = p
+            node.eulerAngles = SCNVector3(0, Float(person.heading), tilt)
         }
     }
 

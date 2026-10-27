@@ -1839,6 +1839,7 @@ final class World3D {
         }
         var objects: [Any] = [scene.rootNode] + World3D.signalMaterials
         if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries }
+        if cityMap != nil { objects += PedestrianModels.all }
         renderer.prepare(objects) { _ in
             DispatchQueue.main.async { completion?() }
         }
@@ -1886,6 +1887,13 @@ final class World3D {
         ring.materials = [glow]
         return (can, ring)
     }()
+
+    /// A person in the city (geometry set by the pedestrian system each frame).
+    func addPedestrianNode() -> SCNNode {
+        let node = SCNNode()
+        levelRoot.addChildNode(node)
+        return node
+    }
 
     /// A spinning, bobbing nitro canister with a glow on the road.
     func addNitroPickup(at point: CGPoint) -> SCNNode {
