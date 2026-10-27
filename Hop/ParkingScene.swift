@@ -1,5 +1,6 @@
 import SpriteKit
 import UIKit
+import CoreImage
 
 /// Game loop, input, HUD and 2D effects. The world itself is drawn in 3D by `World3D`
 /// (a SceneKit view underneath this transparent SpriteKit scene).
@@ -95,6 +96,7 @@ final class ParkingScene: SKScene {
     private var benchDone = false
     var levelLoadMilliseconds: Double = 0
     private var finishAnimating = false
+    private var finishClock: CGFloat = 0
     private var nitroFiredAt: [Double] = []
     private var detailClock: CGFloat = 0
     /// False until the first level is fully loaded; the countdown waits for it.
@@ -1140,7 +1142,12 @@ final class ParkingScene: SKScene {
         let rawDelta = lastUpdate == 0 ? 1.0 / 60.0 : currentTime - lastUpdate
         lastUpdate = currentTime
         guard builtSize != .zero else { return }
-        let dt = CGFloat(min(max(rawDelta, 0), 1.0 / 30.0))
+        var dt = CGFloat(min(max(rawDelta, 0), 1.0 / 30.0))
+        // Slow motion while the finish camera watches the car arrive
+        if finishAnimating {
+            finishClock += dt
+            dt *= finishClock < 1.3 ? 0.3 : min(1, 0.3 + (finishClock - 1.3) * 1.6)
+        }
         if benchmark { runAutopilot(dt) }
 
         let leftDown = isPressed(.left)
@@ -1789,28 +1796,64 @@ final class ParkingScene: SKScene {
         }
     }
 
-    /// Finish line moment: camera swing, fireworks, flash, checkered bands and a big FINISH.
+    /// Finish line moment, in two shots:
+    /// A (slow motion): letterbox bars, HUD fades, a low camera past the line watches the car arrive.
+    /// B: flash cut to an orbit, fireworks and confetti, checkered bands and a glowing title.
     private func playFinishSequence() {
         finishAnimating = true
+        finishClock = 0
         world?.startFinishCinematic(at: carPosition, heading: heading, finishLine: level.spots[slot].center)
-        audio.play("nitro", volume: 0.5)
+        audio.play("nitro", volume: 0.45)
         notifyHaptic.notificationOccurred(.success)
 
         let layer = SKNode()
         layer.zPosition = 300
         addChild(layer)
 
+        // Letterbox and hidden HUD
+        let barHeight = size.height * 0.12
+        for top in [true, false] {
+            let bar = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: barHeight))
+            bar.anchorPoint = CGPoint(x: 0.5, y: top ? 0 : 1)
+            bar.position = CGPoint(x: size.width / 2, y: top ? size.height : 0)
+            layer.addChild(bar)
+            let slideIn = SKAction.moveBy(x: 0, y: top ? -barHeight : barHeight, duration: 0.35)
+            slideIn.timingMode = .easeOut
+            let slideOut = SKAction.moveBy(x: 0, y: top ? barHeight : -barHeight, duration: 0.35)
+            slideOut.timingMode = .easeIn
+            bar.run(.sequence([slideIn, .wait(forDuration: 3.6), slideOut]))
+        }
+        for node in [hud, controlsLayer, fxLayer] {
+            node.run(.sequence([.fadeOut(withDuration: 0.3), .wait(forDuration: 3.7), .fadeIn(withDuration: 0.3)]))
+        }
+        speedLines.forEach { $0.sprite.alpha = 0 }
+
+        let shotB: TimeInterval = 1.3
+        run(.wait(forDuration: shotB)) { [weak self] in self?.finishShotB(layer: layer) }
+        layer.run(.sequence([.wait(forDuration: 4.4), .removeFromParent()]))
+        run(.wait(forDuration: 4.3)) { [weak self] in
+            guard let self = self else { return }
+            self.finishAnimating = false
+            self.checkLevelDone()
+        }
+    }
+
+    private func finishShotB(layer: SKNode) {
+        world?.celebrate()
+        audio.play("park", volume: 0.9)
+        bumpHaptic.impactOccurred(intensity: 1.0)
+
         let flash = SKSpriteNode(color: .white, size: size)
         flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        flash.alpha = 0.85
+        flash.alpha = 0.9
         layer.addChild(flash)
-        flash.run(.sequence([.fadeOut(withDuration: 0.35), .removeFromParent()]))
+        flash.run(.sequence([.fadeOut(withDuration: 0.4), .removeFromParent()]))
 
         let strip = CarArt.checkerStrip()
         let bandWidth = size.width * 1.4
-        for (index, y) in [size.height * 0.70, size.height * 0.30].enumerated() {
+        for (index, y) in [size.height * 0.74, size.height * 0.26].enumerated() {
             let band = SKSpriteNode(texture: strip)
-            band.size = CGSize(width: bandWidth, height: 40)
+            band.size = CGSize(width: bandWidth, height: 34)
             band.zRotation = -0.06
             let fromLeft = index == 0
             band.position = CGPoint(x: fromLeft ? -bandWidth / 2 : size.width + bandWidth / 2, y: y)
@@ -1819,42 +1862,45 @@ final class ParkingScene: SKScene {
             slideIn.timingMode = .easeOut
             let slideOut = SKAction.moveTo(x: fromLeft ? size.width + bandWidth / 2 : -bandWidth / 2, duration: 0.35)
             slideOut.timingMode = .easeIn
-            band.run(.sequence([.wait(forDuration: 0.1 + Double(index) * 0.08), slideIn, .wait(forDuration: 2.0), slideOut]))
+            band.run(.sequence([.wait(forDuration: 0.05 + Double(index) * 0.08), slideIn, .wait(forDuration: 2.1), slideOut]))
         }
+
+        var place = 1
+        if online && friendPresent && remoteParked && remoteTime >= 0 { place = 2 }
+        let won = online && friendPresent && place == 1
+        let titleText = won ? Strings.youWon.uppercased() : Strings.finishBig
+        let gold = UIColor(red: 1.0, green: 0.84, blue: 0.22, alpha: 1)
 
         let title = SKNode()
-        title.position = CGPoint(x: size.width / 2, y: size.height / 2 + 14)
+        title.position = CGPoint(x: size.width / 2, y: size.height / 2 + 16)
         layer.addChild(title)
-        let shadow = makeLabel(Strings.finishBig, size: 76, color: UIColor.black.withAlphaComponent(0.45))
+        // Soft glow behind the title
+        let glow = SKEffectNode()
+        glow.shouldRasterize = true
+        glow.filter = CIFilter(name: "CIGaussianBlur", parameters: ["inputRadius": 14])
+        glow.addChild(makeLabel(titleText, size: 74, color: gold.withAlphaComponent(0.9)))
+        glow.alpha = 0.8
+        title.addChild(glow)
+        let shadow = makeLabel(titleText, size: 74, color: UIColor.black.withAlphaComponent(0.5))
         shadow.position = CGPoint(x: 0, y: -6)
         title.addChild(shadow)
-        let text = makeLabel(Strings.finishBig, size: 76, color: UIColor(red: 1.0, green: 0.84, blue: 0.22, alpha: 1))
-        title.addChild(text)
-        title.setScale(3)
+        title.addChild(makeLabel(titleText, size: 74, color: gold))
+        title.setScale(2.6)
         title.alpha = 0
-        let pop = SKAction.group([.fadeIn(withDuration: 0.18), .scale(to: 1.0, duration: 0.22)])
+        let pop = SKAction.group([.fadeIn(withDuration: 0.16), .scale(to: 1.0, duration: 0.22)])
         pop.timingMode = .easeOut
-        title.run(.sequence([.wait(forDuration: 0.2), pop,
-                             .repeat(.sequence([.scale(to: 1.06, duration: 0.25), .scale(to: 1.0, duration: 0.25)]), count: 4),
-                             .group([.fadeOut(withDuration: 0.3), .scale(to: 1.4, duration: 0.3)])]))
+        title.run(.sequence([pop, .scale(to: 1.08, duration: 2.2),
+                             .group([.fadeOut(withDuration: 0.3), .scale(to: 1.35, duration: 0.3)])]))
 
         var detail = String(format: "%.1f s", localTime)
-        if online && friendPresent {
-            let place = remoteParked && remoteTime >= 0 ? 2 : 1
-            detail = Strings.place(place) + "  ·  " + detail
-        }
-        let sub = makeLabel(detail, size: 22, color: .white)
-        sub.position = CGPoint(x: size.width / 2, y: size.height / 2 - 46)
+        if level.race { detail += "  ·  " + Strings.crashes(hits) }
+        if online && friendPresent { detail = Strings.place(place) + "  ·  " + detail }
+        let sub = makeLabel(detail, size: 20, color: .white)
+        sub.position = CGPoint(x: size.width / 2, y: size.height / 2 - 40)
         sub.alpha = 0
         layer.addChild(sub)
-        sub.run(.sequence([.wait(forDuration: 0.5), .fadeIn(withDuration: 0.2), .wait(forDuration: 1.8), .fadeOut(withDuration: 0.3)]))
-
-        layer.run(.sequence([.wait(forDuration: 2.9), .removeFromParent()]))
-        run(.wait(forDuration: 2.8)) { [weak self] in
-            guard let self = self else { return }
-            self.finishAnimating = false
-            self.checkLevelDone()
-        }
+        sub.run(.sequence([.wait(forDuration: 0.35), .group([.fadeIn(withDuration: 0.25), .moveBy(x: 0, y: 6, duration: 0.25)]),
+                           .wait(forDuration: 1.9), .fadeOut(withDuration: 0.3)]))
     }
 
     private func confetti(at point: CGPoint) {

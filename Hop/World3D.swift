@@ -783,11 +783,50 @@ final class World3D {
     private var cinematicActive = false
 
     /// Camera swings around the car while confetti and fireworks go off at the finish line.
+    private var cinematicShotB = false
+    private var shotAEye = SIMD3<Float>(0, 0, 0)
+    private var celebrationPoint = SCNVector3Zero
+
+    /// Shot A: a low camera past the finish line watches the car come in (slow motion is applied by
+    /// the game), with a shallow depth of field.
     func startFinishCinematic(at position: CGPoint, heading: CGFloat, finishLine: CGPoint) {
         cinematicActive = true
+        cinematicShotB = false
         cinematicTime = 0
-        cinematicAngle = Float(heading) + Float.pi * 1.15
-        let finish = World3D.vec(finishLine, y: 6.4)
+        let p = World3D.vec(position)
+        let forward = SIMD3<Float>(cos(Float(heading)), 0, -sin(Float(heading)))
+        let side = SIMD3<Float>(sin(Float(heading)), 0, cos(Float(heading)))
+        shotAEye = SIMD3<Float>(p.x, p.y, p.z) + forward * 16 + side * 3.4 + SIMD3<Float>(0, 0.75, 0)
+        celebrationPoint = World3D.vec(finishLine, y: 6.4)
+        if let camera = cameraNode.camera {
+            camera.fieldOfView = 38
+            camera.wantsDepthOfField = true
+            camera.fStop = 1.6
+            camera.focalBlurSampleCount = 6
+            camera.motionBlurIntensity = 0.4
+        }
+    }
+
+    /// Shot B: hard cut to an orbit around the car, fireworks, confetti and a graded, glowing image.
+    func celebrate() {
+        cinematicShotB = true
+        cinematicTime = 0
+        let toCamera = shotAEye - cameraFocus
+        cinematicAngle = atan2(-toCamera.z, toCamera.x) + 0.6
+        if let camera = cameraNode.camera {
+            camera.fieldOfView = 52
+            camera.fStop = 2.8
+            camera.motionBlurIntensity = 0
+            camera.wantsHDR = true
+            camera.bloomIntensity = 0.9
+            camera.bloomThreshold = 0.75
+            camera.bloomBlurRadius = 10
+            camera.vignettingIntensity = 0.9
+            camera.vignettingPower = 0.6
+            camera.saturation = 1.25
+            camera.contrast = 0.12
+        }
+        let finish = celebrationPoint
         let confetti = SCNParticleSystem()
         confetti.birthRate = 900
         confetti.emissionDuration = 0.35
@@ -846,11 +885,30 @@ final class World3D {
 
     func stopCinematic() {
         cinematicActive = false
+        cinematicShotB = false
+        if let camera = cameraNode.camera {
+            camera.fieldOfView = fieldOfView
+            camera.wantsDepthOfField = false
+            camera.motionBlurIntensity = 0
+            camera.wantsHDR = false
+            camera.bloomIntensity = 0
+            camera.vignettingIntensity = 0
+            camera.saturation = 1
+            camera.contrast = 0
+        }
     }
 
     func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
         let carPoint = World3D.vec(position)
         let focus = SIMD3<Float>(carPoint.x, carPoint.y, carPoint.z)
+        if cinematicActive && !snap && !cinematicShotB {
+            cameraFocus += (focus - cameraFocus) * min(1, Float(dt) * 10)
+            let target = cameraFocus + SIMD3<Float>(0, 0.6, 0)
+            cameraNode.simdPosition = shotAEye
+            cameraNode.simdLook(at: target, up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+            cameraNode.camera?.focusDistance = CGFloat(simd_distance(shotAEye, target))
+            return
+        }
         if cinematicActive && !snap {
             cinematicTime += Float(dt)
             cinematicAngle += Float(dt) * (0.9 - min(cinematicTime, 2.5) * 0.25)
@@ -860,6 +918,7 @@ final class World3D {
             let eye = cameraFocus + SIMD3<Float>(cos(cinematicAngle) * radius, height, -sin(cinematicAngle) * radius)
             cameraNode.simdPosition = eye
             cameraNode.simdLook(at: cameraFocus + SIMD3<Float>(0, 0.9, 0), up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+            cameraNode.camera?.focusDistance = CGFloat(radius)
             return
         }
         let yaw = Float(heading)
@@ -902,7 +961,7 @@ final class World3D {
     /// Nitro: widen the view (0 = normal, 1 = full boost).
     func setBoost(_ amount: CGFloat) {
         fieldOfView = 56 + 16 * amount
-        cameraNode.camera?.fieldOfView = fieldOfView
+        if !cinematicActive { cameraNode.camera?.fieldOfView = fieldOfView }
     }
 
     func shake(strength: CGFloat) {
@@ -921,7 +980,7 @@ final class World3D {
         levelRoot.childNodes.forEach { $0.removeFromParentNode() }
         fxRoot.childNodes.forEach { $0.removeFromParentNode() }
         myNeon = nil
-        cinematicActive = false
+        stopCinematic()
         parkedCars3D.removeAll()
         arrowNode = nil
         lotRoot.isHidden = level.city != nil
