@@ -1496,7 +1496,8 @@ final class ParkingScene: SKScene {
             let detailRange = PerfSettings.carDetailDistance * 10
             var botDetailChanges = 0
             for (index, bot) in traffic.bots.enumerated() where index < botCars.count {
-                let near = abs(bot.position.x - carPosition.x) < detailRange && abs(bot.position.y - carPosition.y) < detailRange
+                let near = (world?.isSweeping ?? false)
+                    || (abs(bot.position.x - carPosition.x) < detailRange && abs(bot.position.y - carPosition.y) < detailRange)
                 if botCars[index].setDetail(near) { botDetailChanges += 1 }
                 botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)
             }

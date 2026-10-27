@@ -1229,7 +1229,12 @@ final class World3D {
     /// for first sightings happens before the race, not at the first corner.
     private var sweepClock: Float = -1
 
-    func beginWarmupSweep() { sweepClock = 0 }
+    func beginWarmupSweep() {
+        sweepClock = 0
+        // Every parked car at full detail while the screen is covered, so their wheels and lights
+        // are drawn once now
+        for entry in parkedCars3D { entry.car.setDetail(true) }
+    }
     func endWarmupSweep() { sweepClock = -1 }
 
     func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
@@ -1332,6 +1337,7 @@ final class World3D {
     func load(level: LevelDef, spotSlots: [Int], mySlot: Int) {
         levelRoot.childNodes.forEach { $0.removeFromParentNode() }
         fxRoot.childNodes.forEach { $0.removeFromParentNode() }
+        buildSkidPool()
         myNeon = nil
         stopCinematic()
         setRenderingPaused(false)
@@ -1975,6 +1981,7 @@ final class World3D {
     /// Full detail only for parked cars near the player (world units).
     @discardableResult
     func updateDetail(around point: CGPoint) -> Int {
+        guard !isSweeping else { return 0 }
         let range = PerfSettings.carDetailDistance * 10
         var changed = 0
         for entry in parkedCars3D {
@@ -1992,12 +1999,35 @@ final class World3D {
         }
     }
 
+    /// Skid marks come from a fixed pool made with the level (no new nodes or shadow casters
+    /// while racing; creating them stalled the first corner).
+    private var skidPool: [SCNNode] = []
+    private var skidNext = 0
+
+    private func buildSkidPool() {
+        skidPool.removeAll()
+        skidNext = 0
+        for _ in 0..<160 {
+            let mark = SCNNode(geometry: skidGeometry)
+            mark.eulerAngles.x = -Float.pi / 2
+            mark.scale = SCNVector3(0.001, 0.001, 0.001)
+            mark.castsShadow = false
+            fxRoot.addChildNode(mark)
+            skidPool.append(mark)
+        }
+    }
+
     func addSkid(at point: CGPoint) {
         if PerfSettings.benchmark { FrameMonitor.shared.mark("skid") }
-        let mark = SCNNode(geometry: skidGeometry)
-        mark.eulerAngles.x = -Float.pi / 2
+        guard !skidPool.isEmpty else { return }
+        let mark = skidPool[skidNext]
+        skidNext = (skidNext + 1) % skidPool.count
+        mark.removeAllActions()
         mark.position = World3D.vec(point, y: 0.015)
-        fxRoot.addChildNode(mark)
-        mark.runAction(.sequence([.wait(duration: 3), .fadeOut(duration: 2), .removeFromParentNode()]))
+        mark.scale = SCNVector3(1, 1, 1)
+        mark.opacity = 1
+        mark.runAction(.sequence([.wait(duration: 3), .fadeOut(duration: 2), .scale(to: 0.001, duration: 0)]))
     }
+
+    var isSweeping: Bool { sweepClock >= 0 }
 }
