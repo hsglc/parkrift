@@ -221,6 +221,11 @@ final class ParkingScene: SKScene {
     private var lastHitAt: TimeInterval = -10
     // Drift: the car can point away from where it travels; points turn into nitro
     private var travelHeading: CGFloat = 0
+    /// Turn rate of the body (rad/s); has inertia while drifting.
+    private var yawSpeed: CGFloat = 0
+    /// Which way the tail went out (+1: car turning left), and how long the slide has been small.
+    private var driftSide: CGFloat = 1
+    private var driftCalm: CGFloat = 0
     private var drifting = false
     private var driftScore: CGFloat = 0
     private var driftClock: CGFloat = 0
@@ -2112,39 +2117,64 @@ final class ParkingScene: SKScene {
         }
         velocity = max(-maxReverse, velocity)
 
-        let speedFactor = 1 - 0.4 * min(1, abs(velocity) / maxForward)
-        let targetSteer = wheelInput * maxSteer * speedFactor
-        steer = approach(steer, targetSteer, steerRate * dt)
-
-        // Drift: the handbrake breaks the rear loose above walking pace; the car then turns faster
-        // than it travels, and catches again when the slip is gone (counter-steer helps)
         let handbrake = isPressed(.handbrake)
+        // Full lock while sliding, so the player can counter-steer
+        let speedFactor = drifting ? 1 : 1 - 0.4 * min(1, abs(velocity) / maxForward)
+        let targetSteer = wheelInput * maxSteer * speedFactor
+        steer = approach(steer, targetSteer, steerRate * (drifting ? 1.6 : 1) * dt)
+
+        // Drift: the body (heading) and the direction of travel (travelHeading) come apart.
+        // Pulling the handbrake at speed locks the rear wheels and kicks the tail out toward the
+        // steering; then the throttle keeps the rear wheels spinning (little rear grip, the angle
+        // holds), counter-steer balances it, and lifting off gives the grip back. Steering into
+        // the slide on throttle spins the car; the car's yaw has inertia, so the angle builds and
+        // settles instead of jumping.
         if !drifting { travelHeading = heading }
         if handbrake && velocity > 40 && !drifting && airTime <= 0 { startDrift() }
-        var yawRate = velocity / wheelBase * tan(steer)
-        if drifting {
-            let grip = min(1, abs(velocity) / 90)
-            yawRate *= handbrake ? 1.9 : 1.5
-            if handbrake && abs(wheelInput) > 0.1 { yawRate += (wheelInput > 0 ? 1 : -1) * 1.1 * grip }
-            velocity -= velocity * (handbrake ? 0.45 : 0.12) * dt
-            if handbrake { braking = true }
-        }
-        if airTime > 0 { yawRate = 0 }   // no steering in the air
-        let newHeading = heading + yawRate * dt
-        if drifting {
-            let catchUp: CGFloat = handbrake ? 0.9 : 2.2
-            travelHeading += CGFloat.angleDelta(travelHeading, newHeading) * min(1, catchUp * dt)
-            var slip = CGFloat.angleDelta(travelHeading, newHeading)
-            if abs(slip) > 1.25 {
-                slip = slip > 0 ? 1.25 : -1.25
-                travelHeading = newHeading - slip
+        let steerYaw = velocity / wheelBase * tan(steer)
+        var newHeading = heading + steerYaw * dt
+        if drifting && airTime <= 0 {
+            var slip = CGFloat.angleDelta(travelHeading, heading)
+            let speedShare = min(1, abs(velocity) / 90)
+            let rearGrip: CGFloat = handbrake ? 0.25 : (gasDown ? 0.6 : 2.2)
+            var target = 0.8 * steerYaw - slip * rearGrip * 3
+            if gasDown && !handbrake {
+                // Power oversteer: wheelspin pushes the tail further out
+                target += (slip >= 0 ? 1 : -1) * 2.6 * speedShare * min(1, abs(slip) / 0.35)
             }
+            if handbrake && abs(wheelInput) > 0.1 { target += (wheelInput > 0 ? 1 : -1) * speedShare }
+            yawSpeed += (target - yawSpeed) * min(1, dt * 3)
+            newHeading = heading + yawSpeed * dt
+            // The tyres drag the direction of travel round toward where the car points
+            let pull: CGFloat = handbrake ? 0.7 : (gasDown ? 1.4 : 2.4)
+            travelHeading += CGFloat.angleDelta(travelHeading, newHeading) * min(1, pull * dt)
+            slip = CGFloat.angleDelta(travelHeading, newHeading)
+            // Sliding sideways scrubs speed; the locked rear wheels even more
+            velocity -= velocity * (0.3 * abs(sin(slip)) + (handbrake ? 0.5 : 0)) * dt
+            if handbrake { braking = true }
             let before = driftClock
             driftClock += dt
             driftScore += abs(velocity) * abs(slip) * dt * 0.9
             if before < 2.2 && driftClock >= 2.2 { dispatchPolice(Strings.crimeDrift) }
-            if (!handbrake && abs(slip) < 0.07) || abs(velocity) < 20 { endDrift() }
+            // Grip back: small angle for a moment, or the tail swung past straight
+            driftCalm = abs(slip) < (gasDown ? 0.06 : 0.16) ? driftCalm + dt : 0
+            if abs(slip) > 1.55 {
+                // Spun out: the slide stops the car and the points are lost
+                failDrift()
+                velocity *= 0.4
+                yawSpeed *= 0.5
+                newHeading = heading
+                bumpHaptic.impactOccurred(intensity: 0.6)
+            } else if !handbrake && (driftCalm > 0.25 || slip * driftSide < -0.05) {
+                endDrift()
+            } else if abs(velocity) < 20 {
+                endDrift()
+            }
+        } else {
+            yawSpeed = airTime > 0 ? 0 : steerYaw
         }
+        if airTime > 0 { newHeading = heading }   // no steering in the air
+        let yawRate = (newHeading - heading) / max(dt, 0.0001)
         let moveHeading = drifting ? travelHeading : newHeading
         let newPosition = CGPoint(x: carPosition.x + cos(moveHeading) * velocity * dt,
                                   y: carPosition.y + sin(moveHeading) * velocity * dt)
@@ -2246,7 +2276,11 @@ final class ParkingScene: SKScene {
         drifting = true
         driftScore = 0
         driftClock = 0
+        driftCalm = 0
         travelHeading = heading
+        // The handbrake kicks the tail out toward the steering
+        driftSide = wheelInput > 0.1 ? 1 : (wheelInput < -0.1 ? -1 : (steer >= 0 ? 1 : -1))
+        yawSpeed = velocity / wheelBase * tan(steer) + driftSide * 1.6
         tickHaptic.impactOccurred(intensity: 0.7)
     }
 

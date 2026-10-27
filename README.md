@@ -62,17 +62,13 @@ Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 
 
 Garage cars:
 
-- "Rosso GT", "Strada S", "Tempesta", "Arrow GT", "Bison", "Classico 87": original designs made for this
-  game with Meshy AI (https://www.meshy.ai; text-to-image, then image-to-3D). They were prompted as invented
-  cars that do not copy any real make or model, and carry no badges, logos or plates. Converted with
-  `tools/convert_meshy_cars.py` (Blender). Files `Hop/Models/<id>_body.usdz`, `<id>_wheel.usdz`,
-  `<id>_basecolor.jpg`, `<id>_mask.png`. Meshy's free plan licenses its output under CC BY 4.0 (credit: Meshy AI);
-  paid plans give full ownership.
-- "Vector X": "Car Concept" from the Khronos glTF Sample Assets (https://github.com/KhronosGroup/glTF-Sample-Assets),
-  CC BY 4.0 © Khronos Group, based on the CC0 "Free Concept Car 004" by Unity Fan (an original concept design).
-  Modified: licence plate and Khronos logos removed, wipers removed, decimated, converted to USDZ (`tools/convert_cars.py`).
-- "Hot Rod 55": "Toy Car" from the Khronos glTF Sample Assets, CC0. Modified: fabric and cameras removed,
-  wheels cut out to spin, paint areas made tintable, decimated, converted to USDZ (`tools/convert_cars.py`).
+- All eight garage cars are Polyfork's free low poly cars (https://polyfork.dev, licence: use in commercial
+  projects, no attribution required, no redistribution of the files themselves): "Wedge-coupe-80s" (Vento 84),
+  "Muscle-car-60s" (Tempesta V8), "Convertible-60s" (Coral 59), "Hatchback-80s" (Strada S), "Boxy-sedan-70s"
+  (Toro 76), "Station-wagon-70s" (Arrow Wagon), "Pickup-truck-70s" (Bison 78) and "Family Crossover SUV" (Terra X),
+  generic designs without badges. Converted with `tools/convert_polyfork_cars.py`: turned to face +X, scaled to
+  the game's car length, the bodywork colours made paintable. Files `Hop/Models/<id>_body.usdz`,
+  `<id>_wheel.usdz`, `<id>_palette.png`, `<id>_mask.png`.
 - Traffic and parked vehicles: Kenney's "Car Kit" (https://kenney.nl/assets/car-kit), CC0, generic designs.
   Converted with `tools/convert_kenney.py` (stretched a little). Files `Hop/Models/kenney_*`.
 

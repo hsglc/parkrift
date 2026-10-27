@@ -817,14 +817,6 @@ final class Car3D {
                 // One full-width LED brake bar
                 lights.append(CarFactory.box(0.05, 0.06, 1.75, 0.02, brakeMaterial, at: SCNVector3(-2.27, tailY, 0), to: body))
                 lights.append(CarFactory.box(0.05, 0.05, 0.3, 0.02, reverseMaterial, at: SCNVector3(-2.27, tailY - 0.11, 0), to: body))
-            } else if spec.id == .concept || spec.id == .retro {
-                lights.append(CarFactory.box(0.04, 0.04, 0.22, 0.01, reverseMaterial, at: SCNVector3(-2.2, 0.62, 0), to: body))
-                if spec.id == .retro {
-                    // The retro car's lamps are painted in its texture; lit lenses on top of them
-                    for z: Float in [0.84, -0.84] {
-                        lights.append(CarFactory.box(0.05, 0.16, 0.12, 0.03, brakeMaterial, at: SCNVector3(-2.16, 0.74, z), to: body))
-                    }
-                }
             }
         } else {
             for z: Float in [0.66, -0.66] {

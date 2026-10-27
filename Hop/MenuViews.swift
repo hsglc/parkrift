@@ -591,11 +591,8 @@ struct AboutView: View {
     }
 
     private var credits: [Credit] { [
-        Credit(what: "Rosso GT, Strada S, Tempesta, Arrow GT, Bison, Classico 87",
-               author: Strings.pick("Özgün tasarım, Meshy AI ile üretildi", "Original designs made with Meshy AI", "Diseños originales hechos con Meshy AI"),
-               license: "CC BY 4.0", link: "https://www.meshy.ai"),
-        Credit(what: "Vector X", author: "Khronos Group (Unity Fan)", license: "CC BY 4.0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
-        Credit(what: "Hot Rod 55", author: "Khronos Group", license: "CC0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
+        Credit(what: Strings.pick("Garaj arabaları", "Garage cars", "Coches del garaje"),
+               author: "Polyfork", license: Strings.pick("Ticari kullanım", "Commercial use", "Uso comercial"), link: "https://polyfork.dev"),
         Credit(what: Strings.pick("Trafik araçları", "Traffic vehicles", "Vehículos del tráfico"), author: "Kenney (Car Kit)", license: "CC0", link: "https://kenney.nl/assets/car-kit"),
         Credit(what: Strings.pick("Yayalar ve animasyonları, koniler, variller, bariyer, polis arabası",
                                   "Pedestrians and their animations, cones, drums, barricade, police car",
