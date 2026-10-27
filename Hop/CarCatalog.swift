@@ -207,7 +207,7 @@ enum CarModels {
     /// The retro car's texture with its body areas tinted `color` (decals, chrome and tyres keep
     /// their own colors). Made once per color.
     static func retroPaint(_ color: UIColor) -> SCNMaterial {
-        let key = CarShapes.colorKey(color)
+        let key = CarFactory.colorKey(color)
         if let cached = retroPaints[key] { return cached }
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased

@@ -3,7 +3,7 @@ import UIKit
 
 // MARK: - Materials
 
-private enum Mat {
+enum Mat {
     static func pbr(_ color: UIColor, metal: CGFloat = 0, rough: CGFloat = 0.6) -> SCNMaterial {
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
@@ -39,7 +39,7 @@ enum CarStyle: Int, CaseIterable {
 }
 
 /// Shared car geometry (built once per style, copied per car so each can have its own paint).
-private enum CarShapes {
+enum CarShapes {
     struct Profile {
         let body: UIBezierPath
         let cabin: UIBezierPath
@@ -332,7 +332,7 @@ private enum CarShapes {
 /// Builds and caches car geometry. With optimizations on, every car's static parts are one merged
 /// geometry (a few draw calls), shared by all cars of the same style and color, with a simple
 /// far-distance version (level of detail).
-private enum CarFactory {
+enum CarFactory {
     static func colorKey(_ color: UIColor) -> String {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         color.getRed(&r, green: &g, blue: &b, alpha: &a)
