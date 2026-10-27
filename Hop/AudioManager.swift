@@ -7,8 +7,11 @@ final class AudioManager {
 
     private let engine = AVAudioEngine()
     private let musicNode = AVAudioPlayerNode()
+    /// Engine: a low-rev and a high-rev loop, each pitched by the rpm and crossfaded.
     private let motorNode = AVAudioPlayerNode()
     private let motorPitch = AVAudioUnitVarispeed()
+    private let motorHighNode = AVAudioPlayerNode()
+    private let motorHighPitch = AVAudioUnitVarispeed()
     private var effectNodes: [AVAudioPlayerNode] = []
     private var nextEffect = 0
     private var buffers: [String: AVAudioPCMBuffer] = [:]
@@ -18,7 +21,7 @@ final class AudioManager {
     /// Looping layers whose volume follows the game: tyre screech, police siren, rain.
     private var loopNodes: [String: AVAudioPlayerNode] = [:]
     private var loopStarted = Set<String>()
-    private static let loopNames = ["skid", "siren", "rain"]
+    private static let loopNames = ["skid", "siren", "rain", "wind"]
 
     var isMuted: Bool {
         get { UserDefaults.standard.bool(forKey: "pp.muted") }
@@ -52,19 +55,26 @@ final class AudioManager {
         try? session.setActive(true)
 
         buffers["music"] = load("music", ext: "m4a")
-        for name in ["engine", "bump", "beep", "go", "park", "click", "horn", "nitro", "crash", "whoosh", "skid", "siren", "rain"] {
+        for name in ["engine_low", "engine_high", "bump", "beep", "go", "park", "click", "horn", "nitro", "crash", "whoosh",
+                     "skid", "siren", "rain", "wind", "shift", "pop"] {
             buffers[name] = load(name, ext: "wav")
         }
 
         engine.attach(musicNode)
         engine.attach(motorNode)
         engine.attach(motorPitch)
+        engine.attach(motorHighNode)
+        engine.attach(motorHighPitch)
         if let music = buffers["music"] {
             engine.connect(musicNode, to: engine.mainMixerNode, format: music.format)
         }
-        if let motor = buffers["engine"] {
+        if let motor = buffers["engine_low"] {
             engine.connect(motorNode, to: motorPitch, format: motor.format)
             engine.connect(motorPitch, to: engine.mainMixerNode, format: motor.format)
+        }
+        if let motor = buffers["engine_high"] {
+            engine.connect(motorHighNode, to: motorHighPitch, format: motor.format)
+            engine.connect(motorHighPitch, to: engine.mainMixerNode, format: motor.format)
         }
         for name in AudioManager.loopNames {
             guard let buffer = buffers[name] else { continue }
@@ -142,16 +152,26 @@ final class AudioManager {
         for node in loopNodes.values { node.volume = 0 }
     }
 
-    /// speed: 0...1 of top speed, throttle: 0 or 1.
-    func setMotor(active: Bool, speed: Float, throttle: Float) {
-        guard engine.isRunning, let motor = buffers["engine"] else { return }
+    /// The engine at `rpm` (revolutions per minute) under `load` (0 coasting ... 1 full
+    /// throttle). The low loop was recorded at about 1560 rpm and the high one near 3960 rpm:
+    /// each is pitched to the rpm, and they crossfade between 2000 and 4500 rpm.
+    func setMotor(active: Bool, rpm: Float, load: Float) {
+        guard engine.isRunning, let low = buffers["engine_low"], let high = buffers["engine_high"] else { return }
         if active && !motorStarted {
-            motorNode.scheduleBuffer(motor, at: nil, options: [.loops], completionHandler: nil)
+            motorNode.scheduleBuffer(low, at: nil, options: [.loops], completionHandler: nil)
+            motorHighNode.scheduleBuffer(high, at: nil, options: [.loops], completionHandler: nil)
             motorNode.play()
+            motorHighNode.play()
             motorStarted = true
         }
-        let clampedSpeed = max(0, min(1, speed))
-        motorPitch.rate = 0.7 + clampedSpeed * 1.1 + throttle * 0.12
-        motorNode.volume = active ? (0.10 + 0.14 * throttle + 0.10 * clampedSpeed) : 0
+        let r = max(700, min(7600, rpm))
+        motorPitch.rate = max(0.4, min(3.0, r / 1560))
+        motorHighPitch.rate = max(0.4, min(2.2, r / 3960))
+        let x = max(0, min(1, (r - 2000) / 2500))
+        let blend = x * x * (3 - 2 * x)
+        // Louder and harder under load; quieter (but not silent) on the overrun
+        let level: Float = active ? (0.11 + 0.15 * load + 0.07 * min(1, r / 7000)) : 0
+        motorNode.volume = level * (1 - blend * 0.85)
+        motorHighNode.volume = level * blend * (0.55 + 0.45 * load)
     }
 }

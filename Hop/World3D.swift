@@ -1303,13 +1303,22 @@ final class World3D {
     /// for first sightings happens before the race, not at the first corner.
     private var sweepClock: Float = -1
 
+    /// A police car parked under the start while the loading screen is up, so its meshes and
+    /// shaders are drawn once before the first chase.
+    private var warmPolice: SCNNode?
+
     func beginWarmupSweep() {
         sweepClock = 0
+        warmPolice?.removeFromParentNode()
+        warmPolice = cityMap != nil ? makePoliceNode() : nil
+        warmPolice?.position = SCNVector3(0, -40, 0)
         // Every parked car at full detail while the screen is covered, so their wheels and lights
         // are drawn once now
         for entry in parkedCars3D { entry.car.setDetail(true) }
     }
     func endWarmupSweep() {
+        warmPolice?.removeFromParentNode()
+        warmPolice = nil
         guard sweepClock >= 0 else { return }
         sweepClock = -1
         // The next frame puts the camera straight behind the car (no swing from the sweep)
@@ -1320,6 +1329,8 @@ final class World3D {
 
     func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
         let carPoint = World3D.vec(position)
+        // In view of the touring camera, just beside the start
+        warmPolice?.position = SCNVector3(carPoint.x + 7, carPoint.y, carPoint.z + 4)
         if sweepClock >= 0 {
             if sweepClock < 1.0 {
                 // Show every signal color once while the screen is covered
@@ -1521,7 +1532,12 @@ final class World3D {
         model.eulerAngles.y = Float.pi / 2
         model.enumerateHierarchy { node, _ in
             node.castsShadow = node.name?.hasPrefix("wheel") == false
-            for material in node.geometry?.materials ?? [] { material.lightingModel = .physicallyBased }
+            for material in node.geometry?.materials ?? [] {
+                material.lightingModel = .physicallyBased
+                // The light bar flashes through its emission: set one now so the shader compiled
+                // ahead of time is the one the chase uses
+                material.emission.contents = UIColor.black
+            }
         }
         let holder = SCNNode()
         holder.addChildNode(model)

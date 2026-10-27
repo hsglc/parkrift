@@ -250,7 +250,7 @@ enum Strings {
     static var nearMiss: String { t("KIL PAYI! +NİTRO", "NEAR MISS! +NITRO", "¡POR LOS PELOS! +NITRO") }
     static var jump: String { t("UÇUŞ! +NİTRO", "BIG AIR! +NITRO", "¡A VOLAR! +NITRO") }
     static var policeChase: String { t("POLİS PEŞİNDE!", "POLICE CHASE!", "¡TE PERSIGUE LA POLICÍA!") }
-    static var policeComing: String { t("🚨 POLİS GELİYOR!", "🚨 POLICE INCOMING!", "🚨 ¡VIENE LA POLICÍA!") }
+    static var policeComing: String { t("POLİS GELİYOR!", "POLICE INCOMING!", "¡VIENE LA POLICÍA!") }
     static var crimeCrash: String { t("Kaza yaptın", "You caused a crash", "Provocaste un choque") }
     static var crimeReckless: String { t("Tehlikeli sürüş", "Reckless driving", "Conducción temeraria") }
     static var crimePedestrian: String { t("Yayaya çarptın", "You hit a pedestrian", "Atropellaste a un peatón") }

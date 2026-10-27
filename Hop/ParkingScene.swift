@@ -71,8 +71,6 @@ final class ParkingScene: SKScene {
     private var countdownNode = SKNode()
     private var countdownLabel = SKLabelNode()
     private var countdownShadow = SKLabelNode()
-    private var countdownDial = SKNode()
-    private var countdownRing = SKShapeNode()
     private var menuButton = SKSpriteNode()
     private var resetButton = SKSpriteNode()
     private var soundButton = SKSpriteNode()
@@ -175,6 +173,18 @@ final class ParkingScene: SKScene {
     private var maxForward: CGFloat = 150
     private let maxReverse: CGFloat = 70
     private let creepSpeed: CGFloat = 12
+
+    // Gearbox: gives the engine its rising and falling note and the pull its steps
+    private var gearIndex = 1
+    private var rpm: CGFloat = 900
+    private var shiftCut: CGFloat = 0
+    private var lastThrottle = false
+    private let idleRPM: CGFloat = 900
+    private let redline: CGFloat = 7000
+    /// Top speed of each gear as a share of the car's top speed (5th only with nitro).
+    private let gearTops: [CGFloat] = [0.3, 0.52, 0.75, 1.08, 1.8]
+    /// How far the tyres are past their grip in a corner (0...1).
+    private var understeer: CGFloat = 0
 
     private var carPosition = CGPoint.zero
     private var heading: CGFloat = 0
@@ -320,7 +330,7 @@ final class ParkingScene: SKScene {
     }
 
     override func willMove(from view: SKView) {
-        audio.setMotor(active: false, speed: 0, throttle: 0)
+        audio.setMotor(active: false, rpm: 0, load: 0)
         audio.setMusicVolume(0.5)
     }
 
@@ -498,37 +508,48 @@ final class ParkingScene: SKScene {
         navNode.isHidden = true
         hud.addChild(navNode)
 
+        // Start lights: a small glass capsule high on the screen with the number, three lamps that
+        // light one by one and a bar that fills smoothly over the three seconds
         countdownNode = SKNode()
-        countdownNode.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        countdownNode.position = countdownHome
         countdownNode.zPosition = 5
-        countdownShadow = makeLabel("3", size: 110, color: UIColor.black.withAlphaComponent(0.35))
-        countdownShadow.position = CGPoint(x: 0, y: -6)
+        let pill = SKShapeNode(rect: CGRect(x: -78, y: -33, width: 156, height: 66), cornerRadius: 22)
+        pill.fillColor = UIColor(red: 0.03, green: 0.04, blue: 0.08, alpha: 0.6)
+        pill.strokeColor = UIColor.white.withAlphaComponent(0.14)
+        pill.lineWidth = 1
+        countdownNode.addChild(pill)
+        countdownPill = pill
+        // The outgoing number (slides up) and the incoming one (slides in from below)
+        countdownShadow = makeLabel("", size: 30, color: .white, font: "AvenirNext-Bold")
+        countdownShadow.position = CGPoint(x: 0, y: 7)
         countdownNode.addChild(countdownShadow)
-        countdownLabel = makeLabel("3", size: 110, color: .white)
+        countdownLabel = makeLabel("3", size: 30, color: .white, font: "AvenirNext-Bold")
+        countdownLabel.position = CGPoint(x: 0, y: 7)
         countdownNode.addChild(countdownLabel)
-
-        // Dial behind the numbers: dark disc, faint track and a ring that sweeps each second
-        countdownDial = SKNode()
-        countdownDial.position = countdownNode.position
-        countdownDial.zPosition = 4
-        let disc = SKShapeNode(circleOfRadius: 70)
-        disc.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.45)
-        disc.strokeColor = .clear
-        countdownDial.addChild(disc)
-        let track = SKShapeNode(circleOfRadius: 78)
-        track.strokeColor = UIColor.white.withAlphaComponent(0.15)
-        track.lineWidth = 6
-        track.fillColor = .clear
-        countdownDial.addChild(track)
-        countdownRing = SKShapeNode()
-        countdownRing.lineWidth = 6
-        countdownRing.lineCap = .round
-        countdownRing.glowWidth = 2
-        countdownDial.addChild(countdownRing)
-        countdownDial.isHidden = true
-        hud.addChild(countdownDial)
+        countdownLamps = (0..<3).map { index in
+            let lamp = SKShapeNode(circleOfRadius: 4.5)
+            lamp.position = CGPoint(x: CGFloat(index - 1) * 18, y: -15)
+            lamp.fillColor = UIColor.white.withAlphaComponent(0.16)
+            lamp.strokeColor = .clear
+            countdownNode.addChild(lamp)
+            return lamp
+        }
+        let track = SKSpriteNode(color: UIColor.white.withAlphaComponent(0.1), size: CGSize(width: 124, height: 3))
+        track.position = CGPoint(x: 0, y: -26)
+        countdownNode.addChild(track)
+        countdownBar = SKSpriteNode(color: .white, size: CGSize(width: 124, height: 3))
+        countdownBar.anchorPoint = CGPoint(x: 0, y: 0.5)
+        countdownBar.position = CGPoint(x: -62, y: -26)
+        countdownBar.xScale = 0.001
+        countdownNode.addChild(countdownBar)
         hud.addChild(countdownNode)
     }
+
+    private var countdownHome: CGPoint { CGPoint(x: size.width / 2, y: size.height * 0.76) }
+    private var countdownPill = SKShapeNode()
+    private var countdownLamps: [SKShapeNode] = []
+    private var countdownBar = SKSpriteNode()
+    private var countdownColor = UIColor.white
 
     private func refreshSoundIcon() {
         soundIcon.removeFromParent()
@@ -784,8 +805,8 @@ final class ParkingScene: SKScene {
         remotePoliceTarget = nil
         policeCooldownUntil = 0
         if policeBanner.parent != nil {
-            policeBanner.alpha = 0
-            policeEdges.forEach { $0.alpha = 0 }
+            policeBanner.alpha = 0.002
+            policeEdges.forEach { $0.alpha = 0.002 }
         }
         trail.removeAll()
         nearMissAt.removeAll()
@@ -846,12 +867,19 @@ final class ParkingScene: SKScene {
         boostTime = 0
         remoteBoost = false
         statusLabel.text = ""
+        countdownLabel.text = ""
         setCountdown("3")
         countdownNode.removeAllActions()
-        countdownNode.alpha = 1
+        countdownNode.alpha = 0
         countdownNode.setScale(1)
+        countdownNode.position = countdownHome
+        countdownBar.xScale = 0.001
         hitsLabel.text = "0"
-        gearLabel.text = "D"
+        gearLabel.text = "1"
+        gearIndex = 1
+        rpm = idleRPM
+        shiftCut = 0
+        audio.setLoop("wind", volume: 0)
         refreshLevelLabel()
         codeLabel.text = online ? "\(Strings.roomCode): \(model?.roomCode ?? "")" : ""
         remoteCheck.isHidden = true
@@ -861,7 +889,6 @@ final class ParkingScene: SKScene {
         updateCarNodes()
         countdownNode.isHidden = !ready
         if ready {
-            countdownDial.alpha = 0
             popCountdown(go: false)
             tickHaptic.impactOccurred()
             audio.play("beep", volume: 0.6)
@@ -875,38 +902,51 @@ final class ParkingScene: SKScene {
         }
     }
 
-    /// Each number grows in softly and fades out before the next; GO! zooms away.
+    /// The capsule fades in once; each new number slides up into place while the old one leaves
+    /// upward, and the lamp that just lit pops. GO! turns the capsule green and it floats away.
     private func popCountdown(go: Bool) {
-        countdownNode.removeAllActions()
         countdownNode.isHidden = false
-        countdownNode.alpha = 0
-        countdownNode.setScale(go ? 0.6 : 0.45)
-        let appear = SKAction.group([.fadeIn(withDuration: 0.18), .scale(to: 1.0, duration: 0.34)])
-        appear.timingMode = .easeOut
-        let settle = SKAction.scale(to: go ? 1.08 : 1.04, duration: go ? 0.35 : 0.42)
-        let leave = SKAction.group([.fadeOut(withDuration: go ? 0.35 : 0.2), .scale(to: go ? 2.0 : 1.25, duration: go ? 0.35 : 0.2)])
-        leave.timingMode = .easeIn
-        countdownNode.run(.sequence([appear, settle, leave]))
+        if countdownNode.alpha < 0.99 || countdownNode.action(forKey: "leave") != nil {
+            countdownNode.removeAllActions()
+            countdownNode.position = CGPoint(x: countdownHome.x, y: countdownHome.y - 10)
+            countdownNode.alpha = 0
+            countdownNode.setScale(0.92)
+            let enter = SKAction.group([.fadeIn(withDuration: 0.25), .scale(to: 1, duration: 0.3), .move(to: countdownHome, duration: 0.3)])
+            enter.timingMode = .easeOut
+            countdownNode.run(enter)
+        }
+        countdownShadow.removeAllActions()
+        countdownShadow.position = CGPoint(x: 0, y: 7)
+        countdownShadow.alpha = countdownShadow.text?.isEmpty == false ? 1 : 0
+        let out = SKAction.group([.moveBy(x: 0, y: 14, duration: 0.2), .fadeOut(withDuration: 0.2)])
+        out.timingMode = .easeIn
+        countdownShadow.run(out)
+        countdownLabel.removeAllActions()
+        countdownLabel.position = CGPoint(x: 0, y: -5)
+        countdownLabel.alpha = 0
+        let into = SKAction.group([.move(to: CGPoint(x: 0, y: 7), duration: 0.26), .fadeIn(withDuration: 0.22)])
+        into.timingMode = .easeOut
+        countdownLabel.run(into)
+        let litIndex = go ? -1 : max(0, 3 - (Int(countdownLabel.text ?? "3") ?? 3))
+        for (index, lamp) in countdownLamps.enumerated() where index == litIndex || go {
+            lamp.removeAllActions()
+            lamp.setScale(1.7)
+            let settle = SKAction.scale(to: 1, duration: 0.25)
+            settle.timingMode = .easeOut
+            lamp.run(settle)
+        }
         if go {
-            countdownDial.run(.sequence([.group([.fadeOut(withDuration: 0.3), .scale(to: 1.4, duration: 0.3)]), .hide()]))
-        } else {
-            countdownDial.removeAllActions()
-            countdownDial.isHidden = false
-            if countdownDial.alpha < 1 {
-                countdownDial.setScale(0.8)
-                countdownDial.run(.group([.fadeIn(withDuration: 0.25), .scale(to: 1.0, duration: 0.25)]))
-            }
+            countdownBar.xScale = 1
+            let pulse = SKAction.sequence([.scale(to: 1.08, duration: 0.12), .scale(to: 1.0, duration: 0.14)])
+            let leave = SKAction.group([.fadeOut(withDuration: 0.3), .moveBy(x: 0, y: 18, duration: 0.3)])
+            leave.timingMode = .easeIn
+            countdownNode.run(.sequence([pulse, .wait(forDuration: 0.35), leave, .hide()]), withKey: "leave")
         }
     }
 
+    /// The bar fills smoothly over the whole countdown.
     private func updateCountdownRing() {
-        var fraction = countdown - floor(countdown)
-        if fraction <= 0.001 { fraction = 1 }
-        let path = CGMutablePath()
-        path.addArc(center: .zero, radius: 78, startAngle: CGFloat.pi / 2,
-                    endAngle: CGFloat.pi / 2 - fraction * 2 * CGFloat.pi, clockwise: true)
-        countdownRing.path = path
-        countdownRing.strokeColor = countdownLabel.fontColor ?? .white
+        countdownBar.xScale = max(0.001, min(1, 1 - countdown / 3))
     }
 
     private func becomeReady() {
@@ -940,7 +980,6 @@ final class ParkingScene: SKScene {
         countdownNode.isHidden = false
         countdown = 3
         setCountdown("3")
-        countdownDial.alpha = 0
         popCountdown(go: false)
         tickHaptic.impactOccurred()
         audio.play("beep", volume: 0.6)
@@ -1009,15 +1048,23 @@ final class ParkingScene: SKScene {
     }
 
     private func setCountdown(_ text: String) {
-        let colors: [String: UIColor] = ["3": UIColor(red: 1.0, green: 0.38, blue: 0.35, alpha: 1),
-                                         "2": UIColor(red: 1.0, green: 0.72, blue: 0.22, alpha: 1),
-                                         "1": UIColor(red: 1.0, green: 0.90, blue: 0.30, alpha: 1)]
-        let isNumber = text.count == 1
+        let colors: [String: UIColor] = ["3": UIColor(red: 1.0, green: 0.36, blue: 0.33, alpha: 1),
+                                         "2": UIColor(red: 1.0, green: 0.70, blue: 0.22, alpha: 1),
+                                         "1": UIColor(red: 1.0, green: 0.88, blue: 0.30, alpha: 1)]
+        let go = colors[text] == nil
+        countdownShadow.text = countdownLabel.text == text ? "" : countdownLabel.text
+        countdownShadow.fontColor = countdownLabel.fontColor
         countdownLabel.text = text
-        countdownShadow.text = text
-        countdownLabel.fontColor = colors[text] ?? UIColor(red: 0.40, green: 1.0, blue: 0.55, alpha: 1)
-        countdownLabel.fontSize = isNumber ? 110 : 72
-        countdownShadow.fontSize = countdownLabel.fontSize
+        countdownColor = colors[text] ?? UIColor(red: 0.35, green: 1.0, blue: 0.55, alpha: 1)
+        countdownLabel.fontColor = go ? .white : countdownColor
+        let lit = go ? 3 : max(0, 4 - (Int(text) ?? 3))
+        for (index, lamp) in countdownLamps.enumerated() {
+            lamp.fillColor = index < lit ? countdownColor : UIColor.white.withAlphaComponent(0.16)
+        }
+        countdownBar.color = countdownColor
+        countdownPill.fillColor = go ? UIColor(red: 0.1, green: 0.62, blue: 0.32, alpha: 0.85)
+                                     : UIColor(red: 0.03, green: 0.04, blue: 0.08, alpha: 0.6)
+        countdownPill.strokeColor = go ? UIColor(red: 0.5, green: 1, blue: 0.65, alpha: 0.6) : UIColor.white.withAlphaComponent(0.14)
     }
 
     /// Plays the other car back `interpolationDelay` behind the newest state, blending between
@@ -1588,8 +1635,10 @@ final class ParkingScene: SKScene {
             }
         }
 
-        let throttle: Float = (isPressed(.forward) || isPressed(.reverse)) && phase == .driving && !localParked ? 1 : 0
-        audio.setMotor(active: true, speed: Float(abs(velocity) / maxForward), throttle: throttle)
+        // Revving is allowed during the countdown too
+        let pedal = (isPressed(.forward) || isPressed(.reverse)) && (phase == .driving || phase == .countdown) && !localParked
+        updateGearbox(dt, throttle: pedal)
+        audio.setMotor(active: true, rpm: Float(rpm), load: pedal ? 1 : (isBoosting ? 0.8 : 0.15))
 
         if online && friendPresent {
             sendClock += TimeInterval(dt)
@@ -1707,6 +1756,8 @@ final class ParkingScene: SKScene {
     private func gaveUp() {
         endPoliceChase()
         audio.setLoop("siren", volume: 0)
+        audio.setLoop("wind", volume: 0)
+        audio.setLoop("skid", volume: 0)
         localParked = true
         localTime = -1
         velocity = 0
@@ -2087,7 +2138,11 @@ final class ParkingScene: SKScene {
             } else {
                 gear = .drive
                 let headroom = max(0, 1 - velocity / maxForward)
-                velocity += engineAccel * pow(headroom, 0.7) * dt
+                // Engine pull follows the torque curve; it dips for a moment at each gear change
+                let x = rpm / redline
+                let torque = max(0.35, 1 - pow((x - 0.62) / 0.5, 2))
+                let pull = (0.72 + 0.36 * torque) * (shiftCut > 0 ? 0.35 : 1)
+                velocity += engineAccel * pow(headroom, 0.7) * pull * dt
             }
         } else if reverseDown {
             if gear == .drive && velocity > 2 {
@@ -2103,7 +2158,9 @@ final class ParkingScene: SKScene {
             if abs(velocity) < creepSpeed && engaged {
                 velocity = approach(velocity, creep, 30 * dt)
             } else {
-                let resistance = (rolling + airDrag * velocity * velocity * 0.01) * dt
+                // Rolling resistance, air drag and engine braking in gear
+                let engineBrake = gear == .drive ? 16 * rpm / redline : 0
+                let resistance = (rolling + engineBrake + airDrag * velocity * velocity * 0.01) * dt
                 velocity = approach(velocity, creep, resistance)
             }
         }
@@ -2131,7 +2188,15 @@ final class ParkingScene: SKScene {
         // settles instead of jumping.
         if !drifting { travelHeading = heading }
         if handbrake && velocity > 40 && !drifting && airTime <= 0 { startDrift() }
-        let steerYaw = velocity / wheelBase * tan(steer)
+        var steerYaw = velocity / wheelBase * tan(steer)
+        // The tyres can only hold so much sideways force: past it the car runs wide (understeer)
+        // and the tyres squeal
+        let maxLateral: CGFloat = 420
+        understeer = 0
+        if !drifting && abs(velocity * steerYaw) > maxLateral {
+            understeer = min(1, (abs(velocity * steerYaw) - maxLateral) / 300)
+            steerYaw = (steerYaw > 0 ? 1 : -1) * maxLateral / max(abs(velocity), 1)
+        }
         var newHeading = heading + steerYaw * dt
         if drifting && airTime <= 0 {
             var slip = CGFloat.angleDelta(travelHeading, heading)
@@ -2197,7 +2262,7 @@ final class ParkingScene: SKScene {
             // Most of our momentum goes into the crash; we do not drive into the other car
             velocity *= 0.3
             applyCrashMotion(dt)
-            gearLabel.text = gear == .drive ? "D" : "R"
+            gearLabel.text = gear == .drive ? "\(gearIndex)" : "R"
             tyreEffects(dt, accelerating: gasDown || reverseDown)
             return
         }
@@ -2259,10 +2324,43 @@ final class ParkingScene: SKScene {
         updateJump(dt)
         updateDriftDisplay(dt)
 
-        gearLabel.text = gear == .drive ? "D" : "R"
+        gearLabel.text = gear == .drive ? "\(gearIndex)" : "R"
         gearLabel.fontColor = gear == .drive ? UIColor(red: 0.45, green: 0.95, blue: 0.6, alpha: 1)
                                              : UIColor(red: 1.0, green: 0.55, blue: 0.45, alpha: 1)
         tyreEffects(dt, accelerating: gasDown || reverseDown)
+    }
+
+    /// Picks the gear from the speed (up near the top of each gear, down well below it) and
+    /// eases the rpm toward that gear's revs: quick to rise, quicker to drop on a shift.
+    private func updateGearbox(_ dt: CGFloat, throttle: Bool) {
+        let speed = abs(velocity)
+        shiftCut = max(0, shiftCut - dt)
+        var target: CGFloat
+        if gear == .reverse && velocity < -1 {
+            target = idleRPM + (redline * 0.75 - idleRPM) * min(1, speed / maxReverse)
+        } else {
+            let ratio = speed / (gearTops[gearIndex - 1] * maxForward)
+            if ratio > 0.95 && gearIndex < gearTops.count && (throttle || isBoosting) && phase == .driving {
+                gearIndex += 1
+                shiftCut = 0.16
+                audio.play("shift", volume: 0.22)
+                tickHaptic.impactOccurred(intensity: 0.3)
+            } else if gearIndex > 1 && speed < gearTops[gearIndex - 2] * maxForward * 0.62 {
+                gearIndex -= 1
+            }
+            target = idleRPM + (redline - idleRPM) * min(1.02, speed / (gearTops[gearIndex - 1] * maxForward))
+        }
+        // Revving on the spot, and wheelspin in a drift
+        if throttle && speed < 15 { target = max(target, phase == .countdown ? 5400 : 2800) }
+        if throttle && drifting { target = max(target, redline * 0.86) }
+        let rate: CGFloat = target > rpm ? 9 : (shiftCut > 0 ? 22 : 5)
+        rpm += (target - rpm) * min(1, rate * dt)
+        // Lifting off at high revs: the exhaust pops
+        if lastThrottle && !throttle && rpm > 5000 && speed > 60 && phase == .driving && CGFloat.random(in: 0...1) < 0.65 {
+            audio.play("pop", volume: 0.32)
+        }
+        lastThrottle = throttle
+        if gear == .drive, gearLabel.text != "\(gearIndex)", phase == .driving { gearLabel.text = "\(gearIndex)" }
     }
 
     private func approach(_ value: CGFloat, _ target: CGFloat, _ step: CGFloat) -> CGFloat {
@@ -2552,7 +2650,9 @@ final class ParkingScene: SKScene {
         policeBanner = SKNode()
         policeBanner.position = CGPoint(x: size.width / 2, y: size.height * 0.80)
         policeBanner.zPosition = 22
-        policeBanner.alpha = 0
+        // Not 0: SpriteKit skips fully transparent nodes, so the label's text would be laid out
+        // only on the first chase
+        policeBanner.alpha = 0.002
         let width = min(size.width - 40, 330)
         policeBannerBack = SKShapeNode(rect: CGRect(x: -width / 2, y: -24, width: width, height: 48), cornerRadius: 14)
         policeBannerBack.fillColor = UIColor(red: 0.08, green: 0.02, blue: 0.04, alpha: 0.82)
@@ -2572,7 +2672,7 @@ final class ParkingScene: SKScene {
             edge.fillColor = color
             edge.strokeColor = .clear
             edge.glowWidth = 0
-            edge.alpha = 0
+            edge.alpha = 0.002
             edge.zPosition = 20
             edge.blendMode = .add
             hud.addChild(edge)
@@ -2592,8 +2692,8 @@ final class ParkingScene: SKScene {
 
     private func hidePoliceWarning() {
         policeBanner.removeAllActions()
-        policeBanner.run(.fadeAlpha(to: 0, duration: 0.3))
-        policeEdges.forEach { $0.run(.fadeAlpha(to: 0, duration: 0.3)) }
+        policeBanner.run(.fadeAlpha(to: 0.002, duration: 0.3))
+        policeEdges.forEach { $0.run(.fadeAlpha(to: 0.002, duration: 0.3)) }
     }
 
     private func updatePoliceWarning(_ chase: PoliceChase) {
@@ -2835,9 +2935,14 @@ final class ParkingScene: SKScene {
     // MARK: Effects
 
     private func tyreEffects(_ dt: CGFloat, accelerating: Bool) {
-        let cornering = abs(lateralAccel) > 150 && abs(velocity) > 50
+        let cornering = (abs(lateralAccel) > 150 && abs(velocity) > 50) || understeer > 0.2
         let hardBrake = braking && abs(velocity) > 60
-        audio.setLoop("skid", volume: drifting ? 0.45 : (cornering || hardBrake ? 0.18 : 0))
+        let squeal: CGFloat = drifting ? 0.45 : max(understeer > 0 ? 0.14 + 0.2 * understeer : 0,
+                                                    cornering ? 0.12 : 0, hardBrake ? 0.2 : 0)
+        audio.setLoop("skid", volume: Float(squeal))
+        // Wind noise grows with speed
+        let speedShare = abs(velocity) / maxForward
+        audio.setLoop("wind", volume: Float(max(0, min(0.4, (speedShare - 0.45) * 0.45))))
         skidClock += dt
         if (cornering || hardBrake || drifting) && airTime <= 0 && skidClock > 0.03 {
             skidClock = 0
@@ -2958,6 +3063,7 @@ final class ParkingScene: SKScene {
         if drifting { endDrift() }
         endPoliceChase()
         audio.setLoop("skid", volume: 0)
+        audio.setLoop("wind", volume: 0)
         audio.setLoop("siren", volume: 0)
         if !level.race { velocity = 0 }
         braking = false
