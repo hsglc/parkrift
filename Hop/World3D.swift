@@ -1269,11 +1269,47 @@ final class World3D {
 
     /// Uploads all geometry (including far-distance car models that are not in the tree yet) and
     /// compiles their shaders before they first appear, so the first sighting does not stall a frame.
-    func warmUp() {
-        guard PerfSettings.optimized, let renderer = renderer else { return }
+    /// `completion` runs on the main thread once everything is uploaded (or right away without a view).
+    func warmUp(attempt: Int = 0, completion: (() -> Void)? = nil) {
+        guard let renderer = renderer else {
+            // The 3D view may not exist yet in the very first frame; try again shortly
+            if attempt < 20 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.warmUp(attempt: attempt + 1, completion: completion)
+                }
+            } else {
+                completion?()
+            }
+            return
+        }
         var objects: [Any] = [scene.rootNode]
-        objects += CarFactory.allGeometries
-        renderer.prepare(objects, completionHandler: nil)
+        if PerfSettings.optimized { objects += CarFactory.allGeometries }
+        renderer.prepare(objects) { _ in
+            DispatchQueue.main.async { completion?() }
+        }
+    }
+
+    /// Builds the car models a race needs while the player is still in the menu, one per main-loop
+    /// turn so the menu stays smooth. Anything not built yet is made on demand later.
+    static func prewarmCars() {
+        guard PerfSettings.optimized else { return }
+        var jobs: [() -> Void] = []
+        for color in CarArt.playerColors {
+            jobs.append { _ = CarFactory.body(style: .racer, color: color, parked: false) }
+        }
+        for color in CarArt.parkedColors {
+            for style in [CarStyle.sedan, .hatch, .suv] {
+                jobs.append { _ = CarFactory.body(style: style, color: color, parked: false) }
+                jobs.append { _ = CarFactory.body(style: style, color: color, parked: true) }
+            }
+        }
+        jobs.append { _ = CarFactory.wheelTemplate }
+        func next(_ index: Int) {
+            guard index < jobs.count else { return }
+            jobs[index]()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { next(index + 1) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { next(0) }
     }
 
     /// Full detail only for parked cars near the player (world units).

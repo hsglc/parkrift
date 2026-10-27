@@ -32,6 +32,9 @@ final class AppModel: ObservableObject {
     @Published var errorText: String?
     @Published var selectedLevel = 0
     @Published var results: ResultsInfo?
+    /// Loading screen over the game until the world is built and the countdown can start.
+    @Published var loading = false
+    private(set) var loadingLevel = 0
 
     enum OnlineMode: String {
         case park
@@ -59,6 +62,7 @@ final class AppModel: ObservableObject {
     }
 
     init() {
+        World3D.prewarmCars()
         net.onMessage = { [weak self] message in self?.handle(message) }
         net.onClose = { [weak self] _ in self?.connectionClosed() }
     }
@@ -126,6 +130,7 @@ final class AppModel: ObservableObject {
 
     func leaveToMenu() {
         results = nil
+        loading = false
         net.disconnect()
         online = false
         connecting = false
@@ -138,13 +143,27 @@ final class AppModel: ObservableObject {
     // MARK: Game
 
     private func beginGame(level: Int) {
-        let newWorld = World3D()
-        let newScene = ParkingScene(size: CGSize(width: 852, height: 393))
-        newScene.scaleMode = .resizeFill
-        newScene.configure(model: self, world: newWorld, online: online, slot: mySlot, isHost: isHost || !online, level: level)
-        world = newWorld
-        scene = newScene
+        // Show the loading screen first, then build the world on the next turn of the main loop
+        // (building it blocks the main thread, which used to leave a black screen).
+        loadingLevel = level
+        loading = true
+        scene = nil
+        world = nil
         screen = .game
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self = self, self.screen == .game, self.scene == nil else { return }
+            let newWorld = World3D()
+            let newScene = ParkingScene(size: CGSize(width: 852, height: 393))
+            newScene.scaleMode = .resizeFill
+            newScene.configure(model: self, world: newWorld, online: self.online, slot: self.mySlot,
+                               isHost: self.isHost || !self.online, level: level)
+            self.world = newWorld
+            self.scene = newScene
+        }
+    }
+
+    func sceneReady() {
+        withAnimation(.easeOut(duration: 0.35)) { loading = false }
     }
 
     func send(_ message: [String: Any]) {
@@ -267,6 +286,7 @@ struct RootView: View {
             case .lobby:
                 LobbyView()
             case .game:
+                ZStack {
                 if let scene = model.scene, let world = model.world {
                     ZStack {
                         SceneKitView(world: world)
@@ -279,6 +299,11 @@ struct RootView: View {
                                 .transition(.opacity)
                         }
                     }
+                }
+                if model.loading {
+                    LoadingView(level: model.loadingLevel)
+                        .transition(.opacity)
+                }
                 }
             }
         }

@@ -97,6 +97,8 @@ final class ParkingScene: SKScene {
     private var finishAnimating = false
     private var nitroFiredAt: [Double] = []
     private var detailClock: CGFloat = 0
+    /// False until the first level is fully loaded; the countdown waits for it.
+    private var ready = false
     private var navNode = SKNode()
     private var navArrow = SKSpriteNode()
     private var navLabel = SKLabelNode()
@@ -562,7 +564,9 @@ final class ParkingScene: SKScene {
         obstacleBoxes = level.obstacles.map { $0.box }
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
-        defer { world.warmUp() }
+        defer {
+            world.warmUp { [weak self] in self?.becomeReady() }
+        }
 
         botCars.forEach { $0.node.removeFromParentNode() }
         botCars.removeAll()
@@ -634,6 +638,21 @@ final class ParkingScene: SKScene {
         world.follow(position: carPosition, heading: heading, dt: 0, snap: true)
         buildMinimap()
         updateCarNodes()
+        countdownNode.isHidden = !ready
+        if ready {
+            tickHaptic.impactOccurred()
+            audio.play("beep", volume: 0.6)
+        }
+    }
+
+    /// The world is built and its shaders are compiled: hide the loading screen, start the countdown.
+    private func becomeReady() {
+        guard !ready else { return }
+        ready = true
+        countdownNode.isHidden = false
+        countdown = 3
+        setCountdown("3")
+        model?.sceneReady()
         tickHaptic.impactOccurred()
         audio.play("beep", volume: 0.6)
     }
@@ -1131,6 +1150,7 @@ final class ParkingScene: SKScene {
 
         switch phase {
         case .countdown:
+            guard ready else { break }
             let before = Int(ceil(countdown))
             countdown -= dt
             let after = Int(ceil(countdown))

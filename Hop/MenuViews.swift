@@ -403,3 +403,73 @@ private struct ModeChip: View {
         .disabled(!enabled)
     }
 }
+
+// MARK: - Loading
+
+/// Shown while a level is built (instead of a black screen) until the countdown can start.
+struct LoadingView: View {
+    let level: Int
+    @State private var tip = Strings.tips.randomElement() ?? ""
+
+    private var modeTitle: String {
+        if Levels.isRace(level) { return Strings.carRace }
+        if Levels.isCity(level) { return Strings.parkRace }
+        return Levels.title(level)
+    }
+
+    private var modeIcon: String {
+        if Levels.isRace(level) { return "flag.checkered" }
+        if Levels.isCity(level) { return "building.2.fill" }
+        return "parkingsign"
+    }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Palette.card, Palette.ink], startPoint: .top, endPoint: .bottom)
+            // Road stripes along the bottom
+            GeometryReader { proxy in
+                Path { path in
+                    var x: CGFloat = -20
+                    while x < proxy.size.width {
+                        path.addRect(CGRect(x: x, y: proxy.size.height - 46, width: 34, height: 6))
+                        x += 70
+                    }
+                }
+                .fill(Palette.gold.opacity(0.35))
+            }
+            VStack(spacing: 14) {
+                Logo(size: 44)
+                HStack(spacing: 8) {
+                    Image(systemName: modeIcon)
+                    Text(modeTitle.uppercased())
+                        .tracking(1.5)
+                }
+                .font(.system(size: 14, weight: .black, design: .rounded))
+                .foregroundStyle(Palette.gold)
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+                    .padding(.top, 4)
+                Text(Strings.loadingText)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.75))
+                if !tip.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "lightbulb.fill")
+                            .foregroundStyle(Palette.gold)
+                        Text(tip)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.white.opacity(0.07)))
+                    .frame(maxWidth: 420)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .ignoresSafeArea()
+    }
+}

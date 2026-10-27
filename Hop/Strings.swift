@@ -90,4 +90,19 @@ enum Strings {
     static var nitroGo: String { t("NİTRO!", "NITRO!") }
     static var finishBig: String { t("FİNİŞ!", "FINISH!") }
     static func place(_ n: Int) -> String { t("\(n). sırada", "Place \(n)") }
+    static var loadingText: String { t("Harita hazırlanıyor…", "Preparing the map…") }
+    static var tips: [String] {
+        isTurkish ? ["Nitro dolunca halka turkuaz olur, düz yolda bas.",
+                     "Araba Yarışı'nda her kaza puanına 3 saniye ekler.",
+                     "Mini haritadaki sarı çizgi en kısa yolu gösterir.",
+                     "Botlar önlerindeki arabaya göre durur; karşı şeritten sollayabilirsin.",
+                     "Kornaya basınca arkadaşın da duyar.",
+                     "Park ederken yavaşla ve 1 saniye bekle."]
+                  : ["When the ring turns turquoise, nitro is ready — use it on a straight.",
+                     "In the Car Race every crash adds 3 seconds to your score.",
+                     "The yellow line on the minimap is the shortest route.",
+                     "Bots stop for cars in front; overtake through the other lane.",
+                     "Your friend hears your horn.",
+                     "To park, slow down and hold still for a second."]
+    }
 }
