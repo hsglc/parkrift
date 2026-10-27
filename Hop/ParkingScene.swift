@@ -174,6 +174,12 @@ final class ParkingScene: SKScene {
     private let maxReverse: CGFloat = 70
     private let creepSpeed: CGFloat = 12
 
+    // What this round earned (paid as coins at the end)
+    private var runDriftPoints = 0
+    private var runNearMisses = 0
+    private var runEscapes = 0
+    private var runTopSpeed = 0
+
     // Gearbox: gives the engine its rising and falling note and the pull its steps
     private var gearIndex = 1
     private var rpm: CGFloat = 900
@@ -810,6 +816,10 @@ final class ParkingScene: SKScene {
         }
         trail.removeAll()
         nearMissAt.removeAll()
+        runDriftPoints = 0
+        runNearMisses = 0
+        runEscapes = 0
+        runTopSpeed = 0
         drifting = false
         driftScore = 0
         lastDriftScore = 0
@@ -2173,6 +2183,7 @@ final class ParkingScene: SKScene {
             velocity = isBoosting ? topSpeed : max(topSpeed, velocity - 110 * dt)
         }
         velocity = max(-maxReverse, velocity)
+        runTopSpeed = max(runTopSpeed, Int(abs(velocity) * 0.36))
 
         let handbrake = isPressed(.handbrake)
         // Full lock while sliding, so the player can counter-steer
@@ -2391,6 +2402,7 @@ final class ParkingScene: SKScene {
         travelHeading = heading
         let points = Int(driftScore.rounded())
         if driftScore > 40 && driftClock > 0.4 {
+            runDriftPoints += points
             nitro = min(1, nitro + min(0.6, driftScore / 1500))
             flashBonus(Strings.driftBonus(points))
             audio.play("whoosh", volume: 0.5)
@@ -2519,6 +2531,7 @@ final class ParkingScene: SKScene {
                 nearMissAt[index] = lastUpdate
                 nitro = min(1, nitro + 0.12)
                 flashBonus(Strings.nearMiss)
+                runNearMisses += 1
                 audio.play("whoosh", volume: 0.8)
                 tickHaptic.impactOccurred(intensity: 0.8)
             }
@@ -2569,6 +2582,7 @@ final class ParkingScene: SKScene {
                 notifyHaptic.notificationOccurred(.error)
                 endPoliceChase()
             case .escaped:
+                runEscapes += 1
                 nitro = 1
                 flashBonus(Strings.policeEscaped)
                 notifyHaptic.notificationOccurred(.success)
@@ -3414,10 +3428,18 @@ final class ParkingScene: SKScene {
             entries[0].score = myTime.map { Levels.raceScore(time: $0, crashes: hits) } ?? -1
             if headline == nil { headline = Strings.finished }
         }
+        // Coins for the round (and any daily task it completed)
+        let me = entries[0]
+        let headToHead = entries.count > 1
+        let stats = RunStats(finished: me.time != nil, stars: me.stars,
+                             won: headToHead ? (me.isWinner && !entries[1].isWinner) : nil,
+                             race: level.race, solo: !isCity, hits: hits, driftPoints: runDriftPoints,
+                             nearMisses: runNearMisses, escapes: runEscapes, topSpeed: runTopSpeed)
+        let reward = model?.finishRun(stats)
         model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex) + " · " + level.name,
                                      entries: entries, footer: footer, newBest: newBest,
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
-                                     headline: headline, scoreLine: scoreLine)
+                                     headline: headline, scoreLine: scoreLine, reward: reward)
         // The card covers the world: stop drawing it (a frozen frame) until the next level loads
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self, self.model?.results != nil else { return }

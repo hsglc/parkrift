@@ -30,6 +30,9 @@ struct MenuView: View {
     @State private var page: Page = .home
     @State private var showJoin = false
     @State private var showAbout = false
+    @State private var showDaily = false
+    /// The daily gift opens by itself once per launch while it waits to be collected.
+    private static var giftShownThisLaunch = false
 
     private let pageAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86)
 
@@ -58,6 +61,13 @@ struct MenuView: View {
             .padding(.bottom, 10)
         }
         .sheet(isPresented: $showAbout) { AboutView() }
+        .sheet(isPresented: $showDaily) { DailyView().environmentObject(model) }
+        .onAppear {
+            if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch {
+                MenuView.giftShownThisLaunch = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showDaily = true }
+            }
+        }
         .onChange(of: model.errorText) { _, error in
             if error != nil { withAnimation(pageAnimation) { page = .online } }
         }
@@ -141,17 +151,25 @@ struct MenuView: View {
                 .overlay(SlantedShape(skew: 10).stroke(Color.white.opacity(0.2), lineWidth: 1))
             }
             .buttonStyle(PressScaleStyle())
-            HStack(spacing: 6) {
-                Image(systemName: "star.fill").foregroundStyle(Palette.gold)
-                Text("\(totalStars)")
-                    .monospacedDigit()
+            CoinPill(coins: model.coins)
+            Button {
+                AudioManager.shared.play("click", volume: 0.6)
+                showDaily = true
+            } label: {
+                Image(systemName: "gift.fill")
+                    .font(.system(size: 16, weight: .black))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(Palette.ink.opacity(0.75)))
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                    .overlay(alignment: .topTrailing) {
+                        if Progression.pendingGiftDay != nil {
+                            Circle().fill(Palette.red).frame(width: 11, height: 11)
+                                .overlay(Circle().stroke(Palette.ink, lineWidth: 2))
+                        }
+                    }
             }
-            .font(.system(size: 15, weight: .black, design: .rounded))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .frame(height: 42)
-            .background(Capsule().fill(Palette.ink.opacity(0.75)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+            .buttonStyle(PressScaleStyle())
             RoundIconButton(systemImage: "info") {
                 AudioManager.shared.play("click", volume: 0.6)
                 showAbout = true

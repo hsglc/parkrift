@@ -261,4 +261,37 @@ enum Strings {
     static var nightDrive: String { t("Gece", "Night", "Noche") }
     static var rainyDrive: String { t("Yağmurlu", "Rain", "Lluvia") }
     static var factoryLivery: String { t("Özel boya", "Signature livery", "Pintura de fábrica") }
+
+    // Progression
+    static var coinsLabel: String { t("Para", "Coins", "Monedas") }
+    static var rewardFinish: String { t("Tur", "Round", "Ronda") }
+    static var rewardStars: String { t("Yıldız", "Stars", "Estrellas") }
+    static var rewardClean: String { t("Temiz", "Clean", "Limpio") }
+    static var rewardDrift: String { t("Drift", "Drift", "Derrape") }
+    static var rewardNearMiss: String { t("Kıl payı", "Near miss", "Por los pelos") }
+    static var rewardEscape: String { t("Polisten kaçış", "Police escape", "Fuga") }
+    static var taskComplete: String { t("GÖREV TAMAM", "TASK DONE", "TAREA HECHA") }
+    static var dailyTitle: String { t("Günlük", "Daily", "Diario") }
+    static var dailyTasks: String { t("Bugünün görevleri", "Today's tasks", "Tareas de hoy") }
+    static var dailyTasksHint: String { t("Her gün yenilenir; tamamlanınca para otomatik eklenir.", "New every day; coins are added as soon as a task is done.", "Nuevas cada día; las monedas se suman al completarlas.") }
+    static var dailyGift: String { t("Günlük hediye", "Daily gift", "Regalo diario") }
+    static var dailyGiftHint: String { t("Her gün gel, hediye büyüsün. Bir gün kaçırırsan seri baştan başlar.", "Come back daily and the gift grows. Miss a day and the streak restarts.", "Vuelve cada día y el regalo crece. Si faltas un día, la racha se reinicia.") }
+    static func dayLabel(_ day: Int) -> String { t("\(day). gün", "Day \(day)", "Día \(day)") }
+    static var collect: String { t("Al", "Collect", "Recoger") }
+    static var collected: String { t("Alındı", "Collected", "Recogido") }
+    static var comeBackTomorrow: String { t("Yarın yine gel", "Come back tomorrow", "Vuelve mañana") }
+    static func unlockFor(_ price: Int) -> String { t("\(price) PARAYA AÇ", "UNLOCK · \(price)", "DESBLOQUEAR · \(price)") }
+    static func needMoreCoins(_ missing: Int) -> String { t("\(missing) para daha gerek", "\(missing) more coins needed", "Faltan \(missing) monedas") }
+    static var locked: String { t("Kilitli", "Locked", "Bloqueado") }
+    static func taskTitle(_ kind: Progression.TaskKind) -> String {
+        switch kind {
+        case .drift: return t("Toplam \(kind.target) drift puanı", "Score \(kind.target) drift points", "Suma \(kind.target) puntos de derrape")
+        case .nearMiss: return t("\(kind.target) kıl payı geçiş", "\(kind.target) near misses", "\(kind.target) adelantamientos por los pelos")
+        case .threeStars: return t("\(kind.target) bölümü 3 yıldızla bitir", "3-star \(kind.target) levels", "Termina \(kind.target) niveles con 3 estrellas")
+        case .escape: return t("Polisten kaç", "Escape the police", "Escapa de la policía")
+        case .rounds: return t("\(kind.target) tur bitir", "Finish \(kind.target) rounds", "Termina \(kind.target) rondas")
+        case .topSpeed: return t("\(kind.target) km/sa hıza çık", "Reach \(kind.target) km/h", "Alcanza \(kind.target) km/h")
+        case .clean: return t("\(kind.target) turu hiç çarpmadan bitir", "Finish \(kind.target) rounds without a crash", "Termina \(kind.target) rondas sin chocar")
+        }
+    }
 }

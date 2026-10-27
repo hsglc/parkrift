@@ -30,6 +30,7 @@ struct ResultsInfo: Identifiable {
     let bestTime: Double?
     var headline: String? = nil
     var scoreLine: String? = nil
+    var reward: RunReward? = nil
 
     var me: ResultEntry? { entries.first { $0.isMe } }
 }
@@ -42,6 +43,7 @@ struct ResultsOverlay: View {
     @State private var appeared = false
     @State private var shownStars = 0
     @State private var progress: CGFloat = 0
+    @State private var shownCoins = 0
 
     private var isFinal: Bool {
         if case .final = info.footer { return true }
@@ -190,8 +192,47 @@ struct ResultsOverlay: View {
                     PlayerResultRow(entry: entry)
                 }
             }
+            if let reward = info.reward, reward.total > 0 {
+                coinRow(reward)
+            }
             footer
         }
+    }
+
+    /// Coins earned: the total counts up, the lines that made it sit beside it, and a completed
+    /// daily task gets its own gold tag.
+    private func coinRow(_ reward: RunReward) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 5) {
+                Image(systemName: "dollarsign.circle.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Palette.gold)
+                Text("+\(shownCoins)")
+                    .font(.system(size: 20, weight: .black, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(reward.lines.map { "\($0.label) \($0.coins)" }.joined(separator: " · "))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                ForEach(reward.tasksDone.indices, id: \.self) { index in
+                    Text("\(Strings.taskComplete) +\(reward.tasksDone[index].coins)")
+                        .font(.system(size: 10, weight: .black, design: .rounded))
+                        .foregroundStyle(Palette.ink)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Palette.gold))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
     }
 
     private var hintTile: some View {
@@ -275,6 +316,16 @@ struct ResultsOverlay: View {
             haptic.impactOccurred(intensity: 0.6 + 0.2 * CGFloat(index))
             AudioManager.shared.play("beep", volume: 0.35 + 0.15 * Float(index))
             try? await Task.sleep(nanoseconds: 260_000_000)
+        }
+        // Coins count up after the stars
+        let total = info.reward?.total ?? 0
+        guard total > 0 else { return }
+        let steps = 14
+        for step in 1...steps {
+            if Task.isCancelled { return }
+            withAnimation(.easeOut(duration: 0.05)) { shownCoins = total * step / steps }
+            if step % 3 == 0 { AudioManager.shared.play("click", volume: 0.25) }
+            try? await Task.sleep(nanoseconds: 45_000_000)
         }
     }
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 import SpriteKit
 import SceneKit
+import StoreKit
 
 @main
 struct ParkriftApp: App {
@@ -246,6 +247,51 @@ final class AppModel: ObservableObject {
 
     func levelCompleted(_ index: Int) {
         if index + 2 > unlockedLevels { unlockedLevels = index + 2 }
+    }
+
+    // MARK: Coins, cars, daily tasks
+
+    var coins: Int { Progression.coins }
+
+    /// Pays a finished round; asks for a rating after a good moment now and then.
+    func finishRun(_ stats: RunStats) -> RunReward {
+        let reward = Progression.reward(for: stats)
+        objectWillChange.send()
+        let goodMoment = (stats.solo && stats.finished && stats.stars == 3) || stats.won == true
+        if goodMoment { maybeAskForReview() }
+        return reward
+    }
+
+    func buyCar(_ id: CarModelID) -> Bool {
+        let bought = Progression.buy(id)
+        objectWillChange.send()
+        return bought
+    }
+
+    @discardableResult
+    func collectGift() -> Int {
+        let amount = Progression.collectGift()
+        objectWillChange.send()
+        return amount
+    }
+
+    /// Apple's rating prompt (it shows at most three times a year) after a win, once the player
+    /// has finished a few levels, and at most once per app version.
+    private func maybeAskForReview() {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        let key = "pp.reviewAsked"
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: key) != version + "-" + build else { return }
+        let finished = (0..<Levels.all.count).filter { stars(for: $0) > 0 }.count
+        guard finished >= 3 else { return }
+        defaults.set(version + "-" + build, forKey: key)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }) else { return }
+            AppStore.requestReview(in: scene)
+        }
     }
 
     // MARK: Records

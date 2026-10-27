@@ -260,3 +260,25 @@ extension View {
         modifier(RacePlate(skew: skew, padding: padding))
     }
 }
+
+/// Coin balance in a dark capsule (menu and garage).
+struct CoinPill: View {
+    let coins: Int
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "dollarsign.circle.fill")
+                .foregroundStyle(Palette.gold)
+            Text("\(coins)")
+                .monospacedDigit()
+                .contentTransition(.numericText())
+        }
+        .font(.system(size: 15, weight: .black, design: .rounded))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .frame(height: 42)
+        .background(Capsule().fill(Palette.ink.opacity(0.75)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+        .animation(.easeOut(duration: 0.3), value: coins)
+    }
+}

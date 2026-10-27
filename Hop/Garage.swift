@@ -402,6 +402,7 @@ struct GarageView: View {
                         .tracking(1.5)
                         .foregroundStyle(Palette.neon)
                 }
+                CoinPill(coins: model.coins)
             }
             Spacer(minLength: 0)
             HStack(spacing: 10) {
@@ -447,10 +448,20 @@ struct GarageView: View {
                                 .foregroundStyle(selected ? Palette.ink : .white)
                                 .padding(.horizontal, 5)
                                 .background(SlantedShape(skew: 3).fill(selected ? Palette.gold : Color.white.opacity(0.2)))
-                            Text(car.maker)
-                                .font(.kicker(8))
-                                .tracking(1)
-                                .foregroundStyle(.white.opacity(0.6))
+                            if Progression.owns(car.id) {
+                                Text(car.maker)
+                                    .font(.kicker(8))
+                                    .tracking(1)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            } else {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "lock.fill")
+                                    Text("\(Progression.price(car.id))")
+                                        .monospacedDigit()
+                                }
+                                .font(.system(size: 10, weight: .black, design: .rounded))
+                                .foregroundStyle(Palette.gold)
+                            }
                         }
                         Text(car.name.uppercased())
                             .font(.race(16))
@@ -552,21 +563,48 @@ struct GarageView: View {
             .allowsHitTesting(!spec.fixedLivery)
 
             Spacer(minLength: 6)
-            Button {
-                AudioManager.shared.play("click", volume: 0.7)
-                model.carChoice = choice
-                model.leaveGarage(confirmed: true)
-            } label: {
-                HStack(spacing: 8) {
-                    Text(isPlay ? Strings.raceStart.uppercased() : Strings.selectCar.uppercased())
-                    Image(systemName: "chevron.right.2")
-                        .font(.system(size: 16, weight: .black))
+            if Progression.owns(choice.model) {
+                Button {
+                    AudioManager.shared.play("click", volume: 0.7)
+                    model.carChoice = choice
+                    model.leaveGarage(confirmed: true)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(isPlay ? Strings.raceStart.uppercased() : Strings.selectCar.uppercased())
+                        Image(systemName: "chevron.right.2")
+                            .font(.system(size: 16, weight: .black))
+                    }
                 }
+                .buttonStyle(RaceButtonStyle(color: Palette.gold, height: 50, fontSize: 22))
+            } else {
+                buyButton
             }
-            .buttonStyle(RaceButtonStyle(color: Palette.gold, height: 50, fontSize: 22))
         }
         .racePlate(skew: 20, padding: 16)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: spec.id)
+    }
+
+    /// Unlocks the shown car with coins (or says how many are missing).
+    private var buyButton: some View {
+        let price = Progression.price(choice.model)
+        let affordable = model.coins >= price
+        return Button {
+            if model.buyCar(choice.model) {
+                AudioManager.shared.play("park", volume: 0.8)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: affordable ? "lock.open.fill" : "lock.fill")
+                    .font(.system(size: 16, weight: .black))
+                Text(affordable ? Strings.unlockFor(price) : Strings.needMoreCoins(price - model.coins))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+        }
+        .buttonStyle(RaceButtonStyle(color: affordable ? Color(red: 0.35, green: 0.95, blue: 0.55) : Color(white: 0.45),
+                                     height: 50, fontSize: affordable ? 20 : 15))
+        .disabled(!affordable)
     }
 
     private func step(_ delta: Int) {
