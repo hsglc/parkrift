@@ -679,6 +679,8 @@ final class Car3D {
     init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false, model carModel: CarModelID = .italia,
          variety: Int = 0) {
         brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
+        // Thin tail light strips: lit from both sides whatever their winding
+        brakeMaterial.isDoubleSided = true
         reverseMaterial = Mat.glow(UIColor(white: 0.35, alpha: 1))
         node.addChildNode(body)
         let model = style == .racer ? CarModels.body(carModel) : nil

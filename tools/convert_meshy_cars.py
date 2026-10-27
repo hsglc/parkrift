@@ -183,6 +183,85 @@ def export(objects, path):
                           merge_parent_xform=True)
 
 
+def taillights(obj):
+    """A full-width LED tail light bar that follows the car's rear surface. The cars were made
+    from front three-quarter concept images, so Meshy guessed their tails: lamps that read as
+    headlights and no red, which made the cars look like they drove backwards. The bar is
+    placed by casting rays at the tail; the game lights it with its brake material."""
+    from mathutils.bvhtree import BVHTree
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    tree = BVHTree.FromObject(obj, depsgraph)
+    lo, hi = bounds([v.co for v in obj.data.vertices])
+    half = (hi.y - lo.y) / 2
+    rear = lo.x
+
+    def hit(y, z):
+        location, _, _, _ = tree.ray_cast(Vector((rear - 1.0, y, z)), Vector((1, 0, 0)))
+        return location
+
+    # The upper edge of the tail: the highest height where the rear surface is still near the end
+    top = None
+    for near in (0.3, 0.5, 0.8):   # rounded tails curve away from the very end
+        z = 0.3
+        while z < hi.z * 0.95:
+            h = hit(half * 0.3, z)
+            if h is not None and h.x < rear + near:
+                top = z
+            z += 0.02
+        if top is not None:
+            break
+    if top is None:
+        print(f"  {obj.name}: no tail surface found")
+        return None
+    band = 0.035
+    samples = 28
+
+    def strip(z0, reach):
+        verts, faces, row = [], [], []
+        for k in range(samples + 1):
+            y = -half * 0.86 + half * 1.72 * k / samples
+            upper, lower = hit(y, z0 + band), hit(y, z0 - band)
+            if upper is None or lower is None or max(upper.x, lower.x) > rear + reach or abs(upper.x - lower.x) > 0.3:
+                row.append(None)
+                continue
+            i = len(verts)
+            verts.append((upper.x - 0.012, y, z0 + band))
+            verts.append((lower.x - 0.012, y, z0 - band))
+            row.append(i)
+        for a, b in zip(row[:-1], row[1:]):
+            if a is not None and b is not None:
+                faces.append((a, a + 1, b + 1, b))
+        return verts, faces
+
+    # From just under the top of the tail downwards, the first height where a bar fits (a steep
+    # enough surface); narrow tails (open wheel pods) need a deeper reach
+    start = max(0.45, min(top - 0.04, hi.z * 0.62))
+    verts, faces, z0 = [], [], start
+    for reach in (0.45, 0.8, 1.2):
+        z = start
+        while z >= 0.42 and len(faces) < 10:
+            verts, faces = strip(z, reach)
+            z0 = z
+            z -= 0.02
+        if len(faces) >= 10:
+            break
+    if not faces:
+        print(f"  {obj.name}: no tail light faces")
+        return None
+    mesh = bpy.data.meshes.new('taillight')
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    # Faces look backwards (-x)
+    if sum(p.normal.x for p in mesh.polygons) > 0:
+        for p in mesh.polygons:
+            p.flip()
+        mesh.update()
+    light = bpy.data.objects.new('taillight', mesh)
+    bpy.context.scene.collection.objects.link(light)
+    print(f"  {obj.name}: tail light bar at {z0:.2f} m, {len(faces)} segments")
+    return light
+
+
 def tris(o):
     return sum(len(p.vertices) - 2 for p in o.data.polygons)
 
@@ -227,7 +306,8 @@ def convert(car, src, out):
     tire = split(keep, tyre_faces, 'tire')
     keep.name = 'rim'
     keep.data.name = 'rim'
-    export([obj], os.path.join(out, car['id'] + '_body.usdz'))
+    light = taillights(obj)
+    export([obj] + ([light] if light else []), os.path.join(out, car['id'] + '_body.usdz'))
     export([tire, keep], os.path.join(out, car['id'] + '_wheel.usdz'))
 
     lo, hi = bounds([v.co for v in obj.data.vertices])
