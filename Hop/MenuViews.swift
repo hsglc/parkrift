@@ -585,14 +585,11 @@ struct AboutView: View {
     }
 
     private let credits: [Credit] = [
-        Credit(what: "Rosso GT", author: "vicent091036", license: "CC BY 4.0", link: "https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6"),
+        Credit(what: "Rosso GT, Strada S, Tempesta, Arrow GT, Bison, Classico 87",
+               author: Strings.isTurkish ? "Özgün tasarım, Meshy AI ile üretildi" : "Original designs made with Meshy AI",
+               license: "CC BY 4.0", link: "https://www.meshy.ai"),
         Credit(what: "Vector X", author: "Khronos Group (Unity Fan)", license: "CC BY 4.0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
         Credit(what: "Hot Rod 55", author: "Khronos Group", license: "CC0", link: "https://github.com/KhronosGroup/glTF-Sample-Assets"),
-        Credit(what: "Strada S", author: "RES1N", license: "CC BY 4.0", link: "https://skfb.ly/pANyt"),
-        Credit(what: "Tempesta", author: "Galaxy Car Showroom", license: "CC BY 4.0", link: "https://skfb.ly/pBZKS"),
-        Credit(what: "Arrow GT", author: "Ddiaz Design", license: "CC BY 4.0", link: "https://skfb.ly/prYpp"),
-        Credit(what: "Bison", author: "Ddiaz Design", license: "CC BY 4.0", link: "https://skfb.ly/pqVNU"),
-        Credit(what: "Classico 87", author: "Black Snow", license: "CC BY 4.0", link: "https://skfb.ly/oRnMV"),
         Credit(what: Strings.isTurkish ? "Trafik araçları" : "Traffic vehicles", author: "Kenney (Car Kit)", license: "CC0", link: "https://kenney.nl/assets/car-kit")
     ]
 

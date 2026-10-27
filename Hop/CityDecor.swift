@@ -428,28 +428,7 @@ enum CityDecor {
 
     /// The street lamp positions World3D places (trees keep clear of them).
     private static func lampPoints(city: CityMap, world: CGSize) -> [CGPoint] {
-        var result: [CGPoint] = []
-        for (j, y) in city.ys.enumerated() {
-            var x: CGFloat = 260
-            while x < world.width - 200 {
-                if !city.xs.contains(where: { abs($0 - x) < 170 }) {
-                    if j > 0 { result.append(CGPoint(x: x, y: y - 108)) }
-                    if j < city.rows - 1 { result.append(CGPoint(x: x + 200, y: y + 108)) }
-                }
-                x += 400
-            }
-        }
-        for (i, x) in city.xs.enumerated() {
-            var y: CGFloat = 260
-            while y < world.height - 200 {
-                if !city.ys.contains(where: { abs($0 - y) < 170 }) {
-                    if i > 0 { result.append(CGPoint(x: x - 108, y: y)) }
-                    if i < city.cols - 1 { result.append(CGPoint(x: x + 108, y: y + 200)) }
-                }
-                y += 400
-            }
-        }
-        return result
+        World3D.streetLampPoints(city: city, world: world).map { $0.position }
     }
 
     /// Street trees, benches, bins, hydrants and bus stops along every block edge, plus the soft

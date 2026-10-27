@@ -817,6 +817,9 @@ final class ParkingScene: SKScene {
         guard !ready, !readyRequested else { return }
         readyRequested = true
         stage("ready")
+        // The warm-up camera tour ends while the loading screen still covers the view, so the
+        // first thing the player sees is the chase camera behind their car
+        world?.endWarmupSweep()
         if let model = model {
             model.sceneReady { [weak self] in self?.startCountdown() }
         } else {

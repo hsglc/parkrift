@@ -108,13 +108,6 @@ struct CarSpec {
     ]
 
     static let all: [CarSpec] = [
-        CarSpec(id: .italia, file: "italia", name: "Rosso GT", maker: "CORSA", className: "S",
-                stats: CarStats(speed: 0.86, acceleration: 0.82, handling: 0.80, nitro: 0.70),
-                wheelSpots: [(1.121, 0.347, -0.818, true), (1.121, 0.347, 0.811, true),
-                             (-1.451, 0.347, -0.799, false), (-1.451, 0.347, 0.799, false)],
-                wheelRadius: 0.347, wheelModelSide: -1,
-                exhausts: [SCNVector3(-2.24, 0.42, 0.13), SCNVector3(-2.24, 0.42, -0.13)],
-                topSpeed: 1.0, acceleration: 1.0, steering: 1.0, nitroPower: 1.0, nitroFill: 1.0, textured: false),
         CarSpec(id: .concept, file: "concept", name: "Vector X", maker: "AERO", className: "S+",
                 stats: CarStats(speed: 0.96, acceleration: 0.72, handling: 0.70, nitro: 0.80),
                 wheelSpots: [(1.259, 0.388, -0.985, true), (1.259, 0.388, 0.985, true),
@@ -130,51 +123,49 @@ struct CarSpec {
                 exhausts: [SCNVector3(-2.22, 0.3, 0.45)],
                 topSpeed: 0.94, acceleration: 1.07, steering: 1.08, nitroPower: 1.1, nitroFill: 0.85, textured: true,
                 textureBase: "retro_basecolor.jpg", textureMask: "retro_mask.png", height: 1.33),
-        detailed(.strada, name: "Strada S", maker: "NORDWERK", className: "A",
-                 stats: CarStats(speed: 0.84, acceleration: 0.88, handling: 0.86, nitro: 0.74),
-                 tuning: (1.0, 1.04, 1.03, 1.0, 1.0),
-                 wheels: [(1.490, 0.344, -0.766, true), (1.490, 0.344, 0.766, true), (-1.282, 0.347, -0.756, false), (-1.282, 0.347, 0.756, false)],
-                 radius: 0.344, rear: -2.326, height: 1.386),
-        detailed(.toro, name: "Tempesta", maker: "VOLTA", className: "S+",
-                 stats: CarStats(speed: 0.95, acceleration: 0.90, handling: 0.82, nitro: 0.78),
-                 tuning: (1.06, 1.04, 0.98, 1.02, 1.0),
-                 wheels: [(1.187, 0.342, -0.827, true), (1.187, 0.342, 0.820, true), (-1.463, 0.359, -0.829, false), (-1.463, 0.359, 0.828, false)],
-                 radius: 0.342, rear: -2.275, height: 1.146),
-        detailed(.arrow, name: "Arrow GT", maker: "ARROWWORKS", className: "S",
-                 stats: CarStats(speed: 0.92, acceleration: 0.86, handling: 0.88, nitro: 0.76),
-                 tuning: (1.04, 1.02, 1.04, 1.0, 1.0),
-                 wheels: [(1.201, 0.323, -0.835, true), (1.201, 0.323, 0.835, true), (-1.489, 0.357, -0.810, false), (-1.489, 0.357, 0.810, false)],
-                 radius: 0.323, rear: -2.275, height: 1.196),
-        detailed(.bison, name: "Bison", maker: "ATLAS", className: "A",
-                 stats: CarStats(speed: 0.80, acceleration: 0.84, handling: 0.70, nitro: 0.92),
-                 tuning: (0.98, 1.0, 0.94, 1.1, 0.88),
-                 wheels: [(1.469, 0.383, -0.810, true), (1.469, 0.383, 0.811, true), (-1.444, 0.382, -0.812, false), (-1.444, 0.382, 0.812, false)],
-                 radius: 0.383, rear: -2.475, height: 1.618),
-        detailed(.classico, name: "Classico 87", maker: "VINTAGE", className: "S",
-                 stats: CarStats(speed: 0.90, acceleration: 0.80, handling: 0.76, nitro: 0.88),
-                 tuning: (1.05, 0.97, 0.96, 1.08, 0.92),
-                 wheels: [(1.138, 0.325, -0.786, true), (1.138, 0.325, 0.780, true), (-1.313, 0.325, -0.784, false), (-1.313, 0.325, 0.779, false)],
-                 radius: 0.325, rear: -2.200, height: 1.140)
-    ]
+        meshy(.italia, name: "Rosso GT", maker: "CORSA", className: "S",
+              stats: CarStats(speed: 0.86, acceleration: 0.82, handling: 0.80, nitro: 0.70),
+              tuning: (1.0, 1.0, 1.0, 1.0, 1.0),
+              wheels: [(1.180, 0.330, -0.818, true), (1.181, 0.330, 0.824, true), (-1.400, 0.334, -0.814, false), (-1.398, 0.332, 0.814, false)],
+              radius: 0.332, rear: -2.250, height: 1.136),
+        meshy(.strada, name: "Strada S", maker: "NORDWERK", className: "A",
+              stats: CarStats(speed: 0.84, acceleration: 0.88, handling: 0.86, nitro: 0.74),
+              tuning: (1.0, 1.04, 1.03, 1.0, 1.0),
+              wheels: [(1.077, 0.410, -0.929, true), (1.084, 0.410, 0.930, true), (-1.272, 0.415, -0.929, false), (-1.270, 0.415, 0.930, false)],
+              radius: 0.413, rear: -2.050, height: 1.753),
+        meshy(.toro, name: "Tempesta", maker: "VOLTA", className: "S+",
+              stats: CarStats(speed: 0.95, acceleration: 0.90, handling: 0.82, nitro: 0.78),
+              tuning: (1.06, 1.04, 0.98, 1.02, 1.0),
+              wheels: [(1.086, 0.297, -0.822, true), (1.086, 0.297, 0.825, true), (-1.449, 0.309, -0.819, false), (-1.447, 0.309, 0.823, false)],
+              radius: 0.303, rear: -2.375, height: 0.860),
+        meshy(.arrow, name: "Arrow GT", maker: "ARROWWORKS", className: "S",
+              stats: CarStats(speed: 0.92, acceleration: 0.86, handling: 0.88, nitro: 0.76),
+              tuning: (1.04, 1.02, 1.04, 1.0, 1.0),
+              wheels: [(1.401, 0.335, -0.798, true), (1.401, 0.333, 0.791, true), (-1.295, 0.335, -0.797, false), (-1.301, 0.333, 0.789, false)],
+              radius: 0.334, rear: -2.350, height: 1.215),
+        meshy(.bison, name: "Bison", maker: "ATLAS", className: "A",
+              stats: CarStats(speed: 0.80, acceleration: 0.84, handling: 0.70, nitro: 0.92),
+              tuning: (0.98, 1.0, 0.94, 1.1, 0.88),
+              wheels: [(1.350, 0.382, -0.855, true), (1.353, 0.381, 0.855, true), (-1.313, 0.380, -0.865, false), (-1.313, 0.380, 0.865, false)],
+              radius: 0.381, rear: -2.250, height: 2.088),
+        meshy(.classico, name: "Classico 87", maker: "VINTAGE", className: "S",
+              stats: CarStats(speed: 0.90, acceleration: 0.80, handling: 0.76, nitro: 0.88),
+              tuning: (1.05, 0.97, 0.96, 1.08, 0.92),
+              wheels: [(1.306, 0.318, -0.731, true), (1.306, 0.318, 0.743, true), (-1.092, 0.316, -0.740, false), (-1.092, 0.317, 0.744, false)],
+              radius: 0.317, rear: -2.200, height: 1.253)
+    ].sorted { $0.id.rawValue < $1.id.rawValue }
 
-    /// A detailed car converted with tools/convert_garage_cars.py (textured materials; the paint,
-    /// glass and red lamp materials are named so the game can restyle them).
-    private static func detailed(_ id: CarModelID, name: String, maker: String, className: String, stats: CarStats,
-                                 tuning: (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat),
-                                 wheels: [(Float, Float, Float, Bool)], radius: Float, rear: Float, height: Float) -> CarSpec {
-        let file: String
-        switch id {
-        case .strada: file = "strada"
-        case .toro: file = "toro"
-        case .arrow: file = "arrow"
-        case .bison: file = "bison"
-        default: file = "classico"
-        }
+    /// An original car generated with Meshy AI and converted with tools/convert_meshy_cars.py: one
+    /// textured body mesh painted through its mask, and a separate wheel.
+    private static func meshy(_ id: CarModelID, name: String, maker: String, className: String, stats: CarStats,
+                              tuning: (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat),
+                              wheels: [(Float, Float, Float, Bool)], radius: Float, rear: Float, height: Float) -> CarSpec {
+        let file = "\(id)"
         return CarSpec(id: id, file: file, name: name, maker: maker, className: className, stats: stats,
                        wheelSpots: wheels, wheelRadius: radius, wheelModelSide: -1,
                        exhausts: [SCNVector3(rear - 0.02, 0.32, 0.34), SCNVector3(rear - 0.02, 0.32, -0.34)],
                        topSpeed: tuning.0, acceleration: tuning.1, steering: tuning.2, nitroPower: tuning.3, nitroFill: tuning.4,
-                       textured: false, height: height)
+                       textured: true, textureBase: file + "_basecolor.jpg", textureMask: file + "_mask.png", height: height)
     }
 
     static func of(_ id: CarModelID) -> CarSpec { all[id.rawValue] }
@@ -293,29 +284,42 @@ enum CarModels {
         return holder
     }
 
-    private static var paints: [String: SCNMaterial] = [:]
     private static let textureLock = NSLock()
-    private static var tintedTextures: [String: UIImage] = [:]
+    private static var images: [String: UIImage] = [:]
 
-    /// Draws the tinted textures of the saved car (every paint) on a background thread, so
-    /// picking a color does not draw an image on the main thread.
+    /// Paint for the textured cars is applied on the GPU: the base texture is multiplied by the
+    /// paint color where the mask is white. Changing the paint only changes a shader value, so no
+    /// image is drawn and nothing new is uploaded (each first paint or car used to draw a
+    /// 1024 px image on the main thread and upload it, which made the garage stutter).
+    private static let paintShader = """
+    #pragma arguments
+    texture2d<float> paintMask;
+    float3 paintColor;
+    #pragma body
+    constexpr sampler maskSampler(filter::linear, mip_filter::none, address::repeat);
+    float paintAmount = paintMask.sample(maskSampler, _surface.diffuseTexcoord).r;
+    _surface.diffuse.rgb = mix(_surface.diffuse.rgb, _surface.diffuse.rgb * paintColor, paintAmount);
+    """
+
+    /// The base and mask images of every textured car, decoded once (thread-safe).
+    private static func image(_ name: String) -> UIImage? {
+        textureLock.lock()
+        defer { textureLock.unlock() }
+        if let cached = images[name] { return cached }
+        guard let loaded = UIImage(named: name) else { return nil }
+        // Decode now (UIImage decodes lazily, on first draw)
+        let decoded = loaded.preparingForDisplay() ?? loaded
+        images[name] = decoded
+        return decoded
+    }
+
+    /// Decodes the textured cars' images on a background thread at launch.
     static func prewarmRetroTextures() {
-        let colors = CarSpec.paints.map { $0.color }
         let specs = CarSpec.all.filter { $0.textureBase != nil }
         DispatchQueue.global(qos: .utility).async {
             for spec in specs {
-                guard let base = spec.textureBase, let mask = spec.textureMask else { continue }
-                for color in colors {
-                    let key = base + CarFactory.colorKey(color)
-                    textureLock.lock()
-                    let done = tintedTextures[key] != nil
-                    textureLock.unlock()
-                    if done { continue }
-                    guard let image = tintedTexture(base: base, mask: mask, color: color) else { continue }
-                    textureLock.lock()
-                    tintedTextures[key] = image
-                    textureLock.unlock()
-                }
+                if let base = spec.textureBase { _ = image(base) }
+                if let mask = spec.textureMask { _ = image(mask) }
             }
         }
     }
@@ -323,56 +327,32 @@ enum CarModels {
     /// The retro car in a paint (kept for callers that only know the color).
     static func retroPaint(_ color: UIColor) -> SCNMaterial { texturePaint(CarSpec.of(.retro), color) }
 
-    /// Material for a textured car: its texture with the paint areas tinted `color`, or the
-    /// plain Kenney palette for cars with a fixed livery. Made once per car and color.
+    /// Material for a textured car (its own copy, so each car keeps its own paint), or the plain
+    /// Kenney palette for cars with a fixed livery.
     static func texturePaint(_ spec: CarSpec, _ color: UIColor) -> SCNMaterial {
-        guard let base = spec.textureBase, let mask = spec.textureMask else { return kenney }
-        let key = base + CarFactory.colorKey(color)
-        if let cached = paints[key] { return cached }
+        guard let base = spec.textureBase, let maskName = spec.textureMask else { return kenney }
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
-        textureLock.lock()
-        let ready = tintedTextures[key]
-        textureLock.unlock()
-        material.diffuse.contents = ready ?? tintedTexture(base: base, mask: mask, color: color)
-        if base.hasPrefix("kenney") { material.diffuse.magnificationFilter = .nearest }
+        material.diffuse.contents = image(base)
+        material.diffuse.mipFilter = .linear
         material.metalness.contents = NSNumber(value: 0.35)
         material.roughness.contents = NSNumber(value: 0.3)
         material.clearCoat.contents = NSNumber(value: 0.8)
         material.clearCoatRoughness.contents = NSNumber(value: 0.08)
-        paints[key] = material
+        material.shaderModifiers = [.surface: paintShader]
+        if let mask = image(maskName) {
+            material.setValue(SCNMaterialProperty(contents: mask), forKey: "paintMask")
+        }
+        setPaint(material, color)
         return material
     }
 
-    private static func tintedTexture(base baseName: String, mask maskName: String, color: UIColor) -> UIImage? {
-        guard let base = UIImage(named: baseName)?.cgImage,
-              let mask = UIImage(named: maskName)?.cgImage else { return nil }
-        let size = CGSize(width: base.width, height: base.height)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        return UIGraphicsImageRenderer(size: size, format: format).image { context in
-            let cg = context.cgContext
-            let rect = CGRect(origin: .zero, size: size)
-            // Core Graphics draws images bottom-up; flip so the result keeps the texture's layout
-            cg.translateBy(x: 0, y: size.height)
-            cg.scaleBy(x: 1, y: -1)
-            cg.draw(base, in: rect)
-            cg.saveGState()
-            if let alpha = maskImage(from: mask) { cg.clip(to: rect, mask: alpha) }
-            cg.setBlendMode(.multiply)
-            cg.setFillColor(color.cgColor)
-            cg.fill(rect)
-            cg.restoreGState()
-        }
-    }
-
-    /// A grayscale image mask (white = paint) from the stored PNG.
-    private static func maskImage(from image: CGImage) -> CGImage? {
-        let width = image.width, height = image.height
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
-                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return context.makeImage()
+    /// Changes a textured car material's paint (a shader value only).
+    static func setPaint(_ material: SCNMaterial, _ color: UIColor) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        // The texture is sampled in linear color: multiply by the linear paint color
+        func linear(_ c: CGFloat) -> Float { Float(pow(max(0, min(1, c)), 2.2)) }
+        material.setValue(NSValue(scnVector3: SCNVector3(linear(r), linear(g), linear(b))), forKey: "paintColor")
     }
 }

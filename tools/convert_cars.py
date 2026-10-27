@@ -1,8 +1,7 @@
-"""Converts the three car models used in the garage into light USDZ files for SceneKit plus a
+"""Converts the two Khronos sample cars used in the garage into light USDZ files for SceneKit plus a
 cars.json catalog (wheel positions, exhaust points, stats).
 
 Sources (all free):
-  * "Ferrari 458 Italia" by vicent091036 — CC BY 4.0 (three.js examples, Draco-decoded first)
   * "Car Concept" — Khronos glTF Sample Assets, CC BY 4.0 (based on a CC0 model by Unity Fan);
     Khronos logos and the licence plate are removed
   * "Toy Car" — Khronos glTF Sample Assets, CC0
@@ -10,7 +9,8 @@ Sources (all free):
 Each car: one prim per material group (paint, glass, chrome, ...), interiors dropped, meshes
 decimated for phones. Game axes: +x forward, +y up, length 4.4 m, tyres on y = 0.
 
-Usage: python3 convert_cars.py ferrari-plain.glb CarConcept.glb ToyCar.glb out_dir
+Usage: python3 convert_cars.py CarConcept.glb ToyCar.glb out_dir
+(The other garage cars are original Meshy AI designs: tools/convert_meshy_cars.py.)
 """
 import sys, os, json
 import numpy as np
@@ -231,65 +231,6 @@ def convert(spec, out):
 
 # ---------------------------------------------------------------- per-car rules
 
-def ferrari_roof(body):
-    """The Ferrari model is a Spider with the top down. Close it with a hardtop: a crowned roof
-    panel from the windshield header back to the buttresses, and side windows down to the
-    beltline (measured from the converted model)."""
-    nx, nz = 16, 10
-    x_front, x_rear = 0.30, -0.62
-
-    def crown(x):
-        t = (x - x_rear) / (x_front - x_rear)
-        return 1.03 + 0.14 * np.sin(np.pi / 2 * min(1.0, t * 1.15))
-
-    def half_width(x):
-        t = (x - x_rear) / (x_front - x_rear)
-        return 0.63 - 0.05 * t
-
-    xs = np.linspace(x_rear, x_front, nx)
-    roof_v = []
-    for x in xs:
-        for k in range(nz):
-            zn = -1 + 2 * k / (nz - 1)
-            roof_v.append([x, crown(x) - 0.07 * zn * zn, zn * half_width(x)])
-    roof_v = np.array(roof_v)
-    roof_f = []
-    for i in range(nx - 1):
-        for k in range(nz - 1):
-            a0, a1 = i * nz + k, i * nz + k + 1
-            b0, b1 = (i + 1) * nz + k, (i + 1) * nz + k + 1
-            roof_f += [[a0, b0, b1], [a0, b1, a1]]
-    roof_f = orient(roof_v, np.array(roof_f), lambda c: np.array([0, 1, 0]))
-
-    side_v, side_f = [], []
-    for sign in (-1, 1):
-        base = len(side_v)
-        for x in xs:
-            edge = crown(x) - 0.07
-            side_v.append([x, edge, sign * half_width(x)])
-            side_v.append([x, 0.83, sign * 0.79])
-        for i in range(nx - 1):
-            a0, a1 = base + 2 * i, base + 2 * i + 1
-            b0, b1 = base + 2 * i + 2, base + 2 * i + 3
-            side_f += [[a0, b0, b1], [a0, b1, a1]]
-    side_v = np.array(side_v)
-    side_f = orient(side_v, np.array(side_f), lambda c: np.array([0, 0, np.sign(c[2])]))
-
-    body = dict(body)
-    # Roll hoops of the open car would poke through the new roof
-    iv, i_f, _ = body['interior']
-    keep = i_f[iv[i_f].mean(axis=1)[:, 1] < 0.98]
-    used = np.unique(keep)
-    remap = -np.ones(len(iv), dtype=np.int64)
-    remap[used] = np.arange(len(used))
-    body['interior'] = (iv[used], remap[keep], None)
-    pv, pf, _ = body['paint']
-    body['paint'] = (np.vstack([pv, roof_v]), np.vstack([pf, roof_f + len(pv)]), None)
-    gv, gf, _ = body['glass']
-    body['glass'] = (np.vstack([gv, side_v]), np.vstack([gf, side_f + len(gv)]), None)
-    return body
-
-
 def orient(v, f, outward):
     """Flips triangles so their normals point along outward(centroid)."""
     f = f.copy()
@@ -298,24 +239,6 @@ def orient(v, f, outward):
         if np.dot(np.cross(b - a, c - a), outward((a + b + c) / 3)) < 0:
             f[n] = tri[[0, 2, 1]]
     return f
-
-
-def ferrari_classify(name, ancestors, material):
-    top = next((a for a in ancestors if a.startswith('wheel_') or a.startswith('steering')), None)
-    if name.startswith('wheel_'):
-        top = name
-    if (top and top.startswith('steering')) or name.startswith('steering'):
-        return 'body', 'interior'
-    if name in {'trim', 'leather', 'interior_light', 'interior_dark', 'carpet', 'yellow_trim', 'blue'}:
-        # A simplified dark cabin, so the road does not show through the windows (the model's
-        # roof panel is also part of its interior mesh; see ferrari_roof)
-        return 'body', 'interior'
-    target = top if top and top.startswith('wheel_') else 'body'
-    groups = {'body': 'paint', 'glass': 'glass', 'lights_red': 'taillight', 'brakes': 'taillight', 'lights': 'headlight',
-              'leds': 'headlight', 'chrome': 'chrome', 'carbon_fibre_trim': 'carbon', 'carbon fibre': 'carbon',
-              'metal': 'metal', 'tire': 'tire', 'wheel': 'rim', 'brake': 'caliper', 'centre': 'hub', 'nuts': 'hub'}
-    group = groups.get(name, 'rim' if name.startswith('rim_') else 'darkplastic')
-    return target, group
 
 
 def headlight_forward(parts, axis, center):
@@ -421,13 +344,10 @@ def toy_forward(parts, axis, center):
 
 
 if __name__ == '__main__':
-    ferrari, concept, toy, out = sys.argv[1:5]
+    concept, toy, out = sys.argv[1:4]
     os.makedirs(out, exist_ok=True)
     common = {'tire': 900, 'rim': 2600, 'caliper': 500, 'hub': 300, 'metal': 1500}
     specs = [
-        {'id': 'italia', 'src': ferrari, 'classify': ferrari_classify, 'forward_sign': headlight_forward,
-         'exhausts': [(0.42, 0.13), (0.42, -0.13)], 'roof': ferrari_roof,
-         'budget': dict(common, paint=32000, interior=5000, glass=7000, chrome=4000, taillight=3000, headlight=1200, carbon=3000, darkplastic=6000)},
         {'id': 'concept', 'src': concept, 'classify': concept_classify, 'forward_sign': headlight_forward,
          'exhausts': [(0.38, 0.32), (0.38, -0.32)],
          'budget': dict(common, paint=26000, interior=4000, paint2=9000, glass=5000, chrome=1200, taillight=800, headlight=800, darkplastic=6000, rim=3200)},

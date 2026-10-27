@@ -60,25 +60,24 @@ Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 
 
 ## Credits
 
-Garage cars (converted with `tools/convert_cars.py`, files `Hop/Models/*_body.usdz`, `*_wheel.usdz`):
+Garage cars:
 
-- "Rosso GT": "Ferrari 458 Italia" by vicent091036 (https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6),
-  CC BY 4.0, taken from the three.js examples. Modified: maker badges removed, closed hardtop roof added,
-  simplified interior, decimated, converted to USDZ.
+- "Rosso GT", "Strada S", "Tempesta", "Arrow GT", "Bison", "Classico 87": original designs made for this
+  game with Meshy AI (https://www.meshy.ai; text-to-image, then image-to-3D). They were prompted as invented
+  cars that do not copy any real make or model, and carry no badges, logos or plates. Converted with
+  `tools/convert_meshy_cars.py` (Blender). Files `Hop/Models/<id>_body.usdz`, `<id>_wheel.usdz`,
+  `<id>_basecolor.jpg`, `<id>_mask.png`. Meshy's free plan licenses its output under CC BY 4.0 (credit: Meshy AI);
+  paid plans give full ownership.
 - "Vector X": "Car Concept" from the Khronos glTF Sample Assets (https://github.com/KhronosGroup/glTF-Sample-Assets),
-  CC BY 4.0 © Khronos Group, based on the CC0 "Free Concept Car 004" by Unity Fan. Modified: licence plate
-  and Khronos logos removed, wipers removed, decimated, converted to USDZ.
+  CC BY 4.0 © Khronos Group, based on the CC0 "Free Concept Car 004" by Unity Fan (an original concept design).
+  Modified: licence plate and Khronos logos removed, wipers removed, decimated, converted to USDZ (`tools/convert_cars.py`).
 - "Hot Rod 55": "Toy Car" from the Khronos glTF Sample Assets, CC0. Modified: fabric and cameras removed,
-  wheels cut out to spin, paint areas made tintable, decimated, converted to USDZ.
-- Traffic and parked vehicles: Kenney's "Car Kit" (https://kenney.nl/assets/car-kit), CC0. Converted with
-  `tools/convert_kenney.py` (stretched a little). Files `Hop/Models/kenney_*`.
-- Garage cars converted with `tools/convert_garage_cars.py` (Blender; maker badges, logos and plates removed, wheels cut out, decimated, textures shrunk),
-  taken from https://github.com/supercar3d/supercar_3D_asssets. All CC BY 4.0, modified:
-  - "Strada S": "Bmw m4 competition" (https://skfb.ly/pANyt) by RES1N
-  - "Tempesta": "2019 Lamborghini Huracán EVO" (https://skfb.ly/pBZKS) by Galaxy Car Showroom
-  - "Arrow GT": "2016 McLaren 570S Coupe" (https://skfb.ly/prYpp) by Ddiaz Design
-  - "Bison": "2019 Lamborghini Urus" (https://skfb.ly/pqVNU) by Ddiaz Design
-  - "Classico 87": "Ferrari f40" (https://skfb.ly/oRnMV) by Black Snow
+  wheels cut out to spin, paint areas made tintable, decimated, converted to USDZ (`tools/convert_cars.py`).
+- Traffic and parked vehicles: Kenney's "Car Kit" (https://kenney.nl/assets/car-kit), CC0, generic designs.
+  Converted with `tools/convert_kenney.py` (stretched a little). Files `Hop/Models/kenney_*`.
+
+No car in the game is a replica of a real make or model (earlier builds used Sketchfab replicas of real
+cars; they were removed because a free model licence does not cover the car maker's design and trademark rights).
 
 ## App Store
 

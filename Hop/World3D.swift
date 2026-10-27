@@ -669,7 +669,9 @@ final class Car3D {
     /// Swaps the paint material only (no new geometry, no new shader).
     func setPaint(_ color: UIColor) {
         paintedNode?.geometry?.materials = [CarFactory.racerPaint(color)]
-        if let spec = carSpec { texturedNode?.geometry?.materials = [CarModels.texturePaint(spec, color)] }
+        if let material = texturedNode?.geometry?.firstMaterial, carSpec?.textureBase != nil {
+            CarModels.setPaint(material, color)
+        }
     }
     private var carSpec: CarSpec?
 
@@ -784,7 +786,7 @@ final class Car3D {
                 // One full-width LED brake bar
                 lights.append(CarFactory.box(0.05, 0.06, 1.75, 0.02, brakeMaterial, at: SCNVector3(-2.27, tailY, 0), to: body))
                 lights.append(CarFactory.box(0.05, 0.05, 0.3, 0.02, reverseMaterial, at: SCNVector3(-2.27, tailY - 0.11, 0), to: body))
-            } else {
+            } else if spec.id == .concept || spec.id == .retro {
                 lights.append(CarFactory.box(0.04, 0.04, 0.22, 0.01, reverseMaterial, at: SCNVector3(-2.2, 0.62, 0), to: body))
                 if spec.id == .retro {
                     // The retro car's lamps are painted in its texture; lit lenses on top of them
@@ -1275,7 +1277,10 @@ final class World3D {
         for entry in parkedCars3D { entry.car.setDetail(true) }
     }
     func endWarmupSweep() {
+        guard sweepClock >= 0 else { return }
         sweepClock = -1
+        // The next frame puts the camera straight behind the car (no swing from the sweep)
+        cameraReady = false
         cameraNode.camera?.zFar = 260
         cameraNode.camera?.fieldOfView = fieldOfView
     }
@@ -1754,6 +1759,50 @@ final class World3D {
 
     /// Traffic lights at every corner of every intersection, stop lines, street lamps and curbs.
     /// Static parts are written into one mesh; only the lit lamps are separate nodes.
+    /// Street lamp spots on the sidewalks, with the way their arm reaches (scene x/z). Every spot
+    /// is checked on its own: it must stand clear of every crossing street and intersection
+    /// (the second lamp of a pair used to be shifted onto a cross street unchecked).
+    static func streetLampPoints(city: CityMap, world: CGSize) -> [(position: CGPoint, toward: SIMD2<Float>)] {
+        let sidewalk = CityMap.roadHalf + 8
+        func clear(_ p: CGPoint) -> Bool {
+            guard p.x > 40, p.y > 40, p.x < world.width - 40, p.y < world.height - 40 else { return false }
+            // Off every road surface (its own street is `sidewalk` away) and away from corners
+            let offX = city.xs.allSatisfy { abs($0 - p.x) >= sidewalk - 0.5 }
+            let offY = city.ys.allSatisfy { abs($0 - p.y) >= sidewalk - 0.5 }
+            let nearCornerX = city.xs.contains { abs($0 - p.x) < 170 }
+            let nearCornerY = city.ys.contains { abs($0 - p.y) < 170 }
+            return offX && offY && !(nearCornerX && nearCornerY)
+        }
+        var result: [(CGPoint, SIMD2<Float>)] = []
+        for (j, y) in city.ys.enumerated() {
+            var x: CGFloat = 260
+            while x < world.width - 200 {
+                let candidates: [(CGPoint, SIMD2<Float>, Bool)] = [
+                    (CGPoint(x: x, y: y - sidewalk), SIMD2(0, -1), j > 0),
+                    (CGPoint(x: x + 200, y: y + sidewalk), SIMD2(0, 1), j < city.rows - 1)
+                ]
+                for (point, toward, exists) in candidates where exists && clear(point) {
+                    result.append((point, toward))
+                }
+                x += 400
+            }
+        }
+        for (i, x) in city.xs.enumerated() {
+            var y: CGFloat = 260
+            while y < world.height - 200 {
+                let candidates: [(CGPoint, SIMD2<Float>, Bool)] = [
+                    (CGPoint(x: x - sidewalk, y: y), SIMD2(1, 0), i > 0),
+                    (CGPoint(x: x + sidewalk, y: y + 200), SIMD2(-1, 0), i < city.cols - 1)
+                ]
+                for (point, toward, exists) in candidates where exists && clear(point) {
+                    result.append((point, toward))
+                }
+                y += 400
+            }
+        }
+        return result.map { (position: $0.0, toward: $0.1) }
+    }
+
     private func buildStreetFurniture(_ city: CityMap, world: CGSize) {
         cityMap = city
         signalHeads.removeAll()
@@ -1821,27 +1870,8 @@ final class World3D {
             let head = SCNVector3(base.x + direction.x * 1.35, 5.38, base.z + direction.y * 1.35)
             box(head, 0.5, 0.14, 0.5, lampGlow)
         }
-        for (j, y) in city.ys.enumerated() {
-            var x: CGFloat = 260
-            while x < world.width - 200 {
-                let nearNode = city.xs.contains { abs($0 - x) < 170 }
-                if !nearNode {
-                    if j > 0 { lamp(at: CGPoint(x: x, y: y - 108), toward: SIMD2(0, -1)) }
-                    if j < city.rows - 1 { lamp(at: CGPoint(x: x + 200, y: y + 108), toward: SIMD2(0, 1)) }
-                }
-                x += 400
-            }
-        }
-        for (i, x) in city.xs.enumerated() {
-            var y: CGFloat = 260
-            while y < world.height - 200 {
-                let nearNode = city.ys.contains { abs($0 - y) < 170 }
-                if !nearNode {
-                    if i > 0 { lamp(at: CGPoint(x: x - 108, y: y), toward: SIMD2(1, 0)) }
-                    if i < city.cols - 1 { lamp(at: CGPoint(x: x + 108, y: y + 200), toward: SIMD2(-1, 0)) }
-                }
-                y += 400
-            }
+        for point in World3D.streetLampPoints(city: city, world: world) {
+            lamp(at: point.position, toward: point.toward)
         }
 
         // Raised curbs around every block

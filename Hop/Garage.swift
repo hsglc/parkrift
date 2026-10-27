@@ -180,6 +180,36 @@ final class GarageStage {
         car.node.runAction(.sequence([.wait(duration: 0.12), .group([.fadeIn(duration: 0.25), drop, grow])]))
     }
 
+    private var warmed = false
+
+    /// Draws every car once at full size while the garage view is still hidden, so each car's
+    /// meshes and textures are on the GPU before it is first shown (a car scaled to nothing is not
+    /// really drawn, so the first look at each one used to stall). Runs once per app launch.
+    func warmCars(then done: @escaping () -> Void) {
+        guard !warmed else { done(); return }
+        warmed = true
+        let ids = CarModelID.allCases
+        let tiny = SCNVector3(0.001, 0.001, 0.001)
+        var index = 0
+        func step() {
+            guard index < ids.count else {
+                let current = shown?.model
+                for (id, car) in cars {
+                    car.node.scale = id == current ? SCNVector3(1, 1, 1) : tiny
+                    car.node.opacity = 1
+                }
+                done()
+                return
+            }
+            let id = ids[index]
+            for (other, car) in cars { car.node.scale = other == id ? SCNVector3(1, 1, 1) : tiny }
+            index += 1
+            // A few frames each (the view renders continuously)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.07) { step() }
+        }
+        step()
+    }
+
     /// Builds the stage and compiles its shaders ahead of time (called from the menu), so the
     /// first visit to the garage does not freeze.
     static func prewarm(using renderer: SCNSceneRenderer?) {
@@ -255,9 +285,11 @@ struct GarageSceneView: UIViewRepresentable {
         stage.view = view
         // Hidden until its shaders are compiled, then faded in (no frozen first frames)
         view.alpha = 0
-        view.prepare([stage.scene]) { _ in
+        view.prepare([stage.scene]) { [stage] _ in
             DispatchQueue.main.async {
-                UIView.animate(withDuration: 0.3) { view.alpha = 1 }
+                stage.warmCars {
+                    UIView.animate(withDuration: 0.3) { view.alpha = 1 }
+                }
             }
         }
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))

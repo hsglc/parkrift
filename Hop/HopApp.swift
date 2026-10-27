@@ -208,7 +208,8 @@ final class AppModel: ObservableObject {
     /// Called when the world is built; hides the loading screen once it has been up for
     /// `minimumLoading`, then `start` begins the countdown.
     func sceneReady(then start: @escaping () -> Void) {
-        let remaining = max(0, AppModel.minimumLoading - Date().timeIntervalSince(loadingStartedAt))
+        // At least a few frames with the chase camera in place before the loading screen fades
+        let remaining = max(0.25, AppModel.minimumLoading - Date().timeIntervalSince(loadingStartedAt))
         DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
             guard let self = self, self.screen == .game else { return }
             withAnimation(.easeOut(duration: 0.35)) { self.loading = false }
