@@ -666,6 +666,34 @@ final class Car3D {
     private var paintedNode: SCNNode?
     private var texturedNode: SCNNode?
 
+    private var headlight: SCNNode?
+
+    /// Headlight beam for the night (one spot light on the player's car).
+    func setHeadlights(_ on: Bool) {
+        if on, headlight == nil {
+            let light = SCNLight()
+            light.type = .spot
+            light.intensity = 2200
+            light.color = UIColor(red: 1.0, green: 0.95, blue: 0.85, alpha: 1)
+            light.spotInnerAngle = 25
+            light.spotOuterAngle = 62
+            light.attenuationStartDistance = 4
+            light.attenuationEndDistance = 38
+            light.castsShadow = false
+            // Spot lights shine along -z: a holder turns it to +x (forward), the light tips down
+            let beam = SCNNode()
+            beam.position = SCNVector3(1.9, 0.75, 0)
+            beam.eulerAngles.y = -Float.pi / 2
+            let tilt = SCNNode()
+            tilt.light = light
+            tilt.eulerAngles.x = -0.18
+            beam.addChildNode(tilt)
+            node.addChildNode(beam)
+            headlight = beam
+        }
+        headlight?.isHidden = !on
+    }
+
     /// Swaps the paint material only (no new geometry, no new shader).
     func setPaint(_ color: UIColor) {
         paintedNode?.geometry?.materials = [CarFactory.racerPaint(color)]
@@ -677,7 +705,7 @@ final class Car3D {
 
     /// `model`: which garage car a player's racer uses.
     init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false, model carModel: CarModelID = .italia,
-         variety: Int = 0) {
+         variety: Int = 0, vehicle forcedVehicle: String? = nil) {
         brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
         // Thin tail light strips: lit from both sides whatever their winding
         brakeMaterial.isDoubleSided = true
@@ -688,7 +716,8 @@ final class Car3D {
         carSpec = spec
 
         // Traffic and parked cars: Kenney vehicles
-        if style != .racer, PerfSettings.optimized, let vehicle = TrafficVehicles.pick(variety &* 31 &+ style.rawValue),
+        if style != .racer, PerfSettings.optimized,
+           let vehicle = forcedVehicle.flatMap({ KenneyCatalog.all[$0] }) ?? TrafficVehicles.pick(variety &* 31 &+ style.rawValue),
            let template = TrafficVehicles.body(vehicle.id) {
             if parked {
                 if let flat = TrafficVehicles.parked(vehicle) { body.addChildNode(flat.clone()) }
@@ -851,8 +880,9 @@ final class Car3D {
     }
 
     func update(position: CGPoint, heading: CGFloat, steer: CGFloat,
-                pitch: CGFloat = 0, roll: CGFloat = 0, braking: Bool = false, reversing: Bool = false) {
+                pitch: CGFloat = 0, roll: CGFloat = 0, braking: Bool = false, reversing: Bool = false, lift: Float = 0) {
         node.position = World3D.vec(position)
+        node.position.y = lift
         node.eulerAngles = SCNVector3(0, Float(heading), 0)
         for pivot in steerPivots { pivot.eulerAngles.y = Float(steer) }
         body.eulerAngles = SCNVector3(Float(roll), 0, Float(pitch))
@@ -996,8 +1026,17 @@ final class World3D {
         follow(position: CGPoint(x: 500, y: 250), heading: 0, dt: 0, snap: true)
     }
 
+    private let sunLight = SCNLight()
+    private let ambientLight = SCNLight()
+    /// The street materials, for the wet look in the rain.
+    private var roadMaterials: [SCNMaterial] = []
+    /// Warm light pools under the street lamps (shown at night).
+    private var lampPools: SCNNode?
+    private var rain: SCNNode?
+    private(set) var weather: Weather = .day
+
     private func buildLights() {
-        let sun = SCNLight()
+        let sun = sunLight
         sun.type = .directional
         sun.intensity = 1150
         sun.color = UIColor(red: 1.0, green: 0.96, blue: 0.88, alpha: 1)
@@ -1015,7 +1054,7 @@ final class World3D {
         sunNode.eulerAngles = SCNVector3(-0.95, 0.6, 0)
         scene.rootNode.addChildNode(sunNode)
 
-        let ambient = SCNLight()
+        let ambient = ambientLight
         ambient.type = .ambient
         ambient.intensity = 420
         ambient.color = UIColor(red: 0.80, green: 0.86, blue: 1.0, alpha: 1)
@@ -1397,6 +1436,97 @@ final class World3D {
         return car
     }
 
+    /// The loose cones, barrels and bins of a city level.
+    func addProps(_ defs: [PropDef]) -> StreetProps {
+        StreetProps(defs: defs, parent: levelRoot)
+    }
+
+    /// Day, night (dark sky, moonlight, lamp light pools) or rain (overcast, wet shiny streets,
+    /// falling rain around the camera).
+    func setWeather(_ newWeather: Weather) {
+        weather = newWeather
+        let night = newWeather == .night
+        let wet = newWeather == .rain
+        switch newWeather {
+        case .day:
+            scene.background.contents = CityArt.sky
+            scene.lightingEnvironment.contents = CityArt.sky
+            scene.lightingEnvironment.intensity = 1.1
+            scene.fogColor = UIColor(red: 0.84, green: 0.90, blue: 0.97, alpha: 1)
+            scene.fogStartDistance = 70
+            scene.fogEndDistance = 200
+            sunLight.intensity = 1150
+            sunLight.color = UIColor(red: 1.0, green: 0.96, blue: 0.88, alpha: 1)
+            ambientLight.intensity = 420
+            ambientLight.color = UIColor(red: 0.80, green: 0.86, blue: 1.0, alpha: 1)
+        case .night:
+            scene.background.contents = CityArt.nightSky
+            scene.lightingEnvironment.contents = CityArt.nightSky
+            scene.lightingEnvironment.intensity = 0.9
+            scene.fogColor = UIColor(red: 0.04, green: 0.05, blue: 0.10, alpha: 1)
+            scene.fogStartDistance = 45
+            scene.fogEndDistance = 170
+            sunLight.intensity = 260
+            sunLight.color = UIColor(red: 0.55, green: 0.66, blue: 1.0, alpha: 1)
+            ambientLight.intensity = 210
+            ambientLight.color = UIColor(red: 0.45, green: 0.52, blue: 0.80, alpha: 1)
+        case .rain:
+            scene.background.contents = CityArt.rainSky
+            scene.lightingEnvironment.contents = CityArt.rainSky
+            scene.lightingEnvironment.intensity = 1.0
+            scene.fogColor = UIColor(red: 0.55, green: 0.58, blue: 0.62, alpha: 1)
+            scene.fogStartDistance = 35
+            scene.fogEndDistance = 150
+            sunLight.intensity = 520
+            sunLight.color = UIColor(red: 0.85, green: 0.88, blue: 0.95, alpha: 1)
+            ambientLight.intensity = 380
+            ambientLight.color = UIColor(red: 0.75, green: 0.80, blue: 0.88, alpha: 1)
+        }
+        lampPools?.isHidden = !night
+        // Wet asphalt: darker and glossy, so it mirrors the sky and the lights
+        for material in roadMaterials {
+            material.roughness.intensity = wet ? 0.35 : 1
+            material.diffuse.intensity = wet ? 0.7 : 1
+        }
+        if wet {
+            if rain == nil { rain = World3D.makeRain() }
+            if let rain = rain, rain.parent == nil { cameraNode.addChildNode(rain) }
+        } else {
+            rain?.removeFromParentNode()
+        }
+    }
+
+    /// Rain streaks falling in a box around the camera.
+    private static func makeRain() -> SCNNode {
+        let system = SCNParticleSystem()
+        system.birthRate = 1600
+        system.emitterShape = SCNBox(width: 34, height: 0.1, length: 34, chamferRadius: 0)
+        system.particleLifeSpan = 0.75
+        system.particleVelocity = 26
+        system.particleVelocityVariation = 4
+        system.emittingDirection = SCNVector3(0.08, -1, 0)
+        system.spreadingAngle = 3
+        system.particleSize = 0.018
+        system.stretchFactor = 0.07
+        system.particleColor = UIColor(red: 0.82, green: 0.86, blue: 0.95, alpha: 0.5)
+        system.particleImage = CarArt.glowParticle()
+        system.blendMode = .alpha
+        system.isLightingEnabled = false
+        system.isAffectedByGravity = false
+        system.loops = true
+        let node = SCNNode()
+        node.position = SCNVector3(0, 12, -8)
+        node.addParticleSystem(system)
+        return node
+    }
+
+    /// The police car of a chase (a Kenney police model), added to the level.
+    func makePoliceCar() -> Car3D {
+        let car = Car3D(color: .white, style: .sedan, vehicle: "police")
+        levelRoot.addChildNode(car.node)
+        return car
+    }
+
     func load(level: LevelDef, spotSlots: [Int], mySlot: Int) {
         levelRoot.childNodes.forEach { $0.removeFromParentNode() }
         fxRoot.childNodes.forEach { $0.removeFromParentNode() }
@@ -1409,10 +1539,13 @@ final class World3D {
         lotRoot.isHidden = level.city != nil
         cityMap = nil
         signalHeads.removeAll()
+        roadMaterials.removeAll()
+        lampPools = nil
         if let city = level.city {
             buildCity(city, world: level.world)
             levelRoot.addChildNode(CityDecor.build(level: level, city: city))
         }
+        setWeather(level.city != nil ? level.weather : .day)
 
         if level.race {
             buildFinish(level.spots[0])
@@ -1682,6 +1815,7 @@ final class World3D {
             material.multiply.wrapS = .repeat
             material.multiply.wrapT = .repeat
             material.multiply.contentsTransform = SCNMatrix4MakeScale(Float(length / 1200), Float(roadWidth / 1200), 1)
+            roadMaterials.append(material)
             return material
         }
         let ground = SCNNode()
@@ -1708,7 +1842,9 @@ final class World3D {
             ground.addChildNode(holder)
         }
         let junction = SCNPlane(width: roadWidth / 10, height: roadWidth / 10)
-        junction.materials = [World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.png", rough: "junction_rough.jpg")]
+        let junctionMaterial = World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.png", rough: "junction_rough.jpg")
+        roadMaterials.append(junctionMaterial)
+        junction.materials = [junctionMaterial]
         let stripe = SCNPlane(width: 0.5, height: 3.2)
         // Worn white paint on asphalt
         let zebra = Mat.pbr(.white, metal: 0, rough: 0.7)
@@ -1858,6 +1994,7 @@ final class World3D {
                         wallRepeats: { _ in SIMD2(1, 1) })
         }
         let signalModel = World3D.signalTemplate
+        var lampHeads: [SCNVector3] = []
 
         for j in 0..<city.rows {
             for i in 0..<city.cols {
@@ -1924,9 +2061,29 @@ final class World3D {
             box(arm, direction.x != 0 ? 1.4 : 0.1, 0.1, direction.x != 0 ? 0.1 : 1.4, poleMaterial)
             let head = SCNVector3(base.x + direction.x * 1.35, 5.38, base.z + direction.y * 1.35)
             box(head, 0.5, 0.14, 0.5, lampGlow)
+            lampHeads.append(head)
         }
         for point in World3D.streetLampPoints(city: city, world: world) {
             lamp(at: point.position, toward: point.toward)
+        }
+        // Light pools on the street under every lamp, for the night
+        let pools = MeshBuilder()
+        let poolMaterial = SCNMaterial()
+        poolMaterial.lightingModel = .constant
+        poolMaterial.diffuse.contents = CarArt.glowParticle()
+        poolMaterial.multiply.contents = UIColor(red: 1.0, green: 0.78, blue: 0.48, alpha: 1)
+        poolMaterial.blendMode = .add
+        poolMaterial.writesToDepthBuffer = false
+        for head in lampHeads {
+            pools.addDecal(center: SIMD3(head.x, 0.07, head.z), direction: SIMD2(1, 0), length: 9, width: 9, material: poolMaterial)
+        }
+        if let geometry = pools.build() {
+            let node = SCNNode(geometry: geometry)
+            node.castsShadow = false
+            node.opacity = 0.55
+            node.isHidden = true
+            levelRoot.addChildNode(node)
+            lampPools = node
         }
 
 
@@ -2003,7 +2160,7 @@ final class World3D {
         }
         var objects: [Any] = [scene.rootNode] + World3D.signalMaterials
         if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries + TrafficVehicles.allGeometries }
-        if cityMap != nil { objects += PedestrianModels.all }
+        if cityMap != nil { objects += PedestrianModels.all + StreetProps.allGeometries }
         renderer.prepare(objects) { _ in
             DispatchQueue.main.async { completion?() }
         }

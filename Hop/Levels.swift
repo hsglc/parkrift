@@ -18,6 +18,25 @@ struct ObstacleDef {
     var box: OBB { OBB(center: center, size: size, angle: angle) }
 }
 
+/// A double-sided jump ramp (a hump): up, a short top, down. `alongX`: driven along world x.
+struct RampDef {
+    let center: CGPoint
+    let alongX: Bool
+    static let length: CGFloat = 120   // 12 m
+    static let width: CGFloat = 70
+    static let height: CGFloat = 0.9   // meters
+}
+
+/// A loose street object: 0 traffic cone, 1 barrel, 2 trash bin.
+struct PropDef {
+    let kind: Int
+    let position: CGPoint
+}
+
+enum Weather: Int {
+    case day, night, rain
+}
+
 struct SpotDef {
     let center: CGPoint
     let size: CGSize   // width = length along `angle`
@@ -41,6 +60,12 @@ struct LevelDef {
     var city: CityMap? = nil
     var bots: [BotStart] = []
     var race: Bool = false
+    /// Shortcuts through city blocks (drivable, no buildings) and the jump ramps in them.
+    var alleys: [CGRect] = []
+    var ramps: [RampDef] = []
+    /// Cones, barrels and bins that fly when hit.
+    var props: [PropDef] = []
+    var weather: Weather = .day
 
     var name: String { Strings.pick(nameTR, nameEN, Levels.spanishNames[nameEN] ?? nameEN) }
 }

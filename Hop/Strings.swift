@@ -156,21 +156,30 @@ enum Strings {
                     "Mini haritadaki sarı çizgi en kısa yolu gösterir.",
                     "Botlar önlerindeki arabaya göre durur; karşı şeritten sollayabilirsin.",
                     "Kornaya basınca arkadaşın da duyar.",
-                    "Park ederken yavaşla ve 1 saniye bekle."]
+                    "Park ederken yavaşla ve 1 saniye bekle.",
+                    "DRİFT tuşuna basılı tutup direksiyonu çevir: drift puanı nitroya dönüşür.",
+                    "Binaların arasındaki ara sokaklar kestirmedir; ortadaki rampadan uç!",
+                    "Radara 70 km/s üstünde girersen polis peşine düşer."]
         case .spanish:
             return ["Cuando el anillo se vuelve turquesa, el nitro está listo: úsalo en una recta.",
                     "En la Carrera cada choque suma 3 segundos a tu puntuación.",
                     "La línea amarilla del minimapa es la ruta más corta.",
                     "Los bots frenan ante los coches de delante; adelanta por el otro carril.",
                     "Tu amigo oye tu claxon.",
-                    "Para aparcar, frena y quédate quieto un segundo."]
+                    "Para aparcar, frena y quédate quieto un segundo.",
+                    "Mantén DERRAPE y gira: los puntos de derrape se convierten en nitro.",
+                    "Los callejones entre edificios son atajos; ¡salta en la rampa!",
+                    "Si pasas un radar a más de 70 km/h, te perseguirá la policía."]
         default:
             return ["When the ring turns turquoise, nitro is ready — use it on a straight.",
                     "In the Car Race every crash adds 3 seconds to your score.",
                     "The yellow line on the minimap is the shortest route.",
                     "Bots stop for cars in front; overtake through the other lane.",
                     "Your friend hears your horn.",
-                    "To park, slow down and hold still for a second."]
+                    "To park, slow down and hold still for a second.",
+                    "Hold DRIFT and steer: drift points turn into nitro.",
+                    "Alleys between buildings are shortcuts — jump the ramp!",
+                    "Pass a speed camera above 70 km/h and the police will chase you."]
         }
     }
     static var modeSoloTitle: String { t("Park Ustası", "Park Master", "Maestro del aparcamiento") }
@@ -232,5 +241,18 @@ enum Strings {
     static var pedestrianHit: String { t("DİKKAT! YAYA · +1 KAZA", "WATCH OUT! · +1 CRASH", "¡CUIDADO! · +1 CHOQUE") }
     static var police: String { t("POLİS", "POLICE", "POLICÍA") }
     static var taxi: String { t("TAKSİ", "CAB", "TAXI") }
+    // Arcade
+    static var driftButton: String { t("DRİFT", "DRIFT", "DERRAPE") }
+    static var driftLabel: String { t("DRİFT", "DRIFT", "DERRAPE") }
+    static func driftBonus(_ score: Int) -> String { t("DRİFT +\(score) · +NİTRO", "DRIFT +\(score) · +NITRO", "DERRAPE +\(score) · +NITRO") }
+    static var driftLost: String { t("DRİFT BOZULDU", "DRIFT LOST", "DERRAPE PERDIDO") }
+    static var driftPark: String { t("DRİFT PARK! −2 sn", "DRIFT PARK! −2 s", "¡APARCAMIENTO DERRAPANDO! −2 s") }
+    static var nearMiss: String { t("KIL PAYI! +NİTRO", "NEAR MISS! +NITRO", "¡POR LOS PELOS! +NITRO") }
+    static var jump: String { t("UÇUŞ! +NİTRO", "BIG AIR! +NITRO", "¡A VOLAR! +NITRO") }
+    static var policeChase: String { t("POLİS PEŞİNDE!", "POLICE CHASE!", "¡TE PERSIGUE LA POLICÍA!") }
+    static var policeCaught: String { t("YAKALANDIN! +2 KAZA", "BUSTED! +2 CRASHES", "¡TE PILLARON! +2 CHOQUES") }
+    static var policeEscaped: String { t("KAÇTIN! NİTRO DOLU", "ESCAPED! FULL NITRO", "¡ESCAPASTE! NITRO LLENO") }
+    static var nightDrive: String { t("Gece", "Night", "Noche") }
+    static var rainyDrive: String { t("Yağmurlu", "Rain", "Lluvia") }
     static var factoryLivery: String { t("Özel boya", "Signature livery", "Pintura de fábrica") }
 }

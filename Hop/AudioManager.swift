@@ -15,6 +15,10 @@ final class AudioManager {
     private var prepared = false
     private var musicStarted = false
     private var motorStarted = false
+    /// Looping layers whose volume follows the game: tyre screech, police siren, rain.
+    private var loopNodes: [String: AVAudioPlayerNode] = [:]
+    private var loopStarted = Set<String>()
+    private static let loopNames = ["skid", "siren", "rain"]
 
     var isMuted: Bool {
         get { UserDefaults.standard.bool(forKey: "pp.muted") }
@@ -48,7 +52,7 @@ final class AudioManager {
         try? session.setActive(true)
 
         buffers["music"] = load("music", ext: "m4a")
-        for name in ["engine", "bump", "beep", "go", "park", "click", "horn", "nitro", "crash"] {
+        for name in ["engine", "bump", "beep", "go", "park", "click", "horn", "nitro", "crash", "whoosh", "skid", "siren", "rain"] {
             buffers[name] = load(name, ext: "wav")
         }
 
@@ -61,6 +65,14 @@ final class AudioManager {
         if let motor = buffers["engine"] {
             engine.connect(motorNode, to: motorPitch, format: motor.format)
             engine.connect(motorPitch, to: engine.mainMixerNode, format: motor.format)
+        }
+        for name in AudioManager.loopNames {
+            guard let buffer = buffers[name] else { continue }
+            let node = AVAudioPlayerNode()
+            engine.attach(node)
+            engine.connect(node, to: engine.mainMixerNode, format: buffer.format)
+            node.volume = 0
+            loopNodes[name] = node
         }
         let effectFormat = buffers["bump"]?.format
         for _ in 0..<4 {
@@ -88,6 +100,7 @@ final class AudioManager {
             }
             musicStarted = false
             motorStarted = false
+            loopStarted.removeAll()
         }
         if !musicStarted, let music = buffers["music"] {
             musicNode.stop()
@@ -111,6 +124,22 @@ final class AudioManager {
         node.volume = volume
         node.scheduleBuffer(buffer, at: nil, options: [.interrupts], completionHandler: nil)
         node.play()
+    }
+
+    /// Sets a looping layer's volume (0 silences it); `rate` is not used for now.
+    func setLoop(_ name: String, volume: Float) {
+        guard engine.isRunning, let node = loopNodes[name], let buffer = buffers[name] else { return }
+        if volume > 0.001 && !loopStarted.contains(name) {
+            node.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
+            node.play()
+            loopStarted.insert(name)
+        }
+        node.volume = max(0, min(1, volume))
+    }
+
+    /// Silences every looping layer (leaving a level).
+    func stopLoops() {
+        for node in loopNodes.values { node.volume = 0 }
     }
 
     /// speed: 0...1 of top speed, throttle: 0 or 1.

@@ -171,6 +171,7 @@ final class AppModel: ObservableObject {
     func leaveToMenu() {
         results = nil
         loading = false
+        Task { @MainActor in AudioManager.shared.stopLoops() }
         net.disconnect()
         online = false
         connecting = false

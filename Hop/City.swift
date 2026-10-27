@@ -304,7 +304,8 @@ extension Levels {
                 obstacles.append(ObstacleDef(kind: .car, center: slot.center, size: carSize,
                                              angle: slot.angle + (rng.unit() < 0.5 ? 0 : CGFloat.pi), tint: rng.int(6)))
             }
-            obstacles += buildings(map: map, rng: &rng)
+            var arcade = Levels.arcadeLayout(map: map, round: round, race: race)
+            obstacles += buildings(map: map, rng: &rng, alleyBlocks: arcade.alleyBlocks, alleys: &arcade.alleys)
 
             var bots: [BotStart] = []
             var attempts = 0
@@ -325,8 +326,10 @@ extension Levels {
                 }) { continue }
                 bots.append(start)
             }
-            return LevelDef(nameTR: "Yoğun Trafik", nameEN: "Rush Hour", starts: starts, spots: [finish, finish], obstacles: obstacles,
-                            world: worldSize, city: map, bots: bots, race: true)
+            var level = LevelDef(nameTR: "Yoğun Trafik", nameEN: "Rush Hour", starts: starts, spots: [finish, finish], obstacles: obstacles,
+                                 world: worldSize, city: map, bots: bots, race: true)
+            Levels.finishArcade(&level, arcade)
+            return level
         }
 
         // Target: two facing slots on an interior street
@@ -378,7 +381,8 @@ extension Levels {
                                          angle: slot.angle + (rng.unit() < 0.5 ? 0 : CGFloat.pi), tint: rng.int(6)))
         }
 
-        obstacles += buildings(map: map, rng: &rng)
+        var arcade = Levels.arcadeLayout(map: map, round: round, race: race)
+        obstacles += buildings(map: map, rng: &rng, alleyBlocks: arcade.alleyBlocks, alleys: &arcade.alleys)
 
         // Traffic
         var bots: [BotStart] = []
@@ -401,8 +405,91 @@ extension Levels {
             bots.append(candidate)
         }
 
-        return LevelDef(nameTR: "Şehir", nameEN: "City", starts: starts, spots: spots, obstacles: obstacles,
-                        world: worldSize, city: map, bots: bots)
+        var level = LevelDef(nameTR: "Şehir", nameEN: "City", starts: starts, spots: spots, obstacles: obstacles,
+                             world: worldSize, city: map, bots: bots)
+        Levels.finishArcade(&level, arcade)
+        return level
+    }
+
+    static let alleyWidth: CGFloat = 90
+
+    /// Arcade extras, drawn from their own random stream so the rest of the map stays the same.
+    struct ArcadeLayout {
+        var alleyBlocks: Set<Int>
+        var alleys: [CGRect] = []
+        var rng: SplitMix64
+        let weather: Weather
+    }
+
+    static func arcadeLayout(map: CityMap, round: Int, race: Bool) -> ArcadeLayout {
+        var rng = SplitMix64(seed: (UInt64(round + 11) &* 0x9E37_79B9_7F4A_7C15) ^ (race ? 0x5151 : 0x7373))
+        var blocks = Array(map.blocks.indices)
+        blocks.shuffle(using: &rng)
+        // Every round shows a different sky: races start at night, city rounds in the rain
+        let weather = Weather(rawValue: (round + (race ? 1 : 2)) % 3) ?? .day
+        return ArcadeLayout(alleyBlocks: Set(blocks.prefix(3)), rng: rng, weather: weather)
+    }
+
+    /// Ramps in the alleys, construction cones, barrels and bins, and the weather.
+    static func finishArcade(_ level: inout LevelDef, _ layout: ArcadeLayout) {
+        guard let map = level.city else { return }
+        var rng = layout.rng
+        level.alleys = layout.alleys
+        level.weather = layout.weather
+        level.ramps = layout.alleys.map { RampDef(center: CGPoint(x: $0.midX, y: $0.midY), alongX: true) }
+        let keepClear = level.starts.map { $0.position } + level.spots.map { $0.center }
+        let parked = level.obstacles.filter { $0.kind == .car }.map { $0.center }
+        func free(_ p: CGPoint, _ radius: CGFloat) -> Bool {
+            !keepClear.contains { $0.distance(to: p) < 220 } && !parked.contains { $0.distance(to: p) < radius }
+                && !level.alleys.contains { $0.insetBy(dx: -30, dy: -30).contains(p) }
+        }
+        var props: [PropDef] = []
+        // Road works: a taper of cones from the parking strip into the lane on a few streets
+        for _ in 0..<5 {
+            let horizontal = rng.unit() < 0.5
+            let side: CGFloat = rng.unit() < 0.5 ? -1 : 1
+            if horizontal {
+                let j = rng.int(map.rows)
+                let i = rng.int(map.cols - 1)
+                let x0 = map.xs[i] + 220 + rng.range(0, 200)
+                for k in 0..<7 {
+                    let p = CGPoint(x: x0 + CGFloat(k) * 34, y: map.ys[j] + side * (CityMap.stripOffset - CGFloat(k) * 7))
+                    if free(p, 40) { props.append(PropDef(kind: 0, position: p)) }
+                }
+            } else {
+                let i = rng.int(map.cols)
+                let j = rng.int(map.rows - 1)
+                let y0 = map.ys[j] + 220 + rng.range(0, 150)
+                for k in 0..<7 {
+                    let p = CGPoint(x: map.xs[i] + side * (CityMap.stripOffset - CGFloat(k) * 7), y: y0 + CGFloat(k) * 34)
+                    if free(p, 40) { props.append(PropDef(kind: 0, position: p)) }
+                }
+            }
+        }
+        // Barrels at a few intersection corners
+        for _ in 0..<6 {
+            let node = rng.int(map.nodeCount)
+            let c = map.position(of: node)
+            let sx: CGFloat = rng.unit() < 0.5 ? -1 : 1
+            let sy: CGFloat = rng.unit() < 0.5 ? -1 : 1
+            for k in 0..<2 {
+                let p = CGPoint(x: c.x + sx * (CityMap.roadHalf - 14), y: c.y + sy * (CityMap.roadHalf - 14 - CGFloat(k) * 18))
+                if free(p, 30) && p.x > 20 && p.y > 20 && p.x < level.world.width - 20 && p.y < level.world.height - 20 {
+                    props.append(PropDef(kind: 1, position: p))
+                }
+            }
+        }
+        // Bins at the curb along the blocks
+        for block in map.blocks {
+            for _ in 0..<2 {
+                let alongX = rng.unit() < 0.5
+                let p = alongX
+                    ? CGPoint(x: rng.range(block.minX + 60, block.maxX - 60), y: rng.unit() < 0.5 ? block.minY + 10 : block.maxY - 10)
+                    : CGPoint(x: rng.unit() < 0.5 ? block.minX + 10 : block.maxX - 10, y: rng.range(block.minY + 60, block.maxY - 60))
+                if free(p, 30) { props.append(PropDef(kind: 2, position: p)) }
+            }
+        }
+        level.props = props
     }
 
     /// Landmark kinds, stored in a building's `tint` (100+).
@@ -412,7 +499,8 @@ extension Levels {
 
     /// Buildings: 2–3 columns x 2 rows per block, set back behind a sidewalk. One block is a park,
     /// and a few corner lots hold a gas station or a parking garage.
-    private static func buildings(map: CityMap, rng: inout SplitMix64) -> [ObstacleDef] {
+    private static func buildings(map: CityMap, rng: inout SplitMix64, alleyBlocks: Set<Int> = [],
+                                  alleys: inout [CGRect]) -> [ObstacleDef] {
         var result: [ObstacleDef] = []
         let blocks = map.blocks
         var order = Array(blocks.indices)
@@ -429,12 +517,18 @@ extension Levels {
             }
             let columns = 2 + rng.int(2)
             let gap: CGFloat = 22
+            // An alley block keeps a wide drivable lane between its two rows of buildings
+            let rowGap: CGFloat = alleyBlocks.contains(index) ? Levels.alleyWidth : gap
+            if alleyBlocks.contains(index) {
+                let y = inner.minY + (inner.height - rowGap) / 2
+                alleys.append(CGRect(x: block.minX, y: y, width: block.width, height: rowGap))
+            }
             let width = (inner.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
-            let height = (inner.height - gap) / 2
+            let height = (inner.height - rowGap) / 2
             for c in 0..<columns {
                 for r in 0..<2 {
                     let center = CGPoint(x: inner.minX + width * (CGFloat(c) + 0.5) + gap * CGFloat(c),
-                                         y: inner.minY + height * (CGFloat(r) + 0.5) + gap * CGFloat(r))
+                                         y: inner.minY + height * (CGFloat(r) + 0.5) + rowGap * CGFloat(r))
                     var tint = rng.int(8)
                     let floors = rng.range(7, 26)
                     if c == 0 && r == 0 {

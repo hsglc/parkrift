@@ -11,6 +11,7 @@ final class ParkingScene: SKScene {
         case right
         case forward
         case reverse
+        case handbrake
     }
 
     private enum Phase {
@@ -217,6 +218,28 @@ final class ParkingScene: SKScene {
     private var sendClock: TimeInterval = 0
     private var hits = 0
     private var lastHitAt: TimeInterval = -10
+    // Drift: the car can point away from where it travels; points turn into nitro
+    private var travelHeading: CGFloat = 0
+    private var drifting = false
+    private var driftScore: CGFloat = 0
+    private var driftClock: CGFloat = 0
+    private var lastDriftEnd: TimeInterval = -10
+    private var lastDriftScore: CGFloat = 0
+    private var driftSmokeClock: CGFloat = 0
+    private var driftButton = SKSpriteNode()
+    private var driftLabel = SKLabelNode()
+    private var shownDriftPoints = -1
+    // Jumps off the alley ramps
+    private var airTime: CGFloat = 0
+    private var airDuration: CGFloat = 0
+    private var airPeak: CGFloat = 0
+    private var rampCooldown: TimeInterval = -10
+    // Near misses, loose props, police
+    private var nearMissAt: [Int: TimeInterval] = [:]
+    private var streetProps: StreetProps?
+    private var police: PoliceChase?
+    private var trail: [CGPoint] = []
+    private var trailClock: CGFloat = 0
     /// Last drawn HUD values (shapes and labels only change when these do).
     private var shownNitroStep = -2
     private var shownSteerStep = -999
@@ -605,6 +628,22 @@ final class ParkingScene: SKScene {
         nitroText.position = CGPoint(x: 0, y: -17)
         nitroButton.addChild(nitroText)
 
+        // Handbrake for drifts, above the nitro button
+        driftButton = makeGlass(width: 64, height: 64)
+        driftButton.position = CGPoint(x: nitroButton.position.x, y: nitroButton.position.y + 84)
+        controlsLayer.addChild(driftButton)
+        let driftIcon = makeIcon("car.rear.and.tire.marks", size: 20, color: UIColor(red: 1.0, green: 0.55, blue: 0.25, alpha: 1))
+        driftIcon.position = CGPoint(x: 0, y: 6)
+        driftButton.addChild(driftIcon)
+        let driftText = makeLabel(Strings.driftButton, size: 9, color: .white)
+        driftText.position = CGPoint(x: 0, y: -16)
+        driftButton.addChild(driftText)
+        driftLabel = makeLabel("", size: 26, color: UIColor(red: 1.0, green: 0.62, blue: 0.2, alpha: 1))
+        driftLabel.position = CGPoint(x: size.width / 2, y: size.height * 0.8)
+        driftLabel.alpha = 0.002
+        driftLabel.zPosition = 20
+        hud.addChild(driftLabel)
+
         // Screen effects for the boost
         speedLines.removeAll()
         for _ in 0..<30 {
@@ -732,6 +771,21 @@ final class ParkingScene: SKScene {
             }
             updatePedestrianNodes()
         }
+        // Arcade extras of the level
+        streetProps = level.city != nil ? world.addProps(level.props) : nil
+        police = nil
+        trail.removeAll()
+        nearMissAt.removeAll()
+        drifting = false
+        driftScore = 0
+        lastDriftScore = 0
+        airTime = 0
+        shownDriftPoints = -1
+        driftLabel.alpha = 0.002
+        localCar?.setHeadlights(level.city != nil && level.weather == .night)
+        audio.setLoop("rain", volume: level.city != nil && level.weather == .rain ? 0.35 : 0)
+        audio.setLoop("siren", volume: 0)
+        audio.setLoop("skid", volume: 0)
         route = []
         routeClock = 0
         giveUp = 20
@@ -743,6 +797,7 @@ final class ParkingScene: SKScene {
         let start = level.starts[slot]
         carPosition = start.position
         heading = start.heading
+        travelHeading = start.heading
         velocity = 0
         steer = 0
         wheelInput = 0
@@ -1327,6 +1382,7 @@ final class ParkingScene: SKScene {
         if rightButton.frame.insetBy(dx: -8, dy: -14).contains(point) { return .right }
         if gasPedal.frame.insetBy(dx: -14, dy: -14).contains(point) { return .forward }
         if reversePedal.frame.insetBy(dx: -14, dy: -14).contains(point) { return .reverse }
+        if driftButton.parent != nil && driftButton.frame.insetBy(dx: -10, dy: -10).contains(point) { return .handbrake }
         return nil
     }
 
@@ -1347,6 +1403,9 @@ final class ParkingScene: SKScene {
         leftButton.alpha = leftDown ? 1 : 0.88
         rightButton.setScale(rightDown ? 0.92 : 1)
         rightButton.alpha = rightDown ? 1 : 0.88
+        let driftDown = isPressed(.handbrake)
+        driftButton.setScale(driftDown ? 0.9 : 1)
+        driftButton.alpha = driftDown ? 1 : 0.88
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -1554,6 +1613,7 @@ final class ParkingScene: SKScene {
             }
             traffic.step(dt, blockers: blockers)
             world?.updateSignals(time: traffic.clock)
+            updateArcade(dt, traffic: traffic)
             let detailRange = PerfSettings.carDetailDistance * 10
             var botDetailChanges = 0
             for (index, bot) in traffic.bots.enumerated() where index < botCars.count {
@@ -1591,7 +1651,9 @@ final class ParkingScene: SKScene {
         updateSpeedometer(dt)
 
         setTimerText(String(format: "%.1f", localParked ? localTime : elapsed))
-        world?.follow(position: carPosition, heading: heading, dt: dt)
+        // While drifting the camera looks between where the car points and where it goes
+        let cameraHeading = drifting ? travelHeading + CGFloat.angleDelta(travelHeading, heading) * 0.35 : heading
+        world?.follow(position: carPosition, heading: cameraHeading, dt: dt)
         updateCarNodes()
         updateSteerGauge()
     }
@@ -1950,8 +2012,9 @@ final class ParkingScene: SKScene {
         let pitch = max(-0.07, min(0.07, longitudinalAccel * 0.00028))
         let roll = max(-0.06, min(0.06, lateralAccel * 0.00035))
         let reversing = gear == .reverse && velocity < -1
+        let (lift, airPitch) = carLift()
         localCar?.update(position: carPosition, heading: heading, steer: steer,
-                         pitch: pitch, roll: roll, braking: braking, reversing: reversing)
+                         pitch: pitch + airPitch, roll: roll, braking: braking, reversing: reversing, lift: lift)
         localTag.position = world.project(carPosition, height: 2.6)
 
         let showRemote = friendPresent
@@ -2019,10 +2082,36 @@ final class ParkingScene: SKScene {
         let targetSteer = wheelInput * maxSteer * speedFactor
         steer = approach(steer, targetSteer, steerRate * dt)
 
-        let yawRate = velocity / wheelBase * tan(steer)
+        // Drift: the handbrake breaks the rear loose above walking pace; the car then turns faster
+        // than it travels, and catches again when the slip is gone (counter-steer helps)
+        let handbrake = isPressed(.handbrake)
+        if !drifting { travelHeading = heading }
+        if handbrake && velocity > 40 && !drifting && airTime <= 0 { startDrift() }
+        var yawRate = velocity / wheelBase * tan(steer)
+        if drifting {
+            let grip = min(1, abs(velocity) / 90)
+            yawRate *= handbrake ? 1.9 : 1.5
+            if handbrake && abs(wheelInput) > 0.1 { yawRate += (wheelInput > 0 ? 1 : -1) * 1.1 * grip }
+            velocity -= velocity * (handbrake ? 0.45 : 0.12) * dt
+            if handbrake { braking = true }
+        }
+        if airTime > 0 { yawRate = 0 }   // no steering in the air
         let newHeading = heading + yawRate * dt
-        let newPosition = CGPoint(x: carPosition.x + cos(newHeading) * velocity * dt,
-                                  y: carPosition.y + sin(newHeading) * velocity * dt)
+        if drifting {
+            let catchUp: CGFloat = handbrake ? 0.9 : 2.2
+            travelHeading += CGFloat.angleDelta(travelHeading, newHeading) * min(1, catchUp * dt)
+            var slip = CGFloat.angleDelta(travelHeading, newHeading)
+            if abs(slip) > 1.25 {
+                slip = slip > 0 ? 1.25 : -1.25
+                travelHeading = newHeading - slip
+            }
+            driftClock += dt
+            driftScore += abs(velocity) * abs(slip) * dt * 0.9
+            if (!handbrake && abs(slip) < 0.07) || abs(velocity) < 20 { endDrift() }
+        }
+        let moveHeading = drifting ? travelHeading : newHeading
+        let newPosition = CGPoint(x: carPosition.x + cos(moveHeading) * velocity * dt,
+                                  y: carPosition.y + sin(moveHeading) * velocity * dt)
 
         let longitudinal = (velocity - previousVelocity) / max(dt, 0.001)
         longitudinalAccel += (longitudinal - longitudinalAccel) * min(1, dt * 8)
@@ -2087,6 +2176,7 @@ final class ParkingScene: SKScene {
                 dust(at: CGPoint(x: carPosition.x + cos(heading) * 22 * direction,
                                  y: carPosition.y + sin(heading) * 22 * direction))
                 crashed = crash(into: OBB(center: newPosition, size: Levels.carSize, angle: newHeading), impact: impact)
+                if impact > 40 { failDrift() }
                 if !crashed {
                     audio.play("bump", volume: Float(min(1, impact / 100 + 0.3)))
                     world?.shake(strength: min(6, impact / 20))
@@ -2100,6 +2190,8 @@ final class ParkingScene: SKScene {
         }
 
         applyCrashMotion(dt)
+        updateJump(dt)
+        updateDriftDisplay(dt)
 
         gearLabel.text = gear == .drive ? "D" : "R"
         gearLabel.fontColor = gear == .drive ? UIColor(red: 0.45, green: 0.95, blue: 0.6, alpha: 1)
@@ -2110,6 +2202,216 @@ final class ParkingScene: SKScene {
     private func approach(_ value: CGFloat, _ target: CGFloat, _ step: CGFloat) -> CGFloat {
         if value < target { return min(value + step, target) }
         return max(value - step, target)
+    }
+
+    // MARK: Drift, jumps, near misses, props and police
+
+    private func startDrift() {
+        drifting = true
+        driftScore = 0
+        driftClock = 0
+        travelHeading = heading
+        tickHaptic.impactOccurred(intensity: 0.7)
+    }
+
+    /// A finished drift: its points become nitro.
+    private func endDrift() {
+        guard drifting else { return }
+        drifting = false
+        lastDriftEnd = lastUpdate
+        lastDriftScore = driftScore
+        travelHeading = heading
+        let points = Int(driftScore.rounded())
+        if driftScore > 40 && driftClock > 0.4 {
+            nitro = min(1, nitro + min(0.6, driftScore / 1500))
+            flashBonus(Strings.driftBonus(points))
+            audio.play("whoosh", volume: 0.5)
+            notifyHaptic.notificationOccurred(.success)
+        }
+        driftScore = 0
+    }
+
+    /// A crash during a drift loses its points.
+    private func failDrift() {
+        guard drifting else { return }
+        drifting = false
+        lastDriftEnd = -10
+        lastDriftScore = 0
+        travelHeading = heading
+        if driftScore > 40 { flashBonus(Strings.driftLost) }
+        driftScore = 0
+    }
+
+    private func updateDriftDisplay(_ dt: CGFloat) {
+        if drifting && driftScore > 5 {
+            let points = Int(driftScore.rounded())
+            if points != shownDriftPoints {
+                shownDriftPoints = points
+                driftLabel.text = "\(Strings.driftLabel) \(points)"
+            }
+            if driftLabel.alpha < 1 {
+                driftLabel.removeAllActions()
+                driftLabel.alpha = 1
+                driftLabel.setScale(0.7)
+                driftLabel.run(.scale(to: 1, duration: 0.15))
+            }
+            // Thick tyre smoke from the rear wheels
+            driftSmokeClock += dt
+            if driftSmokeClock > 0.07 {
+                driftSmokeClock = 0
+                for side: CGFloat in [11, -11] {
+                    let point = CGPoint(x: carPosition.x - 14 * cos(heading) - side * sin(heading),
+                                        y: carPosition.y - 14 * sin(heading) + side * cos(heading))
+                    tyreSmoke(at: point)
+                }
+            }
+        } else if driftLabel.alpha > 0.01 && driftLabel.action(forKey: "out") == nil {
+            shownDriftPoints = -1
+            driftLabel.run(.sequence([.fadeAlpha(to: 0.002, duration: 0.25)]), withKey: "out")
+        }
+    }
+
+    private func tyreSmoke(at point: CGPoint) {
+        guard let screen = world?.project(point, height: 0.3) else { return }
+        let puff = SKSpriteNode(texture: dotTexture)
+        puff.size = CGSize(width: 16, height: 16)
+        puff.color = UIColor(white: 0.92, alpha: 1)
+        puff.colorBlendFactor = 1
+        puff.position = screen
+        puff.alpha = 0.42
+        fxLayer.addChild(puff)
+        puff.run(.sequence([
+            .group([.scale(to: 4.0, duration: 0.9), .fadeOut(withDuration: 0.9),
+                    .moveBy(x: CGFloat.random(in: -14...14), y: CGFloat.random(in: 4...20), duration: 0.9)]),
+            .removeFromParent()
+        ]))
+    }
+
+    /// Height of a ramp under a point (meters), and the distance along the ramp.
+    private func rampHeight(at p: CGPoint) -> CGFloat {
+        for ramp in level.ramps {
+            let along = ramp.alongX ? p.x - ramp.center.x : p.y - ramp.center.y
+            let across = ramp.alongX ? p.y - ramp.center.y : p.x - ramp.center.x
+            let half = RampDef.length / 2
+            let top = half * 0.25
+            guard abs(across) < RampDef.width / 2, abs(along) < half else { continue }
+            if abs(along) < top { return RampDef.height }
+            return RampDef.height * (half - abs(along)) / (half - top)
+        }
+        return 0
+    }
+
+    /// Takes off from the top of a ramp at speed; lands with a thump and a nitro bonus.
+    private func updateJump(_ dt: CGFloat) {
+        if airTime > 0 {
+            airTime -= dt
+            if airTime <= 0 {
+                airTime = 0
+                bumpHaptic.impactOccurred(intensity: 1.0)
+                audio.play("bump", volume: 0.8)
+                world?.shake(strength: 4)
+                dust(at: carPosition)
+                nitro = min(1, nitro + 0.2)
+                flashBonus(Strings.jump)
+            }
+            return
+        }
+        guard rampHeight(at: carPosition) >= RampDef.height - 0.01, abs(velocity) > 50, lastUpdate - rampCooldown > 1.2 else { return }
+        rampCooldown = lastUpdate
+        airDuration = 0.35 + abs(velocity) / 320
+        airPeak = min(3.2, abs(velocity) * 0.014)
+        airTime = airDuration
+        if drifting { endDrift() }
+        tickHaptic.impactOccurred(intensity: 1.0)
+    }
+
+    /// The car's height above the ground (on a ramp or in the air) and its pitch in the air.
+    private func carLift() -> (Float, CGFloat) {
+        if airTime > 0, airDuration > 0 {
+            let t = 1 - airTime / airDuration
+            let height = RampDef.height * (1 - t) + 4 * airPeak * t * (1 - t)
+            return (Float(height), 0.12 * (1 - 2 * t))
+        }
+        return (Float(rampHeight(at: carPosition)), 0)
+    }
+
+    /// Near misses, flying props, the police chase and the trail it follows.
+    private func updateArcade(_ dt: CGFloat, traffic: Traffic) {
+        let driving = phase == .driving && !localParked
+        let moveHeading = drifting ? travelHeading : heading
+        // Near miss: passing a car side by side with less than about a meter between them
+        if driving && abs(velocity) > 70 && airTime <= 0 {
+            for (index, bot) in traffic.bots.enumerated() {
+                let dx = bot.position.x - carPosition.x, dy = bot.position.y - carPosition.y
+                if abs(dx) > 60 || abs(dy) > 60 { continue }
+                let along = dx * cos(heading) + dy * sin(heading)
+                let across = -dx * sin(heading) + dy * cos(heading)
+                guard abs(along) < 20, abs(across) > 23, abs(across) < 34 else { continue }
+                guard lastUpdate - (nearMissAt[index] ?? -10) > 3, lastUpdate - lastHitAt > 1 else { continue }
+                nearMissAt[index] = lastUpdate
+                nitro = min(1, nitro + 0.12)
+                flashBonus(Strings.nearMiss)
+                audio.play("whoosh", volume: 0.8)
+                tickHaptic.impactOccurred(intensity: 0.8)
+            }
+        }
+        // Props: our car, the traffic and the police knock them over
+        if let props = streetProps {
+            var hitters: [(position: CGPoint, velocity: CGVector, heading: CGFloat)] = [
+                (carPosition, airTime > 0 ? .zero : CGVector(dx: cos(moveHeading) * velocity, dy: sin(moveHeading) * velocity), heading)
+            ]
+            for bot in traffic.bots where abs(bot.position.x - carPosition.x) < 800 && abs(bot.position.y - carPosition.y) < 800 {
+                hitters.append((bot.position, CGVector(dx: cos(bot.heading) * bot.speed, dy: sin(bot.heading) * bot.speed), bot.heading))
+            }
+            if props.step(dt, hitters: hitters) > 0 {
+                velocity *= 0.92
+                audio.play("bump", volume: 0.4)
+                tickHaptic.impactOccurred(intensity: 0.6)
+            }
+        }
+        // The trail the police follows
+        trailClock += dt
+        if trailClock > 0.1 && driving {
+            trailClock = 0
+            trail.append(carPosition)
+            if trail.count > 140 { trail.removeFirst(trail.count - 140) }
+        }
+        if let chase = police {
+            chase.extend(carPosition)
+            let outcome = chase.step(dt, playerSpeed: abs(velocity), player: carPosition)
+            audio.setLoop("siren", volume: Float(max(0.05, 0.6 - chase.gap / 1400)))
+            switch outcome {
+            case .caught:
+                hits += 2
+                hitsLabel.text = "\(hits)"
+                flashBonus(Strings.policeCaught)
+                notifyHaptic.notificationOccurred(.error)
+                endPoliceChase()
+            case .escaped:
+                nitro = 1
+                flashBonus(Strings.policeEscaped)
+                notifyHaptic.notificationOccurred(.success)
+                endPoliceChase()
+            case .none:
+                break
+            }
+        }
+    }
+
+    private func startPoliceChase() {
+        guard level.city != nil, let world = world, trail.count > 20, !localParked else { return }
+        // Starts about six seconds back along our own path
+        let path = Array(trail.suffix(60))
+        police = PoliceChase(car: world.makePoliceCar(), trail: path)
+        flashBonus(Strings.policeChase)
+        notifyHaptic.notificationOccurred(.warning)
+    }
+
+    private func endPoliceChase() {
+        guard let chase = police else { return }
+        police = nil
+        audio.setLoop("siren", volume: 0)
+        chase.car.node.runAction(.sequence([.wait(duration: 1.5), .fadeOut(duration: 0.6), .removeFromParentNode()]))
     }
 
     // MARK: Collisions
@@ -2157,6 +2459,7 @@ final class ParkingScene: SKScene {
     /// Car-on-car crash: always a clear reaction, stronger with the closing speed. We are knocked
     /// away from the other car and spun by the side of the hit; a traffic car takes our momentum.
     private func crashCar(_ impact: CarImpact) {
+        failDrift()
         let strength = max(0.3, min(1, impact.closing / (maxForward * 0.75)))
         let dx = impact.center.x - carPosition.x, dy = impact.center.y - carPosition.y
         let length = max(1, hypot(dx, dy))
@@ -2334,8 +2637,9 @@ final class ParkingScene: SKScene {
     private func tyreEffects(_ dt: CGFloat, accelerating: Bool) {
         let cornering = abs(lateralAccel) > 150 && abs(velocity) > 50
         let hardBrake = braking && abs(velocity) > 60
+        audio.setLoop("skid", volume: drifting ? 0.45 : (cornering || hardBrake ? 0.18 : 0))
         skidClock += dt
-        if (cornering || hardBrake) && skidClock > 0.03 {
+        if (cornering || hardBrake || drifting) && airTime <= 0 && skidClock > 0.03 {
             skidClock = 0
             for side: CGFloat in [10, -10] {
                 let point = CGPoint(x: carPosition.x - 13 * cos(heading) - side * sin(heading),
@@ -2446,6 +2750,14 @@ final class ParkingScene: SKScene {
     private func parked() {
         localParked = true
         localTime = elapsed
+        // Drifting into the spot (or the finish) takes 2 s off
+        if (drifting || lastUpdate - lastDriftEnd < 2.5) && max(driftScore, lastDriftScore) > 40 {
+            localTime = max(0, localTime - 2)
+            flashBonus(Strings.driftPark)
+        }
+        if drifting { endDrift() }
+        audio.setLoop("skid", volume: 0)
+        audio.setLoop("siren", volume: 0)
         if !level.race { velocity = 0 }
         braking = false
         longitudinalAccel = 0
@@ -2872,6 +3184,7 @@ final class ParkingScene: SKScene {
     private var speedCameras: [SpeedCamera] = []
     private var bonusLabel = SKLabelNode()
     private let cameraThreshold: CGFloat = 45   // km/h
+    private let policeThreshold: CGFloat = 70   // km/h
 
     /// Canisters on the lanes of a dozen street segments and speed cameras on a few others
     /// (same layout for both players: seeded by the level).
@@ -2943,6 +3256,9 @@ final class ParkingScene: SKScene {
             camera.flash.scale = SCNVector3(1, 1, 1)
             camera.flash.runAction(.sequence([.wait(duration: 0.12), .scale(to: 0.001, duration: 0.2)]))
             let speedText = "\(Int(kmh.rounded())) km/h"
+            if kmh >= policeThreshold && police == nil {
+                startPoliceChase()
+            }
             if kmh >= cameraThreshold {
                 nitro = min(1, nitro + 0.35)
                 audio.play("beep", volume: 0.8)

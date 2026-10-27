@@ -377,6 +377,67 @@ enum CityArt {
         }
     }
 
+    /// Yellow and black diagonal hazard stripes (jump ramps).
+    static let hazardStripes: UIImage = CarArt.image(CGSize(width: 128, height: 128), scale: 1) { context, s in
+        context.setFillColor(UIColor(red: 0.98, green: 0.78, blue: 0.1, alpha: 1).cgColor)
+        context.fill(CGRect(origin: .zero, size: s))
+        context.setFillColor(UIColor(white: 0.08, alpha: 1).cgColor)
+        // 45° stripes with a 64 px period: the 128 px tile repeats seamlessly
+        for k in stride(from: -3, through: 3, by: 1) {
+            let x = CGFloat(k) * 64
+            context.move(to: CGPoint(x: x, y: 0))
+            context.addLine(to: CGPoint(x: x + 32, y: 0))
+            context.addLine(to: CGPoint(x: x + 32 + s.height, y: s.height))
+            context.addLine(to: CGPoint(x: x + s.height, y: s.height))
+            context.closePath()
+            context.fillPath()
+        }
+    }
+
+    /// Night sky: deep blue-black, a warm city glow at the horizon, a scatter of stars.
+    static let nightSky: UIImage = CarArt.image(CGSize(width: 1024, height: 512), scale: 1) { context, s in
+        let colors = [UIColor(red: 0.01, green: 0.015, blue: 0.05, alpha: 1).cgColor,
+                      UIColor(red: 0.04, green: 0.06, blue: 0.14, alpha: 1).cgColor,
+                      UIColor(red: 0.20, green: 0.15, blue: 0.16, alpha: 1).cgColor,
+                      UIColor(red: 0.05, green: 0.05, blue: 0.06, alpha: 1).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.36, 0.5, 0.56]) {
+            context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: s.height), options: [.drawsAfterEndLocation])
+        }
+        var noise = Noise(state: 91)
+        for _ in 0..<260 {
+            let x = noise.next() * s.width
+            let y = noise.next() * s.height * 0.42
+            let size = 0.6 + noise.next() * 1.4
+            context.setFillColor(UIColor(white: 1, alpha: 0.35 + noise.next() * 0.6).cgColor)
+            context.fillEllipse(in: CGRect(x: x, y: y, width: size, height: size))
+        }
+    }
+
+    /// Overcast rain sky: flat grey with darker cloud bands.
+    static let rainSky: UIImage = CarArt.image(CGSize(width: 1024, height: 512), scale: 1) { context, s in
+        let colors = [UIColor(red: 0.30, green: 0.33, blue: 0.37, alpha: 1).cgColor,
+                      UIColor(red: 0.47, green: 0.50, blue: 0.54, alpha: 1).cgColor,
+                      UIColor(red: 0.62, green: 0.64, blue: 0.67, alpha: 1).cgColor,
+                      UIColor(red: 0.40, green: 0.42, blue: 0.43, alpha: 1).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.3, 0.5, 0.56]) {
+            context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: s.height), options: [.drawsAfterEndLocation])
+        }
+        var noise = Noise(state: 93)
+        for _ in 0..<40 {
+            let cx = noise.next() * s.width
+            let cy = s.height * (0.08 + noise.next() * 0.36)
+            let w = 120 + noise.next() * 220
+            let puff = [UIColor(white: 0.2, alpha: 0.22).cgColor, UIColor(white: 0.2, alpha: 0).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: puff, locations: [0, 1]) {
+                context.saveGState()
+                context.translateBy(x: cx, y: cy)
+                context.scaleBy(x: 1, y: 0.3)
+                context.drawRadialGradient(gradient, startCenter: .zero, startRadius: 0, endCenter: .zero, endRadius: w / 2, options: [])
+                context.restoreGState()
+            }
+        }
+    }
+
     /// Equirectangular sky: deep blue at the top, hazy horizon, soft clouds, and a ground tone below.
     static let sky: UIImage = CarArt.image(CGSize(width: 1024, height: 512), scale: 1) { context, s in
         let colors = [UIColor(red: 0.32, green: 0.56, blue: 0.92, alpha: 1).cgColor,

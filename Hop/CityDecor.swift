@@ -83,7 +83,8 @@ enum CityDecor {
             default: building(obstacle, solid: solid, ground: ground, rng: &rng)
             }
         }
-        sidewalks(city: city, world: level.world, solid: solid, ground: ground, rng: &rng)
+        sidewalks(city: city, world: level.world, alleys: level.alleys, solid: solid, ground: ground, rng: &rng)
+        alleys(level.alleys, ramps: level.ramps, solid: solid, ground: ground)
         roadDecals(city: city, world: level.world, ground: ground, rng: &rng)
         skyline(world: level.world, far: far, ground: ground, rng: &rng)
 
@@ -433,7 +434,7 @@ enum CityDecor {
 
     /// Street trees, benches, bins, hydrants and bus stops along every block edge, plus the soft
     /// shadow the curb throws onto the road.
-    private static func sidewalks(city: CityMap, world: CGSize, solid: MeshBuilder, ground: MeshBuilder, rng: inout SplitMix64) {
+    private static func sidewalks(city: CityMap, world: CGSize, alleys: [CGRect], solid: MeshBuilder, ground: MeshBuilder, rng: inout SplitMix64) {
         let lamps = lampPoints(city: city, world: world)
         let bin = color("bin", UIColor(red: 0.16, green: 0.30, blue: 0.22, alpha: 1), rough: 0.6)
         let hydrant = color("hydrant", UIColor(red: 0.85, green: 0.15, blue: 0.12, alpha: 1), rough: 0.5)
@@ -471,6 +472,12 @@ enum CityDecor {
                 var slot = 0
                 while t < length - 55 {
                     let p = CGPoint(x: start.x + dir.dx * t + inward.dx * 13, y: start.y + dir.dy * t + inward.dy * 13)
+                    // Alley mouths stay open
+                    if alleys.contains(where: { $0.insetBy(dx: -20, dy: -20).contains(p) }) {
+                        slot += 1
+                        t += 60
+                        continue
+                    }
                     let nearLamp = lamps.contains { abs($0.x - p.x) < 30 && abs($0.y - p.y) < 30 }
                     if slot % 2 == 0 {
                         if !nearLamp {
@@ -499,6 +506,62 @@ enum CityDecor {
                     slot += 1
                     t += 60
                 }
+            }
+        }
+    }
+
+    // MARK: Alleys and ramps
+
+    /// Shortcut lanes through blocks (asphalt between the building rows) with a jump ramp: a
+    /// concrete hump with yellow and black hazard stripes on its slopes.
+    private static func alleys(_ alleys: [CGRect], ramps: [RampDef], solid: MeshBuilder, ground: MeshBuilder) {
+        guard !alleys.isEmpty else { return }
+        let asphalt = material("alleyAsphalt") {
+            let material = World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.png", rough: "junction_rough.jpg")
+            for property in [material.diffuse, material.normal, material.roughness] {
+                property.wrapS = .repeat
+                property.wrapT = .repeat
+            }
+            return material
+        }
+        for alley in alleys {
+            ground.addDecal(center: v(CGPoint(x: alley.midX, y: alley.midY), 0.1), direction: SIMD2(1, 0),
+                            length: Float(alley.width / 10), width: Float(alley.height / 10), material: asphalt,
+                            uvScale: SIMD2(Float(alley.width / 200), Float(alley.height / 200)))
+        }
+        let stripes = material("rampStripes") {
+            let material = Mat.pbr(.white, rough: 0.6)
+            material.diffuse.contents = CityArt.hazardStripes
+            material.diffuse.wrapS = .repeat
+            material.diffuse.wrapT = .repeat
+            material.isDoubleSided = true
+            return material
+        }
+        let concrete = color("rampConcrete", UIColor(white: 0.62, alpha: 1), rough: 0.9)
+        for ramp in ramps {
+            let c = v(ramp.center, 0.1)
+            let half = Float(RampDef.length / 20)          // meters
+            let top = half * 0.25
+            let w = Float(RampDef.width / 20)
+            let h = Float(RampDef.height)
+            // Along scene x (world x); across scene z
+            func p(_ x: Float, _ y: Float, _ z: Float) -> SIMD3<Float> {
+                ramp.alongX ? SIMD3(c.x + x, c.y + y, c.z + z) : SIMD3(c.x + z, c.y + y, c.z - x)
+            }
+            let up = simd_normalize(SIMD3<Float>(-h, half - top, 0))
+            let down = simd_normalize(SIMD3<Float>(h, half - top, 0))
+            func n(_ v: SIMD3<Float>) -> SIMD3<Float> { ramp.alongX ? v : SIMD3(v.z, v.y, -v.x) }
+            let reps = SIMD2<Float>(1, w)
+            solid.addQuad([p(-half, 0, w), p(-half, 0, -w), p(-top, h, -w), p(-top, h, w)], normal: n(up),
+                          uv: [SIMD2(0, 0), SIMD2(0, reps.y), SIMD2(1, reps.y), SIMD2(1, 0)], material: stripes)
+            solid.addQuad([p(-top, h, w), p(-top, h, -w), p(top, h, -w), p(top, h, w)], normal: SIMD3(0, 1, 0),
+                          uv: [SIMD2(0, 0), SIMD2(0, 1), SIMD2(1, 1), SIMD2(1, 0)], material: concrete)
+            solid.addQuad([p(top, h, w), p(top, h, -w), p(half, 0, -w), p(half, 0, w)], normal: n(down),
+                          uv: [SIMD2(0, 0), SIMD2(0, reps.y), SIMD2(1, reps.y), SIMD2(1, 0)], material: stripes)
+            // Sides (trapezoids as quads)
+            for side: Float in [-1, 1] {
+                solid.addQuad([p(-half, 0, w * side), p(-top, h, w * side), p(top, h, w * side), p(half, 0, w * side)],
+                              normal: n(SIMD3(0, 0, side)), uv: [SIMD2(0, 0), SIMD2(0, 1), SIMD2(1, 1), SIMD2(1, 0)], material: concrete)
             }
         }
     }
