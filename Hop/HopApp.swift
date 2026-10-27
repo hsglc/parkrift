@@ -157,6 +157,8 @@ final class AppModel: ObservableObject {
             newScene.scaleMode = .resizeFill
             newScene.configure(model: self, world: newWorld, online: self.online, slot: self.mySlot,
                                isHost: self.isHost || !self.online, level: level)
+            // scene/world are not @Published: tell SwiftUI so the game views get created
+            self.objectWillChange.send()
             self.world = newWorld
             self.scene = newScene
         }
