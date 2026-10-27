@@ -922,6 +922,13 @@ final class World3D {
         buildScenery()
         scene.rootNode.addChildNode(levelRoot)
         scene.rootNode.addChildNode(fxRoot)
+        // A tiny skid mark always in front of the camera: its material is then compiled with the
+        // level, not on the first skid (which stalled the race around the first corner)
+        let warmSkid = SCNNode(geometry: skidGeometry)
+        warmSkid.scale = SCNVector3(0.001, 0.001, 0.001)
+        warmSkid.position = SCNVector3(0, 0, -3)
+        warmSkid.castsShadow = false
+        cameraNode.addChildNode(warmSkid)
 
         let camera = SCNCamera()
         camera.fieldOfView = fieldOfView
@@ -1986,6 +1993,7 @@ final class World3D {
     }
 
     func addSkid(at point: CGPoint) {
+        if PerfSettings.benchmark { FrameMonitor.shared.mark("skid") }
         let mark = SCNNode(geometry: skidGeometry)
         mark.eulerAngles.x = -Float.pi / 2
         mark.position = World3D.vec(point, y: 0.015)
