@@ -1650,14 +1650,38 @@ final class World3D {
         levelRoot.addChildNode(holder)
     }
 
+    /// Physically based asphalt with its normal and roughness maps (one material per call).
+    static func asphaltMaterial(albedo: String, normal: String, rough: String) -> SCNMaterial {
+        let material = SCNMaterial()
+        material.lightingModel = .physicallyBased
+        material.diffuse.contents = UIImage(named: albedo)
+        material.normal.contents = UIImage(named: normal)
+        material.normal.intensity = 0.8
+        material.roughness.contents = UIImage(named: rough)
+        material.metalness.contents = NSNumber(value: 0)
+        for property in [material.diffuse, material.normal, material.roughness] {
+            property.mipFilter = .linear
+            property.maxAnisotropy = 8
+        }
+        return material
+    }
+
     /// Streets, intersections, sidewalks and edge barriers for a city level.
     private func buildCity(_ city: CityMap, world: CGSize) {
-        let roadTexture = CityArt.road
         let roadWidth = CityMap.roadHalf * 2
+        // Realistic asphalt (tools/make_road_textures.py): albedo, normal and roughness maps for
+        // a 20 m tile repeated along the street, and a large stain map that hides the repeat
         func roadMaterial(length: CGFloat) -> SCNMaterial {
-            let material = Mat.lambert(roadTexture)
-            material.diffuse.wrapS = .repeat
-            material.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(length / roadWidth), 1, 1)
+            let material = World3D.asphaltMaterial(albedo: "road_albedo.jpg", normal: "road_normal.png", rough: "road_rough.jpg")
+            let repeatAlong = SCNMatrix4MakeScale(Float(length / roadWidth), 1, 1)
+            for property in [material.diffuse, material.normal, material.roughness] {
+                property.wrapS = .repeat
+                property.contentsTransform = repeatAlong
+            }
+            material.multiply.contents = UIImage(named: "street_stains.jpg")
+            material.multiply.wrapS = .repeat
+            material.multiply.wrapT = .repeat
+            material.multiply.contentsTransform = SCNMatrix4MakeScale(Float(length / 1200), Float(roadWidth / 1200), 1)
             return material
         }
         let ground = SCNNode()
@@ -1670,25 +1694,26 @@ final class World3D {
             node.position.z = center.z
             ground.addChildNode(node)
         }
-        // North-south streets: a plane laid out along z with a texture drawn along V
-        // (rotating the east-west plane left these streets invisible).
-        let verticalTexture = CityArt.roadVertical
+        // North-south streets: the same plane turned a quarter around a holder (so the texture and
+        // its normal map run along the street)
         for x in city.xs {
-            let plane = SCNPlane(width: roadWidth / 10, height: world.height / 10)
-            let material = Mat.lambert(verticalTexture)
-            material.diffuse.wrapT = .repeat
-            material.diffuse.contentsTransform = SCNMatrix4MakeScale(1, Float(world.height / roadWidth), 1)
-            plane.materials = [material]
+            let plane = SCNPlane(width: world.height / 10, height: roadWidth / 10)
+            plane.materials = [roadMaterial(length: world.height)]
             let node = flat(plane, y: 0.02)
+            let holder = SCNNode()
+            holder.eulerAngles.y = Float.pi / 2
+            holder.addChildNode(node)
             let center = World3D.vec(CGPoint(x: x, y: world.height / 2))
-            node.position.x = center.x
-            node.position.z = center.z
-            ground.addChildNode(node)
+            holder.position = SCNVector3(center.x, 0, center.z)
+            ground.addChildNode(holder)
         }
         let junction = SCNPlane(width: roadWidth / 10, height: roadWidth / 10)
-        junction.materials = [Mat.lambert(CityArt.junction)]
+        junction.materials = [World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.png", rough: "junction_rough.jpg")]
         let stripe = SCNPlane(width: 0.5, height: 3.2)
-        stripe.materials = [Mat.lambert(UIColor(white: 0.93, alpha: 1))]
+        // Worn white paint on asphalt
+        let zebra = Mat.pbr(.white, metal: 0, rough: 0.7)
+        zebra.diffuse.contents = UIImage(named: "zebra_albedo.jpg")
+        stripe.materials = [zebra]
         for x in city.xs {
             for y in city.ys {
                 let node = flat(junction, y: 0.03)

@@ -2028,6 +2028,25 @@ final class ParkingScene: SKScene {
         longitudinalAccel += (longitudinal - longitudinalAccel) * min(1, dt * 8)
         lateralAccel += (velocity * yawRate - lateralAccel) * min(1, dt * 8)
 
+        // Hitting another car is handled first, from the speed at which the two cars close in
+        // (head-on, glancing or from behind alike), so every real car crash reacts the same way
+        if let impact = carImpact(OBB(center: newPosition, size: Levels.carSize, angle: newHeading), to: newPosition) {
+            // A real crash (not just leaning on a stopped car); the same rule for every car
+            if impact.closing > 22 && lastUpdate - lastHitAt > 0.45 {
+                lastHitAt = lastUpdate
+                hits += 1
+                if benchmark { FrameMonitor.shared.mark("hit") }
+                hitsLabel.text = "\(hits)"
+                crashCar(impact)
+            }
+            // Most of our momentum goes into the crash; we do not drive into the other car
+            velocity *= 0.3
+            applyCrashMotion(dt)
+            gearLabel.text = gear == .drive ? "D" : "R"
+            tyreEffects(dt, accelerating: gasDown || reverseDown)
+            return
+        }
+
         // Scraping along a curb, wall or parked car: keep the free axis instead of stopping dead
         var slid = false
         var lostSpeed = abs(velocity)
@@ -2094,6 +2113,70 @@ final class ParkingScene: SKScene {
     }
 
     // MARK: Collisions
+
+    private struct CarImpact {
+        let contact: Contact
+        let center: CGPoint
+        let otherVelocity: CGVector
+        /// Speed at which the two cars approach each other (world units/s).
+        let closing: CGFloat
+    }
+
+    /// A moving car (traffic or friend) the move would run into, with the closing speed.
+    private func carImpact(_ box: OBB, to newPosition: CGPoint) -> CarImpact? {
+        let mine = CGVector(dx: cos(heading) * velocity, dy: sin(heading) * velocity)
+        var best: CarImpact?
+        for contact in contacts(box) {
+            var other: CGVector
+            switch contact {
+            case .bot(let index):
+                guard let bots = traffic?.bots, index < bots.count else { continue }
+                let bot = bots[index]
+                other = CGVector(dx: cos(bot.heading) * bot.speed, dy: sin(bot.heading) * bot.speed)
+            case .remoteCar:
+                let v = remoteSnapshots.last?.velocity ?? 0
+                other = CGVector(dx: cos(remoteHeading) * v, dy: sin(remoteHeading) * v)
+            default:
+                continue
+            }
+            guard let c = center(of: contact) else { continue }
+            let dx = c.x - carPosition.x, dy = c.y - carPosition.y
+            let length = max(1, hypot(dx, dy))
+            let closing = ((mine.dx - other.dx) * dx + (mine.dy - other.dy) * dy) / length
+            // Only when we actually move into it (otherwise the cars just separate)
+            let oldDistance = hypot(carPosition.x - c.x, carPosition.y - c.y)
+            let newDistance = hypot(newPosition.x - c.x, newPosition.y - c.y)
+            guard closing > 10 || newDistance < oldDistance - 0.01 else { continue }
+            if best == nil || closing > best!.closing {
+                best = CarImpact(contact: contact, center: c, otherVelocity: other, closing: closing)
+            }
+        }
+        return best
+    }
+
+    /// Car-on-car crash: always a clear reaction, stronger with the closing speed. We are knocked
+    /// away from the other car and spun by the side of the hit; a traffic car takes our momentum.
+    private func crashCar(_ impact: CarImpact) {
+        let strength = max(0.3, min(1, impact.closing / (maxForward * 0.75)))
+        let dx = impact.center.x - carPosition.x, dy = impact.center.y - carPosition.y
+        let length = max(1, hypot(dx, dy))
+        let nx = dx / length, ny = dy / length
+        let side = cos(heading) * dy - sin(heading) * dx          // > 0: the hit is on our left
+        let forwardness = cos(heading) * nx + sin(heading) * ny
+        let spinSign: CGFloat = side >= 0 ? -1 : 1
+        crashSpin = spinSign * (1.8 + 3.2 * strength) * (0.6 + 0.4 * (1 - abs(forwardness)))
+        let push = 70 + 160 * strength
+        crashShove = CGVector(dx: -nx * push + impact.otherVelocity.dx * 0.3, dy: -ny * push + impact.otherVelocity.dy * 0.3)
+        if case .bot(let index) = impact.contact {
+            let kick = 40 + impact.closing * 0.6
+            traffic?.hit(index, shove: CGVector(dx: nx * kick, dy: ny * kick), spin: -spinSign * (1.4 + 2.4 * strength))
+        }
+        audio.play("crash", volume: Float(min(1, 0.45 + strength * 0.6)))
+        bumpHaptic.impactOccurred(intensity: min(1, 0.6 + strength * 0.4))
+        world?.shake(strength: 3 + 7 * strength)
+        sparks(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
+        dust(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
+    }
 
     /// A real crash (into a car, or a wall at speed): crunch sound, a shove away from the hit and a
     /// spin that depends on where the hit landed, like arcade racers. The traffic car we hit is
