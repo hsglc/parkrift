@@ -400,6 +400,8 @@ struct GarageView: View {
     }
 
     private var carStrip: some View {
+        ScrollViewReader { proxy in
+        ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 8) {
             ForEach(CarSpec.all, id: \.id) { car in
                 let selected = car.id == choice.model
@@ -436,7 +438,17 @@ struct GarageView: View {
                     }
                 }
                 .buttonStyle(PressScaleStyle())
+                .id(car.id)
             }
+        }
+        .padding(.vertical, 3)
+        .padding(.trailing, 12)
+        }
+        .frame(maxWidth: 420)
+        .onAppear { proxy.scrollTo(choice.model, anchor: .center) }
+        .onChange(of: choice.model) { _, id in
+            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) }
+        }
         }
     }
 
@@ -479,7 +491,7 @@ struct GarageView: View {
                     .tracking(1.5)
                     .foregroundStyle(.white.opacity(0.55))
                 Spacer()
-                Text(CarSpec.paints[choice.paint].name.uppercased())
+                Text(spec.fixedLivery ? Strings.factoryLivery.uppercased() : CarSpec.paints[choice.paint].name.uppercased())
                     .font(.race(13, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.85))
             }
@@ -504,6 +516,8 @@ struct GarageView: View {
                 }
             }
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: choice.paint)
+            .opacity(spec.fixedLivery ? 0.3 : 1)
+            .allowsHitTesting(!spec.fixedLivery)
 
             Spacer(minLength: 6)
             Button {

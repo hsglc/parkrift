@@ -688,7 +688,7 @@ final class ParkingScene: SKScene {
             traffic = newTraffic
             for (index, bot) in newTraffic.bots.enumerated() {
                 botCars.append(world.makeCar(color: CarArt.parkedColors[bot.tint % CarArt.parkedColors.count],
-                                             style: CarStyle(rawValue: index % 3) ?? .sedan))
+                                             style: CarStyle(rawValue: index % 3) ?? .sedan, variety: index &* 7 &+ bot.tint))
             }
         }
         // People on the sidewalks (each player simulates their own: they are scenery that reacts)

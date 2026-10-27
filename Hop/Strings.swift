@@ -117,8 +117,8 @@ enum Strings {
     static var enterCode: String { t("Kodu gir", "Enter code") }
     static var createRoomSub: String { t("Bir oda kodu oluştur ve arkadaşına gönder.", "Create a room code and send it to your friend.") }
     static var joinRoomSub: String { t("Arkadaşının verdiği 4 harfli kodu yaz.", "Type the 4-letter code your friend gave you.") }
-    static var credits: String { t("Araba modelleri: \"Ferrari 458 Italia\" — vicent091036, CC BY 4.0 · \"Car Concept\" — Khronos Group, CC BY 4.0 · \"Toy Car\" — Khronos, CC0 (değiştirildi)",
-                                     "Car models: \"Ferrari 458 Italia\" by vicent091036, CC BY 4.0 · \"Car Concept\" by Khronos Group, CC BY 4.0 · \"Toy Car\" by Khronos, CC0 (modified)") }
+    static var credits: String { t("Araba modelleri: \"Ferrari 458 Italia\" — vicent091036, CC BY 4.0 · \"Car Concept\" — Khronos Group, CC BY 4.0 · \"Toy Car\" — Khronos, CC0 · Car Kit — Kenney, CC0 (değiştirildi)",
+                                     "Car models: \"Ferrari 458 Italia\" by vicent091036, CC BY 4.0 · \"Car Concept\" by Khronos Group, CC BY 4.0 · \"Toy Car\" by Khronos, CC0 · Car Kit by Kenney, CC0 (modified)") }
 
     // Garage
     static var garage: String { t("Garaj", "Garage") }
@@ -155,4 +155,7 @@ enum Strings {
     static func radarBonus(_ speed: String) -> String { t("RADAR \(speed) · +NİTRO", "SPEED CAM \(speed) · +NITRO") }
     static func radarSlow(_ speed: String, _ need: Int) -> String { t("RADAR \(speed) · \(need)+ gerek", "SPEED CAM \(speed) · need \(need)+") }
     static var pedestrianHit: String { t("DİKKAT! YAYA · +1 KAZA", "WATCH OUT! · +1 CRASH") }
+    static var police: String { t("POLİS", "POLICE") }
+    static var taxi: String { t("TAKSİ", "CAB") }
+    static var factoryLivery: String { t("Özel boya", "Signature livery") }
 }

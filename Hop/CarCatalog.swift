@@ -1,12 +1,17 @@
 import SceneKit
 import UIKit
 
-/// The three player cars in the garage. Models are converted from free assets by
-/// tools/convert_cars.py (see README credits); the numbers below come from that script's output.
+/// The player cars in the garage. Models are converted from free assets by tools/convert_cars.py
+/// and tools/convert_kenney.py (see README credits); the numbers come from those scripts.
 enum CarModelID: Int, CaseIterable {
     case italia
     case concept
     case retro
+    case streetGT
+    case hotHatch
+    case highlander
+    case pursuit
+    case cab
 }
 
 /// A car plus paint, as picked in the garage (and sent to the friend online).
@@ -78,6 +83,13 @@ struct CarSpec {
     let nitroFill: CGFloat
     /// Painted through a tinted texture instead of a paint material.
     let textured: Bool
+    /// Texture painted by tinting: grey base with the paint areas and their mask.
+    var textureBase: String? = nil
+    var textureMask: String? = nil
+    /// Keeps its own colors (police, taxi): no paint choice.
+    var fixedLivery = false
+    /// Body height, for the garage camera and lights.
+    var height: Float = 1.2
 
     struct Paint {
         let name: String
@@ -116,8 +128,39 @@ struct CarSpec {
                              (-1.198, 0.301, -0.858, false), (-1.198, 0.301, 0.858, false)],
                 wheelRadius: 0.301, wheelModelSide: -1,
                 exhausts: [SCNVector3(-2.22, 0.3, 0.45)],
-                topSpeed: 0.94, acceleration: 1.07, steering: 1.08, nitroPower: 1.1, nitroFill: 0.85, textured: true)
+                topSpeed: 0.94, acceleration: 1.07, steering: 1.08, nitroPower: 1.1, nitroFill: 0.85, textured: true,
+                textureBase: "retro_basecolor.jpg", textureMask: "retro_mask.png", height: 1.33),
+        kenney(.streetGT, "sedan_sports", name: "Street GT", maker: "TURBO", className: "A",
+               stats: CarStats(speed: 0.82, acceleration: 0.86, handling: 0.84, nitro: 0.78),
+               tuning: (0.98, 1.03, 1.03, 1.0, 0.95), tintable: true),
+        kenney(.hotHatch, "hatchback_sports", name: "Hot Hatch", maker: "ZIP", className: "B",
+               stats: CarStats(speed: 0.74, acceleration: 0.94, handling: 0.96, nitro: 0.82),
+               tuning: (0.95, 1.07, 1.08, 1.02, 0.92), tintable: true),
+        kenney(.highlander, "suv_luxury", name: "Highlander", maker: "TERRA", className: "B",
+               stats: CarStats(speed: 0.70, acceleration: 0.78, handling: 0.72, nitro: 0.92),
+               tuning: (0.93, 0.97, 0.95, 1.12, 0.85), tintable: true),
+        kenney(.pursuit, "police", name: "Pursuit", maker: Strings.police, className: "A",
+               stats: CarStats(speed: 0.88, acceleration: 0.84, handling: 0.78, nitro: 0.84),
+               tuning: (1.02, 1.0, 0.98, 1.04, 0.95), tintable: false),
+        kenney(.cab, "taxi", name: "City Cab", maker: Strings.taxi, className: "C",
+               stats: CarStats(speed: 0.70, acceleration: 0.80, handling: 0.90, nitro: 1.0),
+               tuning: (0.92, 1.0, 1.05, 1.15, 0.8), tintable: false)
     ]
+
+    /// A garage car from Kenney's Car Kit (sizes from the generated KenneyCatalog).
+    private static func kenney(_ id: CarModelID, _ vehicle: String, name: String, maker: String, className: String,
+                               stats: CarStats, tuning: (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat), tintable: Bool) -> CarSpec {
+        let v = KenneyCatalog.all[vehicle]
+        let rear = v?.rear ?? -2.2
+        return CarSpec(id: id, file: "kenney_" + vehicle, name: name, maker: maker, className: className, stats: stats,
+                       wheelSpots: v?.wheels ?? [], wheelRadius: v?.wheelRadius ?? 0.39, wheelModelSide: v?.wheelModelSide ?? -1,
+                       exhausts: [SCNVector3(rear - 0.02, 0.36, 0.32), SCNVector3(rear - 0.02, 0.36, -0.32)],
+                       topSpeed: tuning.0, acceleration: tuning.1, steering: tuning.2, nitroPower: tuning.3, nitroFill: tuning.4,
+                       textured: true,
+                       textureBase: tintable ? "kenney_\(vehicle)_base.png" : nil,
+                       textureMask: tintable ? "kenney_\(vehicle)_mask.png" : nil,
+                       fixedLivery: !tintable, height: v?.height ?? 1.6)
+    }
 
     static func of(_ id: CarModelID) -> CarSpec { all[id.rawValue] }
 }
@@ -152,12 +195,13 @@ enum CarModels {
     static func preload(completion: @escaping () -> Void) {
         // Shared materials are created here on the main thread first
         _ = [CarShapes.canopy, CarShapes.led, CarShapes.chrome, CarShapes.carbon, CarShapes.trim, CarShapes.graphite,
-             tire, rim, caliper, interior, accent, retroWheel]
+             tire, rim, caliper, interior, accent, retroWheel, kenney]
         DispatchQueue.global(qos: .userInitiated).async {
             for id in CarModelID.allCases {
                 _ = body(id)
                 _ = wheel(id)
             }
+            TrafficVehicles.preload()
             DispatchQueue.main.async { completion() }
         }
     }
@@ -196,7 +240,18 @@ enum CarModels {
         return material
     }()
 
-    private static func load(_ name: String) -> SCNNode? {
+    /// Kenney's palette texture, shared by every Kenney vehicle.
+    static let kenney: SCNMaterial = {
+        let material = SCNMaterial()
+        material.lightingModel = .physicallyBased
+        material.diffuse.contents = UIImage(named: "kenney_colormap.png")
+        material.diffuse.magnificationFilter = .nearest
+        material.metalness.contents = NSNumber(value: 0.15)
+        material.roughness.contents = NSNumber(value: 0.42)
+        return material
+    }()
+
+    static func load(_ name: String) -> SCNNode? {
         guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
               let scene = try? SCNScene(url: url, options: nil) else { return nil }
         let holder = SCNNode()
@@ -205,7 +260,7 @@ enum CarModels {
             "glass": CarShapes.canopy, "headlight": CarShapes.led, "chrome": CarShapes.chrome,
             "carbon": CarShapes.carbon, "darkplastic": CarShapes.trim, "metal": CarShapes.graphite,
             "tire": tire, "rim": rim, "caliper": caliper, "hub": CarShapes.chrome,
-            "paint": Mat.pbr(.gray), "paint2": accent, "textured": retroWheel, "interior": interior,
+            "paint": Mat.pbr(.gray), "paint2": accent, "textured": retroWheel, "interior": interior, "kenney": kenney,
             "taillight": Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
         ]
         holder.enumerateHierarchy { node, _ in
@@ -223,51 +278,60 @@ enum CarModels {
         return holder
     }
 
-    private static var retroPaints: [String: SCNMaterial] = [:]
+    private static var paints: [String: SCNMaterial] = [:]
     private static let textureLock = NSLock()
-    private static var retroTextures: [String: UIImage] = [:]
+    private static var tintedTextures: [String: UIImage] = [:]
 
-    /// Draws the retro car's texture in every paint on a background thread, so picking a color
-    /// in the garage (or loading a race) does not draw a 1024² image on the main thread.
+    /// Draws the tinted textures of the saved car (every paint) on a background thread, so
+    /// picking a color does not draw an image on the main thread.
     static func prewarmRetroTextures() {
         let colors = CarSpec.paints.map { $0.color }
+        let specs = CarSpec.all.filter { $0.textureBase != nil }
         DispatchQueue.global(qos: .utility).async {
-            for color in colors {
-                let key = CarFactory.colorKey(color)
-                textureLock.lock()
-                let done = retroTextures[key] != nil
-                textureLock.unlock()
-                if done { continue }
-                guard let image = tintedRetroTexture(color) else { continue }
-                textureLock.lock()
-                retroTextures[key] = image
-                textureLock.unlock()
+            for spec in specs {
+                guard let base = spec.textureBase, let mask = spec.textureMask else { continue }
+                for color in colors {
+                    let key = base + CarFactory.colorKey(color)
+                    textureLock.lock()
+                    let done = tintedTextures[key] != nil
+                    textureLock.unlock()
+                    if done { continue }
+                    guard let image = tintedTexture(base: base, mask: mask, color: color) else { continue }
+                    textureLock.lock()
+                    tintedTextures[key] = image
+                    textureLock.unlock()
+                }
             }
         }
     }
 
-    /// The retro car's texture with its body areas tinted `color` (decals, chrome and tyres keep
-    /// their own colors). Made once per color.
-    static func retroPaint(_ color: UIColor) -> SCNMaterial {
-        let key = CarFactory.colorKey(color)
-        if let cached = retroPaints[key] { return cached }
+    /// The retro car in a paint (kept for callers that only know the color).
+    static func retroPaint(_ color: UIColor) -> SCNMaterial { texturePaint(CarSpec.of(.retro), color) }
+
+    /// Material for a textured car: its texture with the paint areas tinted `color`, or the
+    /// plain Kenney palette for cars with a fixed livery. Made once per car and color.
+    static func texturePaint(_ spec: CarSpec, _ color: UIColor) -> SCNMaterial {
+        guard let base = spec.textureBase, let mask = spec.textureMask else { return kenney }
+        let key = base + CarFactory.colorKey(color)
+        if let cached = paints[key] { return cached }
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
         textureLock.lock()
-        let ready = retroTextures[key]
+        let ready = tintedTextures[key]
         textureLock.unlock()
-        material.diffuse.contents = ready ?? tintedRetroTexture(color)
+        material.diffuse.contents = ready ?? tintedTexture(base: base, mask: mask, color: color)
+        if base.hasPrefix("kenney") { material.diffuse.magnificationFilter = .nearest }
         material.metalness.contents = NSNumber(value: 0.35)
         material.roughness.contents = NSNumber(value: 0.3)
         material.clearCoat.contents = NSNumber(value: 0.8)
         material.clearCoatRoughness.contents = NSNumber(value: 0.08)
-        retroPaints[key] = material
+        paints[key] = material
         return material
     }
 
-    private static func tintedRetroTexture(_ color: UIColor) -> UIImage? {
-        guard let base = UIImage(named: "retro_basecolor.jpg")?.cgImage,
-              let mask = UIImage(named: "retro_mask.png")?.cgImage else { return nil }
+    private static func tintedTexture(base baseName: String, mask maskName: String, color: UIColor) -> UIImage? {
+        guard let base = UIImage(named: baseName)?.cgImage,
+              let mask = UIImage(named: maskName)?.cgImage else { return nil }
         let size = CGSize(width: base.width, height: base.height)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1

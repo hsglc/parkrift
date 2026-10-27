@@ -669,16 +669,54 @@ final class Car3D {
     /// Swaps the paint material only (no new geometry, no new shader).
     func setPaint(_ color: UIColor) {
         paintedNode?.geometry?.materials = [CarFactory.racerPaint(color)]
-        texturedNode?.geometry?.materials = [CarModels.retroPaint(color)]
+        if let spec = carSpec { texturedNode?.geometry?.materials = [CarModels.texturePaint(spec, color)] }
     }
+    private var carSpec: CarSpec?
 
     /// `model`: which garage car a player's racer uses.
-    init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false, model carModel: CarModelID = .italia) {
+    init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false, model carModel: CarModelID = .italia,
+         variety: Int = 0) {
         brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
         reverseMaterial = Mat.glow(UIColor(white: 0.35, alpha: 1))
         node.addChildNode(body)
         let model = style == .racer ? CarModels.body(carModel) : nil
         let spec = CarSpec.of(carModel)
+        carSpec = spec
+
+        // Traffic and parked cars: Kenney vehicles
+        if style != .racer, PerfSettings.optimized, let vehicle = TrafficVehicles.pick(variety &* 31 &+ style.rawValue),
+           let template = TrafficVehicles.body(vehicle.id) {
+            if parked {
+                if let flat = TrafficVehicles.parked(vehicle) { body.addChildNode(flat.clone()) }
+                return
+            }
+            body.addChildNode(template.clone())
+            var lights: [SCNNode] = []
+            let tailX = vehicle.rear - 0.01
+            for z in [vehicle.width * 0.3, -vehicle.width * 0.3] {
+                lights.append(CarFactory.box(0.05, 0.14, 0.3, 0.02, brakeMaterial, at: SCNVector3(tailX, 0.72, z), to: body))
+            }
+            lights.append(CarFactory.box(0.05, 0.08, 0.22, 0.02, reverseMaterial, at: SCNVector3(tailX, 0.55, 0), to: body))
+            for light in lights { light.castsShadow = false }
+            detailNodes += lights
+            if let wheelModel = TrafficVehicles.wheel(vehicle.id) {
+                wheelRadius = CGFloat(vehicle.wheelRadius)
+                for spot in vehicle.wheels {
+                    let pivot = SCNNode()
+                    pivot.position = SCNVector3(spot.0, spot.1, spot.2)
+                    let spinner = SCNNode()
+                    let wheel = wheelModel.clone()
+                    if (spot.2 > 0) != (vehicle.wheelModelSide > 0) { wheel.eulerAngles.y = Float.pi }
+                    spinner.addChildNode(wheel)
+                    pivot.addChildNode(spinner)
+                    node.addChildNode(pivot)
+                    detailNodes.append(pivot)
+                    spinNodes.append(spinner)
+                    if spot.3 { steerPivots.append(pivot) }
+                }
+            }
+            return
+        }
 
         if let model = model {
             // Real car model: per-car paint and brake-light materials on copies of those meshes
@@ -688,9 +726,10 @@ final class Car3D {
                 paintNode.geometry?.materials = [CarFactory.racerPaint(color)]
                 paintedNode = paintNode
             }
-            if let textured = car.childNode(withName: "textured", recursively: true) {
+            if let textured = car.childNode(withName: "textured", recursively: true)
+                ?? car.childNode(withName: "kenney", recursively: true) {
                 textured.geometry = textured.geometry?.copy() as? SCNGeometry
-                textured.geometry?.materials = [CarModels.retroPaint(color)]
+                textured.geometry?.materials = [CarModels.texturePaint(spec, color)]
                 texturedNode = textured
             }
             if let tail = car.childNode(withName: "taillight", recursively: true) {
@@ -747,7 +786,7 @@ final class Car3D {
                 lights.append(CarFactory.box(0.05, 0.05, 0.3, 0.02, reverseMaterial, at: SCNVector3(-2.27, tailY - 0.11, 0), to: body))
             } else {
                 lights.append(CarFactory.box(0.04, 0.04, 0.22, 0.01, reverseMaterial, at: SCNVector3(-2.2, 0.62, 0), to: body))
-                if spec.textured {
+                if spec.id == .retro {
                     // The retro car's lamps are painted in its texture; lit lenses on top of them
                     for z: Float in [0.84, -0.84] {
                         lights.append(CarFactory.box(0.05, 0.16, 0.12, 0.03, brakeMaterial, at: SCNVector3(-2.16, 0.74, z), to: body))
@@ -1345,8 +1384,8 @@ final class World3D {
 
     // MARK: Level
 
-    func makeCar(color: UIColor, style: CarStyle = .sedan, model: CarModelID = .italia) -> Car3D {
-        let car = Car3D(color: color, style: style, model: model)
+    func makeCar(color: UIColor, style: CarStyle = .sedan, model: CarModelID = .italia, variety: Int = 0) -> Car3D {
+        let car = Car3D(color: color, style: style, model: model, variety: variety)
         scene.rootNode.addChildNode(car.node)
         return car
     }
@@ -1460,7 +1499,7 @@ final class World3D {
             case .car:
                 let car = Car3D(color: CarArt.parkedColors[obstacle.tint % CarArt.parkedColors.count],
                                 style: CarStyle(rawValue: (obstacle.tint + Int(obstacle.center.x)) % 3) ?? .sedan,
-                                parked: true)
+                                parked: true, variety: obstacle.tint &* 977 &+ Int(obstacle.center.x) &+ Int(obstacle.center.y) &* 3)
                 car.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
                 if PerfSettings.optimized {
                     levelRoot.addChildNode(car.node)
@@ -1876,7 +1915,7 @@ final class World3D {
             return
         }
         var objects: [Any] = [scene.rootNode] + World3D.signalMaterials
-        if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries }
+        if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries + TrafficVehicles.allGeometries }
         if cityMap != nil { objects += PedestrianModels.all }
         renderer.prepare(objects) { _ in
             DispatchQueue.main.async { completion?() }
@@ -1890,12 +1929,7 @@ final class World3D {
         var jobs: [() -> Void] = []
         let saved = CarChoice.saved
         jobs.append { _ = saved.model == .retro ? CarModels.retroPaint(saved.color) : CarFactory.racerPaint(saved.color) }
-        for color in CarArt.parkedColors {
-            for style in [CarStyle.sedan, .hatch, .suv] {
-                jobs.append { _ = CarFactory.body(style: style, color: color, parked: false) }
-                jobs.append { _ = CarFactory.body(style: style, color: color, parked: true) }
-            }
-        }
+
         jobs.append { _ = CarFactory.wheelTemplate }
         func next(_ index: Int) {
             guard index < jobs.count else { return }

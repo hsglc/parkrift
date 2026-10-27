@@ -70,3 +70,6 @@ Garage cars (converted with `tools/convert_cars.py`, files `Hop/Models/*_body.us
   and Khronos logos removed, wipers removed, decimated, converted to USDZ.
 - "Hot Rod 55": "Toy Car" from the Khronos glTF Sample Assets, CC0. Modified: fabric and cameras removed,
   wheels cut out to spin, paint areas made tintable, decimated, converted to USDZ.
+- "Street GT", "Hot Hatch", "Highlander", "Pursuit", "City Cab" and all traffic and parked vehicles: Kenney's
+  "Car Kit" (https://kenney.nl/assets/car-kit), CC0. Converted with `tools/convert_kenney.py` (stretched a little,
+  paint areas made tintable for three of them). Files `Hop/Models/kenney_*`.
