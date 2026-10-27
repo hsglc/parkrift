@@ -1217,8 +1217,27 @@ final class World3D {
         cameraNode.camera?.fieldOfView = fieldOfView
     }
 
+    /// While the loading screen covers the view, the camera turns around the start point (low and
+    /// then high) so every material, texture and mesh of the level is drawn once and the GPU work
+    /// for first sightings happens before the race, not at the first corner.
+    private var sweepClock: Float = -1
+
+    func beginWarmupSweep() { sweepClock = 0 }
+    func endWarmupSweep() { sweepClock = -1 }
+
     func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
         let carPoint = World3D.vec(position)
+        if sweepClock >= 0 {
+            sweepClock += Float(dt)
+            let turn: Float = 1.4
+            let angle = sweepClock / turn * 2 * .pi
+            let high = Int(sweepClock / turn) % 2 == 1
+            let eye = SIMD3<Float>(carPoint.x, high ? 30 : 4.5, carPoint.z)
+            let look = SIMD3<Float>(carPoint.x + cos(angle) * 40, high ? 0 : 3, carPoint.z - sin(angle) * 40)
+            cameraNode.simdPosition = eye
+            cameraNode.simdLook(at: look, up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+            return
+        }
         let focus = SIMD3<Float>(carPoint.x, carPoint.y, carPoint.z)
         if cinematicActive && !snap && !cinematicShotB {
             cameraFocus += (focus - cameraFocus) * min(1, Float(dt) * 10)
@@ -1818,7 +1837,7 @@ final class World3D {
             }
             return
         }
-        var objects: [Any] = [scene.rootNode]
+        var objects: [Any] = [scene.rootNode] + World3D.signalMaterials
         if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries }
         renderer.prepare(objects) { _ in
             DispatchQueue.main.async { completion?() }

@@ -658,6 +658,8 @@ final class ParkingScene: SKScene {
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
         setupBonuses()
+        // Only under the loading screen (later rounds load in view)
+        if level.city != nil && !ready { world.beginWarmupSweep() }
         if level.race {
             // Draws once with the plate's fonts so the finish moment does not lay out glyphs cold
             _ = CarArt.finishPlate(kicker: Strings.raceComplete, title: Strings.finishBig, stats: [("stopwatch.fill", "0.0 s")],
@@ -671,7 +673,7 @@ final class ParkingScene: SKScene {
             }
             // Never wait on the GPU warm-up forever
             if !ready {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                     self?.stage("warm-up timeout")
                     self?.becomeReady()
                 }
@@ -813,6 +815,7 @@ final class ParkingScene: SKScene {
     private func startCountdown() {
         guard !ready else { return }
         ready = true
+        world?.endWarmupSweep()
         countdownNode.isHidden = false
         countdown = 3
         setCountdown("3")
