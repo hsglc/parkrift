@@ -195,12 +195,20 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
     private var renderCosts: [Double] = []
     private var renderStarted: CFTimeInterval = 0
     private(set) var recording = false
+    /// Per-frame samples for explaining spikes: render CPU cost per rendered frame (aligned with
+    /// renderTimes), update costs with their time, and named events.
+    private var frameRenderCosts: [Double] = []
+    private var updateSamples: [(time: CFTimeInterval, ms: Double)] = []
+    private var marks: [(time: CFTimeInterval, label: String)] = []
 
     func start() {
         lock.lock()
         renderTimes.removeAll()
         updateCosts.removeAll()
         renderCosts.removeAll()
+        frameRenderCosts.removeAll()
+        updateSamples.removeAll()
+        marks.removeAll()
         recording = true
         lock.unlock()
     }
@@ -220,14 +228,19 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
         lock.lock()
         if recording {
             renderTimes.append(now)
-            if renderStarted > 0 { renderCosts.append((now - renderStarted) * 1000) }
+            let cost = renderStarted > 0 ? (now - renderStarted) * 1000 : 0
+            if renderStarted > 0 { renderCosts.append(cost) }
+            frameRenderCosts.append(cost)
         }
         lock.unlock()
     }
 
     func recordUpdate(milliseconds: Double) {
         lock.lock()
-        if recording { updateCosts.append(milliseconds) }
+        if recording {
+            updateCosts.append(milliseconds)
+            updateSamples.append((CACurrentMediaTime(), milliseconds))
+        }
         lock.unlock()
     }
 
@@ -245,6 +258,43 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
             }
         }
         return Array(result.prefix(20))
+    }
+
+    /// Names something that happened this frame (benchmark only).
+    func mark(_ label: String) {
+        lock.lock()
+        if recording { marks.append((CACurrentMediaTime(), label)) }
+        lock.unlock()
+    }
+
+    /// Spikes with what explains them: [time s, frame ms, render CPU ms, slowest game update ms
+    /// in the gap, events in the gap].
+    func spikeDetails(over threshold: Double) -> [[Any]] {
+        lock.lock()
+        let times = renderTimes, costs = frameRenderCosts, updates = updateSamples, events = marks
+        lock.unlock()
+        guard let first = times.first else { return [] }
+        var result: [[Any]] = []
+        for index in 1..<max(times.count, 1) {
+            let gap = (times[index] - times[index - 1]) * 1000
+            guard gap > threshold else { continue }
+            let from = times[index - 1] - 0.05, to = times[index] + 0.02
+            let slowest = updates.filter { $0.time >= from && $0.time <= to }.map { $0.ms }.max() ?? 0
+            let named = events.filter { $0.time >= from - 0.25 && $0.time <= to }.map { $0.label }
+            let render = index < costs.count ? costs[index] : 0
+            result.append([((times[index] - first) * 10).rounded() / 10, gap.rounded(), (render * 10).rounded() / 10,
+                           (slowest * 10).rounded() / 10, named.joined(separator: ",")])
+        }
+        return Array(result.prefix(25))
+    }
+
+    /// The slowest game updates: [time s, ms].
+    func slowUpdates(over threshold: Double) -> [[Double]] {
+        lock.lock()
+        let times = renderTimes, updates = updateSamples
+        lock.unlock()
+        guard let first = times.first else { return [] }
+        return Array(updates.filter { $0.ms > threshold }.map { [(($0.time - first) * 10).rounded() / 10, $0.ms.rounded()] }.prefix(20))
     }
 
     struct Summary {

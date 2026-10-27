@@ -1049,6 +1049,8 @@ final class ParkingScene: SKScene {
             "levelLoadMs": (levelLoadMilliseconds * 10).rounded() / 10,
             "hits": hits,
             "spikes": FrameMonitor.shared.spikes(over: 50),
+            "spikeDetails": FrameMonitor.shared.spikeDetails(over: 45),
+            "slowUpdates": FrameMonitor.shared.slowUpdates(over: 12),
             "nitroAt": nitroFiredAt,
             "finishTestAt": finishTestAt, "finishCrossAt": finishCrossAt
         ]
@@ -1076,6 +1078,7 @@ final class ParkingScene: SKScene {
         }
         nitro = 0
         boostTime = boostDuration
+        if benchmark { FrameMonitor.shared.mark("nitro") }
         if benchRecording { nitroFiredAt.append((Double(benchClock - 2) * 10).rounded() / 10) }
         engaged = true
         if gear == .reverse && velocity <= 2 { gear = .drive }
@@ -1433,11 +1436,13 @@ final class ParkingScene: SKScene {
             traffic.step(dt, blockers: blockers)
             world?.updateSignals(time: traffic.clock)
             let detailRange = PerfSettings.carDetailDistance * 10
+            var botDetailChanges = 0
             for (index, bot) in traffic.bots.enumerated() where index < botCars.count {
                 let near = abs(bot.position.x - carPosition.x) < detailRange && abs(bot.position.y - carPosition.y) < detailRange
-                botCars[index].setDetail(near)
+                if botCars[index].setDetail(near) { botDetailChanges += 1 }
                 botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)
             }
+            if benchmark && botDetailChanges > 0 { FrameMonitor.shared.mark("botDetail\(botDetailChanges)") }
             if online && friendPresent && isHost {
                 botSendClock += TimeInterval(dt)
                 if botSendClock >= 0.125 {
@@ -1450,7 +1455,8 @@ final class ParkingScene: SKScene {
         detailClock -= dt
         if detailClock <= 0 {
             detailClock = 0.2
-            world?.updateDetail(around: carPosition)
+            let parkedChanges = world?.updateDetail(around: carPosition) ?? 0
+            if benchmark && parkedChanges > 0 { FrameMonitor.shared.mark("parkedDetail\(parkedChanges)") }
         }
 
         if online && friendPresent && remoteParked && !localParked && phase == .driving {
@@ -1506,6 +1512,7 @@ final class ParkingScene: SKScene {
         routeClock -= dt
         if routeClock <= 0 || route.isEmpty {
             routeClock = 0.25
+            if benchmark { FrameMonitor.shared.mark("route") }
             route = city.route(from: carPosition, to: target)
             let path = CGMutablePath()
             for (index, point) in route.enumerated() {
@@ -1903,6 +1910,7 @@ final class ParkingScene: SKScene {
             if lostSpeed > 45 && lastUpdate - lastHitAt > 0.6 {
                 lastHitAt = lastUpdate
                 hits += 1
+                if benchmark { FrameMonitor.shared.mark("hit") }
                 hitsLabel.text = "\(hits)"
                 bumpHaptic.impactOccurred(intensity: 0.5)
                 audio.play("bump", volume: 0.5)
@@ -1914,6 +1922,7 @@ final class ParkingScene: SKScene {
             if lastUpdate - lastHitAt > 0.6 && impact > 18 {
                 lastHitAt = lastUpdate
                 hits += 1
+                if benchmark { FrameMonitor.shared.mark("hit") }
                 hitsLabel.text = "\(hits)"
                 bumpHaptic.impactOccurred(intensity: min(1, impact / 120 + 0.4))
                 audio.play("bump", volume: Float(min(1, impact / 100 + 0.3)))
@@ -2420,6 +2429,7 @@ final class ParkingScene: SKScene {
                 pickups[index].readyAt = now + 18
                 pickup.node.runAction(.sequence([.group([.scale(to: 1.8, duration: 0.15), .fadeOut(duration: 0.15)]), .hide()]))
                 nitro = min(1, nitro + 0.5)
+                if benchmark { FrameMonitor.shared.mark("pickup") }
                 audio.play("beep", volume: 0.7)
                 tickHaptic.impactOccurred(intensity: 0.8)
                 flashBonus(Strings.nitroPickup)
@@ -2438,6 +2448,7 @@ final class ParkingScene: SKScene {
             let across = camera.alongX ? abs(carPosition.y - camera.point.y) : abs(carPosition.x - camera.point.x)
             guard along < 40, across < CityMap.roadHalf, kmh > 12 else { continue }
             speedCameras[index].readyAt = now + 8
+            if benchmark { FrameMonitor.shared.mark("radar") }
             camera.flash.removeAllActions()
             camera.flash.scale = SCNVector3(1, 1, 1)
             camera.flash.runAction(.sequence([.wait(duration: 0.12), .scale(to: 0.001, duration: 0.2)]))

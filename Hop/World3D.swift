@@ -851,11 +851,14 @@ final class Car3D {
     }
 
     /// Shows or hides wheels and lights (far-away traffic only needs the simple body).
-    func setDetail(_ visible: Bool) {
-        guard PerfSettings.optimized, visible != detailVisible else { return }
+    /// Returns true when it changed.
+    @discardableResult
+    func setDetail(_ visible: Bool) -> Bool {
+        guard PerfSettings.optimized, visible != detailVisible else { return false }
         detailVisible = visible
         for detail in detailNodes { detail.isHidden = !visible }
         lowNode?.isHidden = visible
+        return true
     }
 
     /// Exhaust flames while the nitro burns.
@@ -1774,6 +1777,7 @@ final class World3D {
             case .green: state = 2
             }
             guard state != head.state else { continue }
+            if PerfSettings.benchmark && head.state >= 0 { FrameMonitor.shared.mark("signal") }
             head.lamp.position = head.slots[state]
             head.lamp.geometry?.materials = [World3D.signalMaterials[state]]
             signalHeads[index].state = state
@@ -1927,11 +1931,14 @@ final class World3D {
     }
 
     /// Full detail only for parked cars near the player (world units).
-    func updateDetail(around point: CGPoint) {
+    @discardableResult
+    func updateDetail(around point: CGPoint) -> Int {
         let range = PerfSettings.carDetailDistance * 10
+        var changed = 0
         for entry in parkedCars3D {
-            entry.car.setDetail(abs(entry.position.x - point.x) < range && abs(entry.position.y - point.y) < range)
+            if entry.car.setDetail(abs(entry.position.x - point.x) < range && abs(entry.position.y - point.y) < range) { changed += 1 }
         }
+        return changed
     }
 
     func markParked() {
