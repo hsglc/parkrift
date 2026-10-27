@@ -111,6 +111,9 @@ final class ParkingScene: SKScene {
     private var detailClock: CGFloat = 0
     private var finishTestPlaced = false
     private var finishTestAt: Double = -1
+    private var finishCrossAt: Double = -1
+    /// While the results card is up the 3D world is neither updated nor drawn.
+    private var worldFrozen = false
     /// False until the first level is fully loaded; the countdown waits for it.
     private var ready = false
     private var navNode = SKNode()
@@ -596,6 +599,7 @@ final class ParkingScene: SKScene {
         levelIndex = Levels.clamp(index)
         level = Levels.level(levelIndex)
         model?.results = nil
+        worldFrozen = false
         guard builtSize != .zero, let world = world else { return }
         overlay.removeAllChildren()
         finalButton = nil
@@ -984,7 +988,7 @@ final class ParkingScene: SKScene {
             "hits": hits,
             "spikes": FrameMonitor.shared.spikes(over: 50),
             "nitroAt": nitroFiredAt,
-            "finishTestAt": finishTestAt
+            "finishTestAt": finishTestAt, "finishCrossAt": finishCrossAt
         ]
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8) {
@@ -1349,6 +1353,10 @@ final class ParkingScene: SKScene {
             }
         }
 
+        if worldFrozen {
+            timerLabel.text = String(format: "%.1f", localParked ? max(localTime, 0) : elapsed)
+            return
+        }
         if let traffic = traffic {
             var blockers = [carPosition]
             if friendPresent && remoteTarget != nil { blockers.append(remotePosition) }
@@ -2061,6 +2069,7 @@ final class ParkingScene: SKScene {
     /// 1.0 s  cut to an orbit around the car with fireworks and confetti
     /// 4.0 s  bars leave, results card
     private func playFinishSequence() {
+        if benchRecording { finishCrossAt = Double(benchClock - 2) }
         finishAnimating = true
         finishClock = 0
         world?.startFinishCinematic(at: carPosition, heading: heading, finishLine: level.spots[slot].center)
@@ -2333,6 +2342,7 @@ final class ParkingScene: SKScene {
         // The card covers the world: stop drawing it (a frozen frame) until the next level loads
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self = self, self.model?.results != nil else { return }
+            self.worldFrozen = true
             self.world?.setRenderingPaused(true)
         }
     }
