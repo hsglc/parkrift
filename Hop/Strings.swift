@@ -117,8 +117,8 @@ enum Strings {
     static var enterCode: String { t("Kodu gir", "Enter code") }
     static var createRoomSub: String { t("Bir oda kodu oluştur ve arkadaşına gönder.", "Create a room code and send it to your friend.") }
     static var joinRoomSub: String { t("Arkadaşının verdiği 4 harfli kodu yaz.", "Type the 4-letter code your friend gave you.") }
-    static var credits: String { t("Araba modelleri: \"Ferrari 458 Italia\" — vicent091036, CC BY 4.0 · \"Car Concept\" — Khronos Group, CC BY 4.0 · \"Toy Car\" — Khronos, CC0 · Car Kit — Kenney, CC0 (değiştirildi)",
-                                     "Car models: \"Ferrari 458 Italia\" by vicent091036, CC BY 4.0 · \"Car Concept\" by Khronos Group, CC BY 4.0 · \"Toy Car\" by Khronos, CC0 · Car Kit by Kenney, CC0 (modified)") }
+    static var credits: String { t("Araba modelleri: \"Ferrari 458 Italia\" — vicent091036, CC BY 4.0 · \"Car Concept\" — Khronos Group, CC BY 4.0 · \"Toy Car\" — Khronos, CC0 · Car Kit — Kenney, CC0 · RES1N, Galaxy Car Showroom, Ddiaz Design, Black Snow — CC BY 4.0 (değiştirildi)",
+                                     "Car models: \"Ferrari 458 Italia\" by vicent091036, CC BY 4.0 · \"Car Concept\" by Khronos Group, CC BY 4.0 · \"Toy Car\" by Khronos, CC0 · Car Kit by Kenney, CC0 · RES1N, Galaxy Car Showroom, Ddiaz Design, Black Snow — CC BY 4.0 (modified)") }
 
     // Garage
     static var garage: String { t("Garaj", "Garage") }

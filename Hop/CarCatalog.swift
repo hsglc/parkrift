@@ -7,11 +7,11 @@ enum CarModelID: Int, CaseIterable {
     case italia
     case concept
     case retro
-    case streetGT
-    case hotHatch
-    case highlander
-    case pursuit
-    case cab
+    case strada
+    case toro
+    case arrow
+    case bison
+    case classico
 }
 
 /// A car plus paint, as picked in the garage (and sent to the friend online).
@@ -130,36 +130,51 @@ struct CarSpec {
                 exhausts: [SCNVector3(-2.22, 0.3, 0.45)],
                 topSpeed: 0.94, acceleration: 1.07, steering: 1.08, nitroPower: 1.1, nitroFill: 0.85, textured: true,
                 textureBase: "retro_basecolor.jpg", textureMask: "retro_mask.png", height: 1.33),
-        kenney(.streetGT, "sedan_sports", name: "Street GT", maker: "TURBO", className: "A",
-               stats: CarStats(speed: 0.82, acceleration: 0.86, handling: 0.84, nitro: 0.78),
-               tuning: (0.98, 1.03, 1.03, 1.0, 0.95), tintable: true),
-        kenney(.hotHatch, "hatchback_sports", name: "Hot Hatch", maker: "ZIP", className: "B",
-               stats: CarStats(speed: 0.74, acceleration: 0.94, handling: 0.96, nitro: 0.82),
-               tuning: (0.95, 1.07, 1.08, 1.02, 0.92), tintable: true),
-        kenney(.highlander, "suv_luxury", name: "Highlander", maker: "TERRA", className: "B",
-               stats: CarStats(speed: 0.70, acceleration: 0.78, handling: 0.72, nitro: 0.92),
-               tuning: (0.93, 0.97, 0.95, 1.12, 0.85), tintable: true),
-        kenney(.pursuit, "police", name: "Pursuit", maker: Strings.police, className: "A",
-               stats: CarStats(speed: 0.88, acceleration: 0.84, handling: 0.78, nitro: 0.84),
-               tuning: (1.02, 1.0, 0.98, 1.04, 0.95), tintable: false),
-        kenney(.cab, "taxi", name: "City Cab", maker: Strings.taxi, className: "C",
-               stats: CarStats(speed: 0.70, acceleration: 0.80, handling: 0.90, nitro: 1.0),
-               tuning: (0.92, 1.0, 1.05, 1.15, 0.8), tintable: false)
+        detailed(.strada, name: "Strada M", maker: "NORDWERK", className: "A",
+                 stats: CarStats(speed: 0.84, acceleration: 0.88, handling: 0.86, nitro: 0.74),
+                 tuning: (1.0, 1.04, 1.03, 1.0, 1.0),
+                 wheels: [(1.490, 0.344, -0.766, true), (1.490, 0.344, 0.766, true), (-1.282, 0.347, -0.756, false), (-1.282, 0.347, 0.756, false)],
+                 radius: 0.344, rear: -2.326, height: 1.386),
+        detailed(.toro, name: "Toro EVO", maker: "TAURUS", className: "S+",
+                 stats: CarStats(speed: 0.95, acceleration: 0.90, handling: 0.82, nitro: 0.78),
+                 tuning: (1.06, 1.04, 0.98, 1.02, 1.0),
+                 wheels: [(1.187, 0.342, -0.827, true), (1.187, 0.342, 0.820, true), (-1.463, 0.359, -0.829, false), (-1.463, 0.359, 0.828, false)],
+                 radius: 0.342, rear: -2.275, height: 1.146),
+        detailed(.arrow, name: "Arrow 570", maker: "ARROWWORKS", className: "S",
+                 stats: CarStats(speed: 0.92, acceleration: 0.86, handling: 0.88, nitro: 0.76),
+                 tuning: (1.04, 1.02, 1.04, 1.0, 1.0),
+                 wheels: [(1.201, 0.323, -0.835, true), (1.201, 0.323, 0.835, true), (-1.489, 0.357, -0.810, false), (-1.489, 0.357, 0.810, false)],
+                 radius: 0.323, rear: -2.275, height: 1.196),
+        detailed(.bison, name: "Bison", maker: "TAURUS", className: "A",
+                 stats: CarStats(speed: 0.80, acceleration: 0.84, handling: 0.70, nitro: 0.92),
+                 tuning: (0.98, 1.0, 0.94, 1.1, 0.88),
+                 wheels: [(1.469, 0.383, -0.810, true), (1.469, 0.383, 0.811, true), (-1.444, 0.382, -0.812, false), (-1.444, 0.382, 0.812, false)],
+                 radius: 0.383, rear: -2.475, height: 1.618),
+        detailed(.classico, name: "Classico 40", maker: "CLASSICO", className: "S",
+                 stats: CarStats(speed: 0.90, acceleration: 0.80, handling: 0.76, nitro: 0.88),
+                 tuning: (1.05, 0.97, 0.96, 1.08, 0.92),
+                 wheels: [(1.138, 0.325, -0.786, true), (1.138, 0.325, 0.780, true), (-1.313, 0.325, -0.784, false), (-1.313, 0.325, 0.779, false)],
+                 radius: 0.325, rear: -2.200, height: 1.140)
     ]
 
-    /// A garage car from Kenney's Car Kit (sizes from the generated KenneyCatalog).
-    private static func kenney(_ id: CarModelID, _ vehicle: String, name: String, maker: String, className: String,
-                               stats: CarStats, tuning: (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat), tintable: Bool) -> CarSpec {
-        let v = KenneyCatalog.all[vehicle]
-        let rear = v?.rear ?? -2.2
-        return CarSpec(id: id, file: "kenney_" + vehicle, name: name, maker: maker, className: className, stats: stats,
-                       wheelSpots: v?.wheels ?? [], wheelRadius: v?.wheelRadius ?? 0.39, wheelModelSide: v?.wheelModelSide ?? -1,
-                       exhausts: [SCNVector3(rear - 0.02, 0.36, 0.32), SCNVector3(rear - 0.02, 0.36, -0.32)],
+    /// A detailed car converted with tools/convert_garage_cars.py (textured materials; the paint,
+    /// glass and red lamp materials are named so the game can restyle them).
+    private static func detailed(_ id: CarModelID, name: String, maker: String, className: String, stats: CarStats,
+                                 tuning: (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat),
+                                 wheels: [(Float, Float, Float, Bool)], radius: Float, rear: Float, height: Float) -> CarSpec {
+        let file: String
+        switch id {
+        case .strada: file = "strada"
+        case .toro: file = "toro"
+        case .arrow: file = "arrow"
+        case .bison: file = "bison"
+        default: file = "classico"
+        }
+        return CarSpec(id: id, file: file, name: name, maker: maker, className: className, stats: stats,
+                       wheelSpots: wheels, wheelRadius: radius, wheelModelSide: -1,
+                       exhausts: [SCNVector3(rear - 0.02, 0.32, 0.34), SCNVector3(rear - 0.02, 0.32, -0.34)],
                        topSpeed: tuning.0, acceleration: tuning.1, steering: tuning.2, nitroPower: tuning.3, nitroFill: tuning.4,
-                       textured: true,
-                       textureBase: tintable ? "kenney_\(vehicle)_base.png" : nil,
-                       textureMask: tintable ? "kenney_\(vehicle)_mask.png" : nil,
-                       fixedLivery: !tintable, height: v?.height ?? 1.6)
+                       textured: false, height: height)
     }
 
     static func of(_ id: CarModelID) -> CarSpec { all[id.rawValue] }

@@ -15,7 +15,7 @@ SCALE = np.array([1.65, 1.3, 1.35])      # game x (length), y (height), z (width
 WHEEL_SCALE = np.array([1.3, 1.3, 1.35])  # round wheels
 
 # Garage cars whose main body color can be repainted (others keep their livery)
-TINTABLE = ['sedan-sports', 'hatchback-sports', 'suv-luxury']
+TINTABLE = []
 
 VEHICLES = ['sedan', 'sedan-sports', 'hatchback-sports', 'suv', 'suv-luxury', 'taxi', 'police', 'van',
             'truck', 'delivery', 'ambulance', 'garbage-truck', 'firetruck']

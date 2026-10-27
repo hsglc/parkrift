@@ -1599,7 +1599,8 @@ final class World3D {
         holder.position = World3D.vec(def.center)
         holder.eulerAngles.y = Float(def.angle)
         let checker = CarArt.checkerImage()
-        let across = def.size.height / 10
+        // Posts stand on the sidewalks, clear of the whole street (they were in the parking lanes)
+        let across = max(def.size.height / 10, cityMap != nil ? CityMap.roadHalf * 2 / 10 + 0.4 : 0)
 
         let strip = SCNPlane(width: 3, height: across)
         let stripMaterial = Mat.lambert(checker)

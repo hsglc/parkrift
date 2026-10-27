@@ -163,6 +163,9 @@ struct MenuView: View {
             Text(Strings.credits)
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.45))
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .multilineTextAlignment(.center)
         }
     }
 

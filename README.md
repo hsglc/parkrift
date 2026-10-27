@@ -70,6 +70,12 @@ Garage cars (converted with `tools/convert_cars.py`, files `Hop/Models/*_body.us
   and Khronos logos removed, wipers removed, decimated, converted to USDZ.
 - "Hot Rod 55": "Toy Car" from the Khronos glTF Sample Assets, CC0. Modified: fabric and cameras removed,
   wheels cut out to spin, paint areas made tintable, decimated, converted to USDZ.
-- "Street GT", "Hot Hatch", "Highlander", "Pursuit", "City Cab" and all traffic and parked vehicles: Kenney's
-  "Car Kit" (https://kenney.nl/assets/car-kit), CC0. Converted with `tools/convert_kenney.py` (stretched a little,
-  paint areas made tintable for three of them). Files `Hop/Models/kenney_*`.
+- Traffic and parked vehicles: Kenney's "Car Kit" (https://kenney.nl/assets/car-kit), CC0. Converted with
+  `tools/convert_kenney.py` (stretched a little). Files `Hop/Models/kenney_*`.
+- Garage cars converted with `tools/convert_garage_cars.py` (Blender; wheels cut out, decimated, textures shrunk),
+  taken from https://github.com/supercar3d/supercar_3D_asssets. All CC BY 4.0, modified:
+  - "Strada M": "Bmw m4 competition" (https://skfb.ly/pANyt) by RES1N
+  - "Toro EVO": "2019 Lamborghini Huracán EVO" (https://skfb.ly/pBZKS) by Galaxy Car Showroom
+  - "Arrow 570": "2016 McLaren 570S Coupe" (https://skfb.ly/prYpp) by Ddiaz Design
+  - "Bison": "2019 Lamborghini Urus" (https://skfb.ly/pqVNU) by Ddiaz Design
+  - "Classico 40": "Ferrari f40" (https://skfb.ly/oRnMV) by Black Snow
