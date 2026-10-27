@@ -63,7 +63,7 @@ struct MenuView: View {
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showDaily) { DailyView().environmentObject(model) }
         .onAppear {
-            if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch {
+            if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch && !PerfSettings.benchmark {
                 MenuView.giftShownThisLaunch = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showDaily = true }
             }

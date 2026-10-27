@@ -260,10 +260,15 @@ def age_rating(app_id):
         ok = call('PATCH', f'/v1/ageRatingDeclarations/{did}', {'data': {'type': 'ageRatingDeclarations', 'id': did,
                                                                         'attributes': attrs}})
         if ok is None:
-            # Retry field by field so one unknown field does not block the rest
+            # Field by field, trying the other type when Apple refuses the first guess
             for key, value in attrs.items():
-                call('PATCH', f'/v1/ageRatingDeclarations/{did}', {'data': {'type': 'ageRatingDeclarations', 'id': did,
-                                                                           'attributes': {key: value}}}, quiet=True)
+                for attempt in (value, 'NONE' if isinstance(value, bool) else False):
+                    done = call('PATCH', f'/v1/ageRatingDeclarations/{did}', {'data': {'type': 'ageRatingDeclarations',
+                        'id': did, 'attributes': {key: attempt}}}, quiet=True)
+                    if done is not None:
+                        break
+                else:
+                    print(f'::warning::age rating field {key} not set')
         print('age rating set')
 
 

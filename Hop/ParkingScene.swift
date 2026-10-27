@@ -2691,9 +2691,21 @@ final class ParkingScene: SKScene {
             }
         }
         guard let start = best else { return }
-        police = PoliceChase(node: world.makePoliceNode(), map: city, start: start)
+        var clock = CACurrentMediaTime()
+        func lap(_ name: String) {
+            guard benchmark else { return }
+            let now = CACurrentMediaTime()
+            FileHandle.standardError.write(String(format: "PPTIME %@ %.2f ms\n", name, (now - clock) * 1000).data(using: .utf8)!)
+            clock = now
+        }
+        let node = world.makePoliceNode()
+        lap("police-node")
+        police = PoliceChase(node: node, map: city, start: start)
+        lap("police-chase")
         showPoliceWarning(reason)
+        lap("police-banner")
         notifyHaptic.notificationOccurred(.warning)
+        lap("police-haptic")
     }
 
     private func endPoliceChase() {
@@ -2848,12 +2860,23 @@ final class ParkingScene: SKScene {
             let kick = 40 + impact.closing * 0.6
             traffic?.hit(index, shove: CGVector(dx: nx * kick, dy: ny * kick), spin: -spinSign * (1.4 + 2.4 * strength))
         }
+        var clock = CACurrentMediaTime()
+        func lap(_ name: String) {
+            guard benchmark else { return }
+            let now = CACurrentMediaTime()
+            FileHandle.standardError.write(String(format: "PPTIME %@ %.2f ms\n", name, (now - clock) * 1000).data(using: .utf8)!)
+            clock = now
+        }
         audio.play("crash", volume: Float(min(1, 0.45 + strength * 0.6)))
+        lap("audio")
         bumpHaptic.impactOccurred(intensity: min(1, 0.6 + strength * 0.4))
+        lap("haptic")
         world?.shake(strength: 3 + 7 * strength)
         dispatchPolice(Strings.crimeCrash)
+        lap("police")
         sparks(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
         dust(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
+        lap("sparks")
     }
 
     /// A real crash (into a car, or a wall at speed): crunch sound, a shove away from the hit and a
