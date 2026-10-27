@@ -13,7 +13,7 @@ import numpy as np
 from mathutils import Vector, Matrix
 
 HEIGHT = 4.6
-BUDGET = 1600
+BUDGET = 900
 
 
 def main(src, out):

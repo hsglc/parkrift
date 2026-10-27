@@ -2141,4 +2141,6 @@ final class World3D {
     }
 
     var isSweeping: Bool { sweepClock >= 0 }
+    /// The tour has shown the map from above and both rings around the start once.
+    var sweepComplete: Bool { sweepClock < 0 || sweepClock >= 3 * 1.2 + 0.1 }
 }

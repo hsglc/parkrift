@@ -845,8 +845,17 @@ final class ParkingScene: SKScene {
         guard !ready, !readyRequested else { return }
         readyRequested = true
         stage("ready")
-        // The warm-up camera tour ends while the loading screen still covers the view, so the
-        // first thing the player sees is the chase camera behind their car
+        revealWhenWarm()
+    }
+
+    /// The warm-up camera tour must finish (every material, mesh and lamp color of the level drawn
+    /// once) before the loading screen goes; cutting it short left first-sight stalls in the race.
+    /// It then ends under the curtain, so the first thing the player sees is the chase camera.
+    private func revealWhenWarm(waited: TimeInterval = 0) {
+        if let world = world, !world.sweepComplete, waited < 5 {
+            run(.wait(forDuration: 0.1)) { [weak self] in self?.revealWhenWarm(waited: waited + 0.1) }
+            return
+        }
         world?.endWarmupSweep()
         if let model = model {
             model.sceneReady { [weak self] in self?.startCountdown() }
@@ -2725,7 +2734,8 @@ final class ParkingScene: SKScene {
 
     private func updatePedestrianNodes() {
         guard let people = pedestrians else { return }
-        let range: CGFloat = 700
+        // People are detailed meshes now: draw the ones within 45 m (tiny further away)
+        let range: CGFloat = 450
         for (index, person) in people.people.enumerated() where index < pedestrianNodes.count {
             let node = pedestrianNodes[index]
             let far = abs(person.position.x - carPosition.x) > range || abs(person.position.y - carPosition.y) > range
