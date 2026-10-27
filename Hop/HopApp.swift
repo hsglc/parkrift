@@ -83,6 +83,11 @@ final class AppModel: ObservableObject {
 
     init() {
         World3D.prewarmCars()
+        CarModels.prewarmRetroTextures()
+        // Build the garage studio while the menu is idle (the car models load first)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            GarageStage.prewarm(using: self?.menuWorld.renderer)
+        }
         net.onMessage = { [weak self] message in self?.handle(message) }
         net.onClose = { [weak self] _ in self?.connectionClosed() }
     }

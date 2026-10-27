@@ -203,6 +203,27 @@ enum CarModels {
     }
 
     private static var retroPaints: [String: SCNMaterial] = [:]
+    private static let textureLock = NSLock()
+    private static var retroTextures: [String: UIImage] = [:]
+
+    /// Draws the retro car's texture in every paint on a background thread, so picking a color
+    /// in the garage (or loading a race) does not draw a 1024² image on the main thread.
+    static func prewarmRetroTextures() {
+        let colors = CarSpec.paints.map { $0.color }
+        DispatchQueue.global(qos: .utility).async {
+            for color in colors {
+                let key = CarFactory.colorKey(color)
+                textureLock.lock()
+                let done = retroTextures[key] != nil
+                textureLock.unlock()
+                if done { continue }
+                guard let image = tintedRetroTexture(color) else { continue }
+                textureLock.lock()
+                retroTextures[key] = image
+                textureLock.unlock()
+            }
+        }
+    }
 
     /// The retro car's texture with its body areas tinted `color` (decals, chrome and tyres keep
     /// their own colors). Made once per color.
@@ -211,7 +232,10 @@ enum CarModels {
         if let cached = retroPaints[key] { return cached }
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
-        material.diffuse.contents = tintedRetroTexture(color)
+        textureLock.lock()
+        let ready = retroTextures[key]
+        textureLock.unlock()
+        material.diffuse.contents = ready ?? tintedRetroTexture(color)
         material.metalness.contents = NSNumber(value: 0.35)
         material.roughness.contents = NSNumber(value: 0.3)
         material.clearCoat.contents = NSNumber(value: 0.8)

@@ -539,9 +539,9 @@ enum CarFactory {
     static func racerPaint(_ color: UIColor) -> SCNMaterial {
         let key = colorKey(color)
         if let cached = racerPaints[key] { return cached }
-        let paint = Mat.pbr(color, metal: 0.55, rough: 0.28)
-        paint.clearCoat.contents = NSNumber(value: 1.0)
-        paint.clearCoatRoughness.contents = NSNumber(value: 0.04)
+        let paint = Mat.pbr(color, metal: 0.4, rough: 0.34)
+        paint.clearCoat.contents = NSNumber(value: 0.6)
+        paint.clearCoatRoughness.contents = NSNumber(value: 0.12)
         racerPaints[key] = paint
         return paint
     }
@@ -662,6 +662,15 @@ final class Car3D {
     /// `parked`: a car that never moves (wheels and lights baked into one geometry).
     /// Wheel radius used for the rolling animation.
     private var wheelRadius: CGFloat = 0.37
+    /// Body meshes that carry the paint (model cars only), for repainting in the garage.
+    private var paintedNode: SCNNode?
+    private var texturedNode: SCNNode?
+
+    /// Swaps the paint material only (no new geometry, no new shader).
+    func setPaint(_ color: UIColor) {
+        paintedNode?.geometry?.materials = [CarFactory.racerPaint(color)]
+        texturedNode?.geometry?.materials = [CarModels.retroPaint(color)]
+    }
 
     /// `model`: which garage car a player's racer uses.
     init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false, model carModel: CarModelID = .italia) {
@@ -677,10 +686,12 @@ final class Car3D {
             if let paintNode = car.childNode(withName: "paint", recursively: true) {
                 paintNode.geometry = paintNode.geometry?.copy() as? SCNGeometry
                 paintNode.geometry?.materials = [CarFactory.racerPaint(color)]
+                paintedNode = paintNode
             }
             if let textured = car.childNode(withName: "textured", recursively: true) {
                 textured.geometry = textured.geometry?.copy() as? SCNGeometry
                 textured.geometry?.materials = [CarModels.retroPaint(color)]
+                texturedNode = textured
             }
             if let tail = car.childNode(withName: "taillight", recursively: true) {
                 tail.geometry = tail.geometry?.copy() as? SCNGeometry

@@ -13,7 +13,9 @@ final class GarageStage {
     private let turntable = SCNNode()
     private let ringMaterial = SCNMaterial()
     private let floorGlow = SCNMaterial()
-    private var car: Car3D?
+    /// All three cars stay in the scene (inactive ones shrunk to nothing), so switching never
+    /// builds geometry or compiles shaders.
+    private var cars: [CarModelID: Car3D] = [:]
     private var shown: CarChoice?
     /// Extra yaw from dragging, added to the slow automatic turn.
     private var dragYaw: Float = 0
@@ -22,12 +24,11 @@ final class GarageStage {
     private init() {
         scene.background.contents = GarageStage.backdrop()
         scene.lightingEnvironment.contents = GarageStage.studioEnvironment()
-        scene.lightingEnvironment.intensity = 1.6
+        scene.lightingEnvironment.intensity = 0.9
 
-        // Glossy dark floor
+        // Dark satin floor (a reflective SCNFloor drew the whole scene twice)
         let floor = SCNFloor()
-        floor.reflectivity = 0.22
-        floor.reflectionFalloffEnd = 2.5
+        floor.reflectivity = 0
         let floorMaterial = Mat.pbr(UIColor(red: 0.05, green: 0.055, blue: 0.07, alpha: 1), metal: 0.2, rough: 0.35)
         floor.materials = [floorMaterial]
         scene.rootNode.addChildNode(SCNNode(geometry: floor))
@@ -63,26 +64,43 @@ final class GarageStage {
         scene.rootNode.addChildNode(poolNode)
         turntable.position.y = 0
         scene.rootNode.addChildNode(turntable)
+        // Soft shadow under the car instead of a shadow-casting light
+        let shadow = SCNPlane(width: 5.6, height: 2.8)
+        let shadowMaterial = SCNMaterial()
+        shadowMaterial.lightingModel = .constant
+        shadowMaterial.diffuse.contents = CityArt.blobShadow
+        shadowMaterial.writesToDepthBuffer = false
+        shadow.materials = [shadowMaterial]
+        let shadowNode = SCNNode(geometry: shadow)
+        shadowNode.eulerAngles.x = -Float.pi / 2
+        shadowNode.position.y = 0.105
+        turntable.addChildNode(shadowNode)
+        let saved = CarChoice.saved
+        for id in CarModelID.allCases {
+            let car = Car3D(color: saved.color, style: .racer, model: id)
+            car.update(position: .zero, heading: 0, steer: 0)
+            car.node.position = SCNVector3(0, 0.1, 0)
+            car.node.eulerAngles.y = 0
+            car.node.scale = SCNVector3(0.001, 0.001, 0.001)
+            turntable.addChildNode(car.node)
+            cars[id] = car
+        }
 
         // Lights: soft key from the front left with shadows, cool and warm rims behind, fill
         let key = SCNLight()
         key.type = .spot
-        key.intensity = 1700
+        key.intensity = 1100
         key.spotInnerAngle = 30
         key.spotOuterAngle = 70
-        key.castsShadow = true
-        key.shadowMode = .deferred
-        key.shadowRadius = 8
-        key.shadowSampleCount = 8
-        key.shadowColor = UIColor(white: 0, alpha: 0.6)
+        key.castsShadow = false
         let keyNode = SCNNode()
         keyNode.light = key
         keyNode.position = SCNVector3(-4, 9, 7)
         keyNode.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(keyNode)
-        for (position, color, intensity) in [(SCNVector3(-6, 3, -6), UIColor(red: 0.35, green: 0.6, blue: 1.0, alpha: 1), CGFloat(900)),
-                                             (SCNVector3(6, 2.5, -5), UIColor(red: 1.0, green: 0.55, blue: 0.3, alpha: 1), CGFloat(700)),
-                                             (SCNVector3(5, 4, 6), UIColor.white, CGFloat(350))] {
+        for (position, color, intensity) in [(SCNVector3(-6, 3, -6), UIColor(red: 0.35, green: 0.6, blue: 1.0, alpha: 1), CGFloat(600)),
+                                             (SCNVector3(6, 2.5, -5), UIColor(red: 1.0, green: 0.55, blue: 0.3, alpha: 1), CGFloat(450)),
+                                             (SCNVector3(5, 4, 6), UIColor.white, CGFloat(250))] {
             let light = SCNLight()
             light.type = .omni
             light.color = color
@@ -107,10 +125,10 @@ final class GarageStage {
         camera.zNear = 0.5
         camera.zFar = 80
         camera.wantsHDR = true
-        camera.bloomIntensity = 0.6
-        camera.bloomThreshold = 0.9
-        camera.bloomBlurRadius = 10
-        camera.exposureOffset = 0.1
+        camera.bloomIntensity = 0.25
+        camera.bloomThreshold = 1.0
+        camera.bloomBlurRadius = 8
+        camera.exposureOffset = -0.15
         camera.saturation = 1.08
         camera.contrast = 0.1
         camera.vignettingIntensity = 0.6
@@ -123,39 +141,50 @@ final class GarageStage {
         turntable.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 26)), forKey: "spin")
     }
 
-    /// Shows `choice`; a new model swaps in with a short scale/fade, a new paint just repaints.
+    /// Shows `choice`: a new model swaps in with a short scale/fade, a new paint just repaints.
     func show(_ choice: CarChoice, animated: Bool = true) {
-        guard choice != shown else { return }
-        let modelChanged = shown?.model != choice.model
+        guard choice != shown, let car = cars[choice.model] else { return }
+        let previous = shown
         shown = choice
         let accent = choice.color.lighter(by: 0.15)
         ringMaterial.emission.contents = accent
         floorGlow.multiply.contents = accent
+        car.setPaint(choice.color)
+        guard previous?.model != choice.model else { return }
 
-        let newCar = Car3D(color: choice.color, style: .racer, model: choice.model)
-        newCar.update(position: .zero, heading: 0, steer: 0)
-        newCar.node.position = SCNVector3(0, 0.1, 0)
-        newCar.node.eulerAngles.y = 0
-        let old = car
-        car = newCar
-        turntable.addChildNode(newCar.node)
-        guard animated, let old = old else {
-            old?.node.removeFromParentNode()
+        let tiny = SCNVector3(0.001, 0.001, 0.001)
+        if let previous = previous, let old = cars[previous.model], animated {
+            old.node.removeAllActions()
+            old.node.runAction(.sequence([.group([.fadeOut(duration: 0.16), .scale(to: 0.9, duration: 0.16)]),
+                                          .run { $0.scale = tiny; $0.opacity = 1 }]))
+        } else {
+            for (id, other) in cars where id != choice.model {
+                other.node.removeAllActions()
+                other.node.scale = tiny
+            }
+        }
+        car.node.removeAllActions()
+        guard animated, previous != nil else {
+            car.node.opacity = 1
+            car.node.scale = SCNVector3(1, 1, 1)
+            car.node.position.y = 0.1
             return
         }
-        if modelChanged {
-            old.node.runAction(.sequence([.group([.fadeOut(duration: 0.18), .scale(to: 0.9, duration: 0.18)]), .removeFromParentNode()]))
-            newCar.node.opacity = 0
-            newCar.node.scale = SCNVector3(0.88, 0.88, 0.88)
-            newCar.node.position.y = 0.6
-            let drop = SCNAction.move(to: SCNVector3(0, 0.1, 0), duration: 0.35)
-            drop.timingMode = .easeOut
-            let grow = SCNAction.scale(to: 1, duration: 0.35)
-            grow.timingMode = .easeOut
-            newCar.node.runAction(.sequence([.wait(duration: 0.12), .group([.fadeIn(duration: 0.25), drop, grow])]))
-        } else {
-            old.node.removeFromParentNode()
-        }
+        car.node.opacity = 0
+        car.node.scale = SCNVector3(0.88, 0.88, 0.88)
+        car.node.position.y = 0.6
+        let drop = SCNAction.move(to: SCNVector3(0, 0.1, 0), duration: 0.35)
+        drop.timingMode = .easeOut
+        let grow = SCNAction.scale(to: 1, duration: 0.35)
+        grow.timingMode = .easeOut
+        car.node.runAction(.sequence([.wait(duration: 0.12), .group([.fadeIn(duration: 0.25), drop, grow])]))
+    }
+
+    /// Builds the stage and compiles its shaders ahead of time (called from the menu), so the
+    /// first visit to the garage does not freeze.
+    static func prewarm(using renderer: SCNSceneRenderer?) {
+        let stage = shared
+        renderer?.prepare([stage.scene], completionHandler: nil)
     }
 
     /// Turns the platform by a drag (radians).
@@ -217,13 +246,20 @@ struct GarageSceneView: UIViewRepresentable {
         let view = SCNView(frame: .zero)
         view.scene = stage.scene
         view.pointOfView = stage.cameraNode
-        view.antialiasingMode = .multisampling4X
+        view.antialiasingMode = .multisampling2X
         view.contentScaleFactor = min(UIScreen.main.scale, 2)
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = true
         view.isPlaying = true
         view.backgroundColor = .black
         stage.view = view
+        // Hidden until its shaders are compiled, then faded in (no frozen first frames)
+        view.alpha = 0
+        view.prepare([stage.scene]) { _ in
+            DispatchQueue.main.async {
+                UIView.animate(withDuration: 0.3) { view.alpha = 1 }
+            }
+        }
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
         view.addGestureRecognizer(pan)
         return view
