@@ -576,6 +576,38 @@ private enum CarFactory {
     }
 }
 
+/// The players' sports car, loaded from USDZ (converted from "Ferrari 458 Italia" by vicent091036,
+/// CC BY 4.0 — see tools/convert_car.py). Parts are named meshes that get the game's materials.
+private enum RacerModel {
+    static let body: SCNNode? = load("car_body")
+    static let wheel: SCNNode? = load("car_wheel")
+    /// Wheel centers (x, y, z) taken from the model; front wheels steer.
+    static let wheelSpots: [(Float, Float, Float, Bool)] = [(1.121, 0.347, -0.811, true), (1.121, 0.347, 0.811, true),
+                                                            (-1.451, 0.347, -0.799, false), (-1.451, 0.347, 0.799, false)]
+
+    private static func load(_ name: String) -> SCNNode? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return nil }
+        let holder = SCNNode()
+        for child in scene.rootNode.childNodes { holder.addChildNode(child) }
+        let materials: [String: SCNMaterial] = [
+            "glass": CarShapes.canopy, "headlight": CarShapes.led, "chrome": CarShapes.chrome,
+            "carbon": CarShapes.carbon, "darkplastic": CarShapes.trim, "metal": CarShapes.graphite,
+            "tire": Mat.pbr(UIColor(white: 0.05, alpha: 1), metal: 0, rough: 0.85),
+            "rim": Mat.pbr(UIColor(white: 0.78, alpha: 1), metal: 0.95, rough: 0.22),
+            "caliper": Mat.pbr(UIColor(red: 0.95, green: 0.78, blue: 0.1, alpha: 1), metal: 0.3, rough: 0.4),
+            "hub": CarShapes.chrome,
+            "paint": Mat.pbr(.gray), "taillight": Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
+        ]
+        holder.enumerateHierarchy { node, _ in
+            guard let geometry = node.geometry, let name = node.name, let material = materials[name] else { return }
+            geometry.materials = [material]
+            if name == "tire" || name == "rim" || name == "hub" || name == "caliper" { node.castsShadow = false }
+        }
+        return holder
+    }
+}
+
 /// 3D car: extruded body silhouette with wheel arches, cabin, glass, lights, bumpers and mirrors.
 /// Faces +x in its local frame (meters).
 final class Car3D {
@@ -601,8 +633,21 @@ final class Car3D {
         brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
         reverseMaterial = Mat.glow(UIColor(white: 0.35, alpha: 1))
         node.addChildNode(body)
+        let model = style == .racer ? RacerModel.body : nil
 
-        if PerfSettings.optimized {
+        if let model = model {
+            // Real car model: per-car paint and brake-light materials on copies of those meshes
+            let car = model.clone()
+            if let paintNode = car.childNode(withName: "paint", recursively: true) {
+                paintNode.geometry = paintNode.geometry?.copy() as? SCNGeometry
+                paintNode.geometry?.materials = [CarFactory.racerPaint(color)]
+            }
+            if let tail = car.childNode(withName: "taillight", recursively: true) {
+                tail.geometry = tail.geometry?.copy() as? SCNGeometry
+                tail.geometry?.materials = [brakeMaterial]
+            }
+            body.addChildNode(car)
+        } else if PerfSettings.optimized {
             // clone() shares the cached geometry with every car of this style and color
             let high = CarFactory.body(style: style, color: color, parked: parked).clone()
             body.addChildNode(high)
@@ -620,9 +665,9 @@ final class Car3D {
         }
 
         if style == .racer {
-            for z: Float in [0.24, -0.24] {
+            for z: Float in (model != nil ? [0.13, -0.13] : [0.24, -0.24]) {
                 let flame = SCNNode()
-                flame.position = SCNVector3(-2.3, 0.33, z)
+                flame.position = model != nil ? SCNVector3(-2.28, 0.42, z) : SCNVector3(-2.3, 0.33, z)
                 let outer = SCNNode(geometry: CarShapes.flameOuter)
                 outer.eulerAngles.z = Float.pi / 2
                 outer.position = SCNVector3(-0.5, 0, 0)
@@ -641,9 +686,13 @@ final class Car3D {
         let tailY = CarFactory.tailY(style)
         var lights: [SCNNode] = []
         if style == .racer {
-            // One full-width LED brake bar
-            lights.append(CarFactory.box(0.05, 0.06, 1.75, 0.02, brakeMaterial, at: SCNVector3(-2.27, tailY, 0), to: body))
-            lights.append(CarFactory.box(0.05, 0.05, 0.3, 0.02, reverseMaterial, at: SCNVector3(-2.27, tailY - 0.11, 0), to: body))
+            if model == nil {
+                // One full-width LED brake bar
+                lights.append(CarFactory.box(0.05, 0.06, 1.75, 0.02, brakeMaterial, at: SCNVector3(-2.27, tailY, 0), to: body))
+                lights.append(CarFactory.box(0.05, 0.05, 0.3, 0.02, reverseMaterial, at: SCNVector3(-2.27, tailY - 0.11, 0), to: body))
+            } else {
+                lights.append(CarFactory.box(0.04, 0.04, 0.22, 0.01, reverseMaterial, at: SCNVector3(-2.2, 0.62, 0), to: body))
+            }
             // Neon underglow in the car's color
             let glow = SCNPlane(width: 4.8, height: 2.6)
             let glowMaterial = SCNMaterial()
@@ -671,6 +720,23 @@ final class Car3D {
         }
 
         // Wheels: pivot (steering) -> spin (rolling) -> tyre + rim
+        if model != nil, let wheelModel = RacerModel.wheel {
+            for spot in RacerModel.wheelSpots {
+                let pivot = SCNNode()
+                pivot.position = SCNVector3(spot.0, spot.1, spot.2)
+                let spinner = SCNNode()
+                let wheel = wheelModel.clone()
+                // The model is a left wheel; turn it around for the right side
+                if spot.2 > 0 { wheel.eulerAngles.y = Float.pi }
+                spinner.addChildNode(wheel)
+                pivot.addChildNode(spinner)
+                node.addChildNode(pivot)
+                detailNodes.append(pivot)
+                spinNodes.append(spinner)
+                if spot.3 { steerPivots.append(pivot) }
+            }
+            return
+        }
         for spot in CarFactory.wheelSpots {
             let pivot = SCNNode()
             pivot.position = SCNVector3(spot.0, style == .racer ? 0.39 : 0.36, spot.1)

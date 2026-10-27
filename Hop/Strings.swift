@@ -117,4 +117,6 @@ enum Strings {
     static var enterCode: String { t("Kodu gir", "Enter code") }
     static var createRoomSub: String { t("Bir oda kodu oluştur ve arkadaşına gönder.", "Create a room code and send it to your friend.") }
     static var joinRoomSub: String { t("Arkadaşının verdiği 4 harfli kodu yaz.", "Type the 4-letter code your friend gave you.") }
+    static var credits: String { t("Araba modeli: \"Ferrari 458 Italia\" — vicent091036, CC BY 4.0 (değiştirildi)",
+                                     "Car model: \"Ferrari 458 Italia\" by vicent091036, CC BY 4.0 (modified)") }
 }

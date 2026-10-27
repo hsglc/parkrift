@@ -128,6 +128,15 @@ struct MenuView: View {
     // MARK: Home: three mode cards
 
     private var home: some View {
+        VStack(spacing: 6) {
+            homeCards
+            Text(Strings.credits)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.45))
+        }
+    }
+
+    private var homeCards: some View {
         HStack(spacing: 14) {
             ModeCard(title: Strings.modeSoloTitle, subtitle: Strings.modeSoloSub, icon: "parkingsign.circle.fill",
                      chips: [Strings.levelsCount(Levels.all.count), "★ \(totalStars)/\(Levels.all.count * 3)"],

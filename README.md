@@ -57,3 +57,9 @@ Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 
 ## Derleme
 
 `main` dalına her push'ta (veya Actions sekmesinden **Run workflow** ile) çalışır. Build numarası otomatik olarak çalıştırma sayısı olur. Yükleme bittikten sonra Apple'ın işlemesi 5–30 dk sürer; ardından App Store Connect → TestFlight → Internal Testing grubuna kendini ekle ve TestFlight uygulamasından yükle.
+
+## Credits
+
+- Players' car: "Ferrari 458 Italia" by vicent091036 (https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6),
+  licensed CC BY 4.0. Modified: interior removed, maker badges removed, decimated and converted to USDZ
+  with `tools/convert_car.py` (source taken from the three.js examples). Files: `Hop/Models/car_body.usdz`, `Hop/Models/car_wheel.usdz`.
