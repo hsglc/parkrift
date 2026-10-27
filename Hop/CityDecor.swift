@@ -136,11 +136,13 @@ enum CityDecor {
     /// Soft shadow around a rectangle on the ground (strips fading outward from each edge).
     private static func contactShadow(_ ground: MeshBuilder, center c: SIMD3<Float>, w: Float, l: Float, width: Float = 1.8, y: Float = 0.1) {
         let shadow = overlay("contact", CityArt.contactShadow)
+        let hw: Float = w / 2 + width / 2
+        let hl: Float = l / 2 + width / 2
         // +x, -x edges (strips run along z), +z, -z edges (strips run along x)
-        ground.addDecal(center: SIMD3(c.x + w / 2 + width / 2, y, c.z), direction: SIMD2(-1, 0), length: width, width: l, material: shadow)
-        ground.addDecal(center: SIMD3(c.x - w / 2 - width / 2, y, c.z), direction: SIMD2(1, 0), length: width, width: l, material: shadow)
-        ground.addDecal(center: SIMD3(c.x, y, c.z + l / 2 + width / 2), direction: SIMD2(0, -1), length: width, width: w, material: shadow)
-        ground.addDecal(center: SIMD3(c.x, y, c.z - l / 2 - width / 2), direction: SIMD2(0, 1), length: width, width: w, material: shadow)
+        ground.addDecal(center: SIMD3<Float>(c.x + hw, y, c.z), direction: SIMD2(-1, 0), length: width, width: l, material: shadow)
+        ground.addDecal(center: SIMD3<Float>(c.x - hw, y, c.z), direction: SIMD2(1, 0), length: width, width: l, material: shadow)
+        ground.addDecal(center: SIMD3<Float>(c.x, y, c.z + hl), direction: SIMD2(0, -1), length: width, width: w, material: shadow)
+        ground.addDecal(center: SIMD3<Float>(c.x, y, c.z - hl), direction: SIMD2(0, 1), length: width, width: w, material: shadow)
     }
 
     // MARK: Buildings
@@ -192,7 +194,9 @@ enum CityDecor {
             let depth: Float = 0.95
             for (dx, dz, span) in [(Float(1), Float(0), l), (-1, 0, l), (0, 1, w), (0, -1, w)] {
                 let along = min(span * 0.7, 9)
-                let center = SIMD3(c.x + dx * (w / 2 + depth / 2), 3.0, c.z + dz * (l / 2 + depth / 2))
+                let cx: Float = c.x + dx * (w / 2 + depth / 2)
+                let cz: Float = c.z + dz * (l / 2 + depth / 2)
+                let center = SIMD3<Float>(cx, 3.0, cz)
                 if dx != 0 {
                     box(solid, center, depth, 0.12, along, cloth, cloth, repeats: { s in SIMD2(max(1, (s / 1.2).rounded()), 1) })
                 } else {
@@ -205,7 +209,9 @@ enum CityDecor {
         let metal = color("roofMetal", UIColor(white: 0.62, alpha: 1), metal: 0.6, rough: 0.45)
         let dark = color("roofDark", UIColor(white: 0.25, alpha: 1), rough: 0.7)
         func spot() -> SIMD3<Float> {
-            SIMD3(c.x + Float(rng.range(-0.5, 0.5)) * max(0, roofW - 3), roofTop, c.z + Float(rng.range(-0.5, 0.5)) * max(0, roofL - 3))
+            let ox = Float(rng.range(-0.5, 0.5)) * max(0, roofW - 3)
+            let oz = Float(rng.range(-0.5, 0.5)) * max(0, roofL - 3)
+            return SIMD3<Float>(c.x + ox, roofTop, c.z + oz)
         }
         for _ in 0..<(1 + rng.int(3)) {
             let p = spot()
@@ -239,13 +245,14 @@ enum CityDecor {
                         material: textured("forecourt", CityArt.junction), uvScale: SIMD2(w / 8, l / 8))
         // Shop at the back (+x side)
         let shopW = w * 0.34
-        let shopCenter = SIMD3(c.x + w / 2 - shopW / 2, 0, c.z)
+        let shopCenter = SIMD3<Float>(c.x + (w - shopW) / 2, 0, c.z)
         box(solid, shopCenter, shopW, 4.2, l * 0.9, textured("shop-2", CityArt.storefront(2)), roof,
             repeats: { span in SIMD2(max(1, (span / 6).rounded()), 1) })
         box(solid, shopCenter + SIMD3(0, 4.2, 0), shopW + 0.4, 0.6, l * 0.9 + 0.4, textured("canopyBand", CityArt.canopyBand), roof)
         // Canopy on pillars over the pumps
         let canopyW = w * 0.56, canopyL = l * 0.8
-        let canopyCenter = SIMD3(c.x - w / 2 + canopyW / 2 + 0.5, 0, c.z)
+        let canopyX: Float = c.x - w / 2 + canopyW / 2 + 0.5
+        let canopyCenter = SIMD3<Float>(canopyX, 0, c.z)
         let pillar = color("pillar", UIColor(white: 0.9, alpha: 1), rough: 0.5)
         for (dx, dz) in [(Float(-0.3), Float(-0.3)), (0.3, -0.3), (-0.3, 0.3), (0.3, 0.3)] {
             box(solid, canopyCenter + SIMD3(dx * canopyW, 0, dz * canopyL), 0.45, 5.2, 0.45, pillar)
@@ -266,7 +273,7 @@ enum CityDecor {
             }
         }
         // Tall price sign at the street corner
-        let corner = SIMD3(c.x - w / 2 + 0.8, 0, c.z + l / 2 - 0.8)
+        let corner = SIMD3<Float>(c.x - w / 2 + 0.8, 0, c.z + l / 2 - 0.8)
         box(solid, corner, 0.35, 6.0, 0.35, color("signPole", UIColor(white: 0.3, alpha: 1), metal: 0.5, rough: 0.4))
         box(solid, corner + SIMD3(0, 6.0, 0), 1.6, 3.2, 0.4, material("fuelSign") {
             let material = Mat.lambert(CityArt.fuelSign)
@@ -292,7 +299,9 @@ enum CityDecor {
                 box(solid, SIMD3(c.x, y - 0.35, c.z), w, 0.35, l, concrete, deckTop)
                 // Parapet walls with a yellow safety stripe
                 for (dx, dz, span) in [(Float(1), Float(0), l), (-1, 0, l), (0, 1, w), (0, -1, w)] {
-                    let p = SIMD3(c.x + dx * (w / 2 - 0.1), y, c.z + dz * (l / 2 - 0.1))
+                    let px: Float = c.x + dx * (w / 2 - 0.1)
+                    let pz: Float = c.z + dz * (l / 2 - 0.1)
+                    let p = SIMD3<Float>(px, y, pz)
                     if dx != 0 {
                         box(solid, p, 0.2, 1.0, span, concrete)
                         box(solid, p + SIMD3(dx * 0.02, 0.75, 0), 0.22, 0.12, span, band)
@@ -307,7 +316,9 @@ enum CityDecor {
                 let nx = max(2, Int(w / 7)), nz = max(2, Int(l / 7))
                 for i in 0...nx {
                     for j in 0...nz where i == 0 || i == nx || j == 0 || j == nz {
-                        let p = SIMD3(c.x - w / 2 + 0.3 + Float(i) / Float(nx) * (w - 0.6), y, c.z - l / 2 + 0.3 + Float(j) / Float(nz) * (l - 0.6))
+                        let px: Float = c.x - w / 2 + 0.3 + Float(i) / Float(nx) * (w - 0.6)
+                        let pz: Float = c.z - l / 2 + 0.3 + Float(j) / Float(nz) * (l - 0.6)
+                        let p = SIMD3<Float>(px, y, pz)
                         box(solid, p, 0.45, story - 0.35, 0.45, concrete)
                     }
                 }
@@ -328,7 +339,7 @@ enum CityDecor {
             }
         }
         // Stair tower and the P sign on the roof
-        let tower = SIMD3(c.x + w / 2 - 2.0, 0, c.z - l / 2 + 2.0)
+        let tower = SIMD3<Float>(c.x + w / 2 - 2.0, 0, c.z - l / 2 + 2.0)
         box(solid, tower, 3.2, Float(levels) * story + 2.6, 3.2, color("garageTower", UIColor(red: 0.38, green: 0.42, blue: 0.50, alpha: 1)), concrete)
         let sign = material("parkingSign") {
             let material = Mat.lambert(CityArt.parkingSign)
@@ -366,7 +377,9 @@ enum CityDecor {
             let half = (span - 4) / 2
             for side in [Float(-1), 1] {
                 let offset = side * (2 + half / 2)
-                let p = SIMD3(c.x + dx * (w / 2 - 0.5) + (dx == 0 ? offset : 0), 0, c.z + dz * (l / 2 - 0.5) + (dz == 0 ? offset : 0))
+                let px: Float = c.x + dx * (w / 2 - 0.5) + (dx == 0 ? offset : 0)
+                let pz: Float = c.z + dz * (l / 2 - 0.5) + (dz == 0 ? offset : 0)
+                let p = SIMD3<Float>(px, 0, pz)
                 if dx != 0 { box(solid, p, 0.9, 0.8, half, hedge) } else { box(solid, p, half, 0.8, 0.9, hedge) }
             }
         }
@@ -374,7 +387,9 @@ enum CityDecor {
         for qx in [Float(-1), 1] {
             for qz in [Float(-1), 1] {
                 for _ in 0..<(3 + rng.int(2)) {
-                    let p = SIMD3(c.x + qx * Float(rng.range(4.5, CGFloat(w / 2 - 2.5))), 0, c.z + qz * Float(rng.range(4.5, CGFloat(l / 2 - 2.5))))
+                    let ox = Float(rng.range(4.5, CGFloat(w / 2 - 2.5)))
+                    let oz = Float(rng.range(4.5, CGFloat(l / 2 - 2.5)))
+                    let p = SIMD3<Float>(c.x + qx * ox, 0, c.z + qz * oz)
                     tree(solid, ground, at: p, size: Float(rng.range(0.9, 1.3)), variant: rng.int(2))
                 }
                 bench(solid, at: SIMD3(c.x + qx * 6, 0, c.z + qz * 2.4), alongX: true, facingPositive: qz < 0)
@@ -518,7 +533,8 @@ enum CityDecor {
         box(solid, p + back, alongX ? 4.0 : 0.06, 2.3, alongX ? 0.06 : 4.0, glass)
         let end = alongX ? SIMD3<Float>(2.0, 0, 0) : SIMD3<Float>(0, 0, 2.0)
         for s in [Float(-1), 1] { box(solid, p + back + end * s, 0.1, 2.5, 0.1, frame) }
-        box(solid, p + back + end * 0.98 + SIMD3(0, 0.4, 0), alongX ? 0.12 : 1.3, 1.8, alongX ? 1.3 : 0.12, ad)
+        let adSpot: SIMD3<Float> = p + back + end * 0.98 + SIMD3<Float>(0, 0.4, 0)
+        box(solid, adSpot, alongX ? 0.12 : 1.3, 1.8, alongX ? 1.3 : 0.12, ad)
         bench(solid, at: p + back * 0.4, alongX: alongX, facingPositive: alongX ? inward.dy > 0 : inward.dx > 0)
     }
 

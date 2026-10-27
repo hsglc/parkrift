@@ -84,7 +84,9 @@ final class MeshBuilder {
         let fwd = SIMD3<Float>(f.x, 0, f.y) * (length / 2)
         let right = SIMD3<Float>(-f.y, 0, f.x) * (width / 2)
         // back-left, back-right, front-right, front-left (counter-clockwise from above)
-        let corners = [center - fwd - right, center - fwd + right, center + fwd + right, center + fwd - right]
+        let back = center - fwd
+        let front = center + fwd
+        let corners: [SIMD3<Float>] = [back - right, back + right, front + right, front - right]
         // Seen from above the winding must be counter-clockwise: check and flip if needed
         let n = simd_cross(corners[1] - corners[0], corners[2] - corners[0])
         let uv: [SIMD2<Float>] = [SIMD2(0, uvScale.y), SIMD2(uvScale.x, uvScale.y), SIMD2(uvScale.x, 0), SIMD2(0, 0)]
@@ -145,7 +147,10 @@ final class MeshBuilder {
         func point(_ ring: Int, _ seg: Int) -> SIMD3<Float> {
             let phi = Float(ring) / Float(rings) * .pi
             let theta = Float(seg) / Float(segments) * 2 * .pi + (ring % 2 == 0 ? 0 : .pi / Float(segments))
-            return center + SIMD3(sin(phi) * cos(theta) * radius, cos(phi) * radius * squash, sin(phi) * sin(theta) * radius)
+            let x: Float = sin(phi) * cos(theta) * radius
+            let y: Float = cos(phi) * radius * squash
+            let z: Float = sin(phi) * sin(theta) * radius
+            return center + SIMD3<Float>(x, y, z)
         }
         for ring in 0..<rings {
             for seg in 0..<segments {
@@ -153,7 +158,8 @@ final class MeshBuilder {
                 var corners = [a, d, c, b]
                 var n = simd_cross(corners[1] - corners[0], corners[2] - corners[0])
                 if simd_length(n) < 1e-6 { n = simd_cross(corners[2] - corners[0], corners[3] - corners[0]) }
-                let outward = (a + b + c + d) / 4 - center
+                let sum: SIMD3<Float> = a + b + c + d
+                let outward: SIMD3<Float> = sum / 4 - center
                 if simd_dot(n, outward) < 0 { corners = [a, b, c, d]; n = -n }
                 let normal = simd_length(n) > 0 ? simd_normalize(n) : SIMD3(0, 1, 0)
                 addQuad(corners, normal: normal, uv: [SIMD2(0, 1), SIMD2(1, 1), SIMD2(1, 0), SIMD2(0, 0)], material: material)
