@@ -405,11 +405,28 @@ extension Levels {
                         world: worldSize, city: map, bots: bots)
     }
 
-    /// Buildings: 2–3 columns x 2 rows per block, set back behind a sidewalk.
+    /// Landmark kinds, stored in a building's `tint` (100+).
+    static let gasStation = 100
+    static let parkingGarage = 101
+    static let park = 102
+
+    /// Buildings: 2–3 columns x 2 rows per block, set back behind a sidewalk. One block is a park,
+    /// and a few corner lots hold a gas station or a parking garage.
     private static func buildings(map: CityMap, rng: inout SplitMix64) -> [ObstacleDef] {
         var result: [ObstacleDef] = []
-        for block in map.blocks {
-            let inner = block.insetBy(dx: 24, dy: 24)
+        let blocks = map.blocks
+        var order = Array(blocks.indices)
+        order.shuffle(using: &rng)
+        let parkBlock = order.first ?? -1
+        let gasBlocks = Set(order.dropFirst().prefix(2))
+        let garageBlocks = Set(order.dropFirst(3).prefix(2))
+        for (index, block) in blocks.enumerated() {
+            let inner = block.insetBy(dx: 36, dy: 36)
+            if index == parkBlock {
+                result.append(ObstacleDef(kind: .building, center: CGPoint(x: inner.midX, y: inner.midY), size: inner.size,
+                                          angle: 0, tint: park, height: 0))
+                continue
+            }
             let columns = 2 + rng.int(2)
             let gap: CGFloat = 22
             let width = (inner.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
@@ -418,8 +435,14 @@ extension Levels {
                 for r in 0..<2 {
                     let center = CGPoint(x: inner.minX + width * (CGFloat(c) + 0.5) + gap * CGFloat(c),
                                          y: inner.minY + height * (CGFloat(r) + 0.5) + gap * CGFloat(r))
+                    var tint = rng.int(8)
+                    let floors = rng.range(7, 26)
+                    if c == 0 && r == 0 {
+                        if gasBlocks.contains(index) { tint = gasStation }
+                        if garageBlocks.contains(index) { tint = parkingGarage }
+                    }
                     result.append(ObstacleDef(kind: .building, center: center, size: CGSize(width: width, height: height),
-                                              angle: 0, tint: rng.int(8), height: rng.range(7, 24)))
+                                              angle: 0, tint: tint, height: tint >= 100 ? 12 : floors))
                 }
             }
         }

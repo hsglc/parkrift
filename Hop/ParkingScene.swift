@@ -1,4 +1,5 @@
 import SpriteKit
+import SceneKit
 import UIKit
 
 /// Game loop, input, HUD and 2D effects. The world itself is drawn in 3D by `World3D`
@@ -656,6 +657,7 @@ final class ParkingScene: SKScene {
         obstacleBoxes = level.obstacles.map { $0.box }
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
+        setupBonuses()
         if level.race {
             // Draws once with the plate's fonts so the finish moment does not lay out glyphs cold
             _ = CarArt.finishPlate(kicker: Strings.raceComplete, title: Strings.finishBig, stats: [("stopwatch.fill", "0.0 s")],
@@ -1458,6 +1460,7 @@ final class ParkingScene: SKScene {
 
         updateRemoteCar(dt)
         updateNitro(dt)
+        updateBonuses()
         updateSpeedometer(dt)
 
         timerLabel.text = String(format: "%.1f", localParked ? localTime : elapsed)
@@ -1681,6 +1684,11 @@ final class ParkingScene: SKScene {
                                                     width: block.width * mapScale, height: block.height * mapScale), cornerRadius: 2)
                 node.fillColor = UIColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 1)
                 node.strokeColor = .clear
+                mapContent.addChild(node)
+            }
+            for obstacle in level.obstacles where obstacle.tint == Levels.park {
+                let node = shape(center: obstacle.center, size: obstacle.size, angle: 0)
+                node.fillColor = UIColor(red: 0.16, green: 0.36, blue: 0.20, alpha: 1)
                 mapContent.addChild(node)
             }
             routeLine = SKShapeNode()
@@ -2343,6 +2351,116 @@ final class ParkingScene: SKScene {
             self.worldFrozen = true
             self.world?.setRenderingPaused(true)
         }
+    }
+
+    // MARK: Nitro pickups and speed cameras
+
+    private struct Pickup {
+        let point: CGPoint
+        let node: SCNNode
+        var readyAt: TimeInterval
+    }
+
+    private struct SpeedCamera {
+        let point: CGPoint
+        let alongX: Bool
+        let flash: SCNNode
+        var readyAt: TimeInterval
+    }
+
+    private var pickups: [Pickup] = []
+    private var speedCameras: [SpeedCamera] = []
+    private var bonusLabel = SKLabelNode()
+    private let cameraThreshold: CGFloat = 45   // km/h
+
+    /// Canisters on the lanes of a dozen street segments and speed cameras on a few others
+    /// (same layout for both players: seeded by the level).
+    private func setupBonuses() {
+        pickups.removeAll()
+        speedCameras.removeAll()
+        if bonusLabel.parent == nil {
+            bonusLabel = makeLabel(Strings.nitroPickup, size: 20, color: UIColor(red: 0.45, green: 0.9, blue: 1.0, alpha: 1))
+            bonusLabel.position = CGPoint(x: size.width / 2, y: size.height * 0.7)
+            bonusLabel.zPosition = 21
+            bonusLabel.alpha = 0.002
+            hud.addChild(bonusLabel)
+        }
+        guard let city = level.city, let world = world else { return }
+        var segments: [(mid: CGPoint, alongX: Bool)] = []
+        for y in city.ys {
+            for i in 0..<(city.cols - 1) { segments.append((CGPoint(x: (city.xs[i] + city.xs[i + 1]) / 2, y: y), true)) }
+        }
+        for x in city.xs {
+            for j in 0..<(city.rows - 1) { segments.append((CGPoint(x: x, y: (city.ys[j] + city.ys[j + 1]) / 2), false)) }
+        }
+        var rng = SplitMix64(seed: UInt64(levelIndex) &* 104_729 &+ 17)
+        segments.shuffle(using: &rng)
+        for segment in segments.prefix(12) {
+            let lane: CGFloat = rng.unit() < 0.5 ? CityMap.laneOffset : -CityMap.laneOffset
+            let shift = rng.range(-120, 120)
+            let point = segment.alongX ? CGPoint(x: segment.mid.x + shift, y: segment.mid.y + lane)
+                                       : CGPoint(x: segment.mid.x + lane, y: segment.mid.y + shift)
+            pickups.append(Pickup(point: point, node: world.addNitroPickup(at: point), readyAt: 0))
+        }
+        for segment in segments.dropFirst(12).prefix(4) {
+            let pole = segment.alongX ? CGPoint(x: segment.mid.x + 60, y: segment.mid.y + 106)
+                                      : CGPoint(x: segment.mid.x + 106, y: segment.mid.y + 60)
+            speedCameras.append(SpeedCamera(point: segment.mid, alongX: segment.alongX,
+                                            flash: world.addSpeedCamera(at: pole, lookingAlongX: segment.alongX), readyAt: 0))
+        }
+    }
+
+    private func updateBonuses() {
+        guard phase == .driving, !localParked, !pickups.isEmpty || !speedCameras.isEmpty else { return }
+        let now = lastUpdate
+        for index in pickups.indices where now >= pickups[index].readyAt {
+            let pickup = pickups[index]
+            if !pickup.node.isHidden, pickup.point.distance(to: carPosition) < 26 {
+                pickups[index].readyAt = now + 18
+                pickup.node.runAction(.sequence([.group([.scale(to: 1.8, duration: 0.15), .fadeOut(duration: 0.15)]), .hide()]))
+                nitro = min(1, nitro + 0.5)
+                audio.play("beep", volume: 0.7)
+                tickHaptic.impactOccurred(intensity: 0.8)
+                flashBonus(Strings.nitroPickup)
+            } else if pickup.node.isHidden && pickups[index].readyAt > 0 {
+                // Back after the cooldown
+                pickup.node.scale = SCNVector3(1, 1, 1)
+                pickup.node.isHidden = false
+                pickup.node.runAction(.fadeIn(duration: 0.4))
+                pickups[index].readyAt = 0
+            }
+        }
+        let kmh = abs(velocity) * 0.36
+        for index in speedCameras.indices where now >= speedCameras[index].readyAt {
+            let camera = speedCameras[index]
+            let along = camera.alongX ? abs(carPosition.x - camera.point.x) : abs(carPosition.y - camera.point.y)
+            let across = camera.alongX ? abs(carPosition.y - camera.point.y) : abs(carPosition.x - camera.point.x)
+            guard along < 40, across < CityMap.roadHalf, kmh > 12 else { continue }
+            speedCameras[index].readyAt = now + 8
+            camera.flash.removeAllActions()
+            camera.flash.scale = SCNVector3(1, 1, 1)
+            camera.flash.runAction(.sequence([.wait(duration: 0.12), .scale(to: 0.001, duration: 0.2)]))
+            let speedText = "\(Int(kmh.rounded())) km/h"
+            if kmh >= cameraThreshold {
+                nitro = min(1, nitro + 0.35)
+                audio.play("beep", volume: 0.8)
+                notifyHaptic.notificationOccurred(.success)
+                flashBonus(Strings.radarBonus(speedText))
+            } else {
+                flashBonus(Strings.radarSlow(speedText, Int(cameraThreshold)))
+            }
+        }
+    }
+
+    /// Short text pop above the car (prebuilt label, so the first bonus does not stall).
+    private func flashBonus(_ text: String) {
+        bonusLabel.removeAllActions()
+        bonusLabel.text = text
+        bonusLabel.position = CGPoint(x: size.width / 2, y: size.height * 0.7)
+        bonusLabel.setScale(0.6)
+        bonusLabel.alpha = 1
+        bonusLabel.run(.sequence([.scale(to: 1.1, duration: 0.12), .scale(to: 1.0, duration: 0.08), .wait(forDuration: 0.9),
+                                  .group([.fadeAlpha(to: 0.002, duration: 0.3), .moveBy(x: 0, y: 16, duration: 0.3)])]))
     }
 
     private func showToast(_ text: String) {

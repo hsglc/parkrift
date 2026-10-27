@@ -896,11 +896,11 @@ final class World3D {
         skidMaterial.writesToDepthBuffer = false
         skidGeometry.materials = [skidMaterial]
 
-        scene.background.contents = CarArt.skyImage()
+        scene.background.contents = CityArt.sky
         scene.fogColor = UIColor(red: 0.84, green: 0.90, blue: 0.97, alpha: 1)
         scene.fogStartDistance = 70
         scene.fogEndDistance = 200
-        scene.lightingEnvironment.contents = CarArt.skyImage()
+        scene.lightingEnvironment.contents = CityArt.sky
         scene.lightingEnvironment.intensity = 1.1
         buildLights()
         scene.rootNode.addChildNode(lotRoot)
@@ -1292,6 +1292,7 @@ final class World3D {
         signalHeads.removeAll()
         if let city = level.city {
             buildCity(city, world: level.world)
+            levelRoot.addChildNode(CityDecor.build(level: level, city: city))
         }
 
         if level.race {
@@ -1395,6 +1396,8 @@ final class World3D {
                     parkedCars.addChildNode(car.node)
                 }
             case .building:
+                // City blocks are drawn in detail by CityDecor
+                if level.city != nil { continue }
                 let height = obstacle.height
                 let width = obstacle.size.width / 10
                 let length = obstacle.size.height / 10
@@ -1529,7 +1532,7 @@ final class World3D {
 
     /// Streets, intersections, sidewalks and edge barriers for a city level.
     private func buildCity(_ city: CityMap, world: CGSize) {
-        let roadTexture = CarArt.roadImage()
+        let roadTexture = CityArt.road
         let roadWidth = CityMap.roadHalf * 2
         func roadMaterial(length: CGFloat) -> SCNMaterial {
             let material = Mat.lambert(roadTexture)
@@ -1549,7 +1552,7 @@ final class World3D {
         }
         // North-south streets: a plane laid out along z with a texture drawn along V
         // (rotating the east-west plane left these streets invisible).
-        let verticalTexture = CarArt.roadImageVertical()
+        let verticalTexture = CityArt.roadVertical
         for x in city.xs {
             let plane = SCNPlane(width: roadWidth / 10, height: world.height / 10)
             let material = Mat.lambert(verticalTexture)
@@ -1563,7 +1566,7 @@ final class World3D {
             ground.addChildNode(node)
         }
         let junction = SCNPlane(width: roadWidth / 10, height: roadWidth / 10)
-        junction.materials = [Mat.lambert(UIColor(red: 0.27, green: 0.28, blue: 0.31, alpha: 1))]
+        junction.materials = [Mat.lambert(CityArt.junction)]
         let stripe = SCNPlane(width: 0.5, height: 3.2)
         stripe.materials = [Mat.lambert(UIColor(white: 0.93, alpha: 1))]
         for x in city.xs {
@@ -1590,22 +1593,19 @@ final class World3D {
             }
         }
         // Sidewalks / plazas on each block
-        let sidewalk = Mat.lambert(UIColor(red: 0.74, green: 0.73, blue: 0.70, alpha: 1))
-        let lawn = Mat.lambert(UIColor(red: 0.42, green: 0.62, blue: 0.36, alpha: 1))
         for block in city.blocks {
             let plane = SCNPlane(width: block.width / 10, height: block.height / 10)
+            // Pavers: one texture tile is 2 x 2 m
+            let sidewalk = Mat.lambert(CityArt.pavers)
+            sidewalk.diffuse.wrapS = .repeat
+            sidewalk.diffuse.wrapT = .repeat
+            sidewalk.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(block.width / 20), Float(block.height / 20), 1)
             plane.materials = [sidewalk]
             let node = flat(plane, y: 0.08)
             let p = World3D.vec(CGPoint(x: block.midX, y: block.midY))
             node.position.x = p.x
             node.position.z = p.z
             ground.addChildNode(node)
-            let inner = SCNPlane(width: block.width / 10 - 3, height: block.height / 10 - 3)
-            inner.materials = [lawn]
-            let innerNode = flat(inner, y: 0.09)
-            innerNode.position.x = p.x
-            innerNode.position.z = p.z
-            ground.addChildNode(innerNode)
         }
         // Low barriers around the map edge
         let barrier = Mat.pbr(UIColor(red: 0.85, green: 0.85, blue: 0.86, alpha: 1), rough: 0.8)
@@ -1831,6 +1831,82 @@ final class World3D {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { next(index + 1) }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { next(0) }
+    }
+
+    // MARK: Nitro pickups and speed cameras
+
+    private static let pickupGeometry: (can: SCNGeometry, ring: SCNGeometry) = {
+        let can = SCNCylinder(radius: 0.42, height: 1.1)
+        can.radialSegmentCount = 14
+        let label = Mat.pbr(.white, metal: 0.6, rough: 0.25)
+        label.diffuse.contents = CityArt.nitroCan
+        label.emission.contents = UIColor(red: 0.05, green: 0.25, blue: 0.55, alpha: 1)
+        let cap = Mat.pbr(UIColor(white: 0.85, alpha: 1), metal: 0.9, rough: 0.2)
+        can.materials = [label, cap, cap]
+        let ring = SCNPlane(width: 3.2, height: 3.2)
+        let glow = SCNMaterial()
+        glow.lightingModel = .constant
+        glow.diffuse.contents = CarArt.glowParticle()
+        glow.multiply.contents = UIColor(red: 0.3, green: 0.75, blue: 1.0, alpha: 1)
+        glow.blendMode = .add
+        glow.writesToDepthBuffer = false
+        ring.materials = [glow]
+        return (can, ring)
+    }()
+
+    /// A spinning, bobbing nitro canister with a glow on the road.
+    func addNitroPickup(at point: CGPoint) -> SCNNode {
+        let holder = SCNNode()
+        holder.position = World3D.vec(point)
+        let can = SCNNode(geometry: World3D.pickupGeometry.can)
+        can.position.y = 1.2
+        can.eulerAngles.z = 0.35
+        can.castsShadow = false
+        let spin = SCNNode()
+        spin.addChildNode(can)
+        spin.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 1.8)))
+        spin.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.35, z: 0, duration: 0.6), .moveBy(x: 0, y: -0.35, z: 0, duration: 0.6)])))
+        holder.addChildNode(spin)
+        let ring = SCNNode(geometry: World3D.pickupGeometry.ring)
+        ring.eulerAngles.x = -Float.pi / 2
+        ring.position.y = 0.05
+        ring.castsShadow = false
+        holder.addChildNode(ring)
+        levelRoot.addChildNode(holder)
+        return holder
+    }
+
+    /// Speed camera on a pole at the curb; returns the flash node (shown briefly when it fires).
+    func addSpeedCamera(at point: CGPoint, lookingAlongX: Bool) -> SCNNode {
+        let holder = SCNNode()
+        holder.position = World3D.vec(point)
+        if !lookingAlongX { holder.eulerAngles.y = Float.pi / 2 }
+        let pole = SCNBox(width: 0.18, height: 4.2, length: 0.18, chamferRadius: 0.02)
+        pole.materials = [Mat.pbr(UIColor(white: 0.3, alpha: 1), metal: 0.6, rough: 0.4)]
+        let poleNode = SCNNode(geometry: pole)
+        poleNode.position.y = 2.1
+        holder.addChildNode(poleNode)
+        let housing = SCNBox(width: 0.9, height: 0.55, length: 0.6, chamferRadius: 0.06)
+        housing.materials = [Mat.pbr(UIColor(red: 0.95, green: 0.8, blue: 0.1, alpha: 1), metal: 0.2, rough: 0.5)]
+        let housingNode = SCNNode(geometry: housing)
+        housingNode.position.y = 4.3
+        holder.addChildNode(housingNode)
+        let sign = SCNBox(width: 0.06, height: 1.0, length: 1.0, chamferRadius: 0)
+        let signMaterial = Mat.lambert(CityArt.radarSign)
+        sign.materials = [signMaterial]
+        for side: Float in [-1, 1] {
+            let node = SCNNode(geometry: sign)
+            node.position = SCNVector3(side * 0.12, 3.2, 0)
+            holder.addChildNode(node)
+        }
+        let flash = SCNNode(geometry: SCNSphere(radius: 0.5))
+        flash.geometry?.materials = [Mat.glow(UIColor.white)]
+        flash.position.y = 4.3
+        flash.scale = SCNVector3(0.001, 0.001, 0.001)
+        flash.castsShadow = false
+        holder.addChildNode(flash)
+        levelRoot.addChildNode(holder)
+        return flash
     }
 
     /// Benchmark helper: saves what the 3D view shows to Documents/<name>.png.

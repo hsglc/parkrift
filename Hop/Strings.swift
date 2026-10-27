@@ -149,4 +149,9 @@ enum Strings {
     // Menu
     static var chooseMode: String { t("Mod seç", "Choose mode") }
     static var playNow: String { t("Oyna", "Play") }
+
+    // City bonuses
+    static var nitroPickup: String { t("+NİTRO", "+NITRO") }
+    static func radarBonus(_ speed: String) -> String { t("RADAR \(speed) · +NİTRO", "SPEED CAM \(speed) · +NITRO") }
+    static func radarSlow(_ speed: String, _ need: Int) -> String { t("RADAR \(speed) · \(need)+ gerek", "SPEED CAM \(speed) · need \(need)+") }
 }
