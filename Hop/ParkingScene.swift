@@ -775,6 +775,8 @@ final class ParkingScene: SKScene {
         // Arcade extras of the level
         streetProps = level.city != nil ? world.addProps(level.props) : nil
         police = nil
+        remotePolice = nil
+        remotePoliceTarget = nil
         policeCooldownUntil = 0
         if policeBanner.parent != nil {
             policeBanner.alpha = 0
@@ -970,9 +972,15 @@ final class ParkingScene: SKScene {
             remoteBoost = (message["n"] as? Int ?? 0) == 1
             remoteBraking = (message["b"] as? Int ?? 0) == 1
             remoteReversing = (message["r"] as? Int ?? 0) == 1
+            if let pose = message["pp"] as? [Double], pose.count == 3 {
+                remotePoliceTarget = (CGPoint(x: pose[0], y: pose[1]), CGFloat(pose[2]))
+            } else {
+                remotePoliceTarget = nil
+            }
         case "p":
             guard messageLevel == levelIndex else { return }
             remoteParked = true
+            remotePoliceTarget = nil
             remoteTime = message["time"] as? Double ?? -1
             remoteHits = message["hits"] as? Int ?? 0
             if let x = message["x"] as? Double, let y = message["y"] as? Double, let h = message["h"] as? Double {
@@ -1378,7 +1386,8 @@ final class ParkingScene: SKScene {
         model?.send(["t": "s", "l": levelIndex, "ts": CACurrentMediaTime(),
                      "x": Double(carPosition.x), "y": Double(carPosition.y),
                      "h": Double(heading), "v": Double(velocity), "st": Double(steer),
-                     "b": braking ? 1 : 0, "r": (gear == .reverse && velocity < -1) ? 1 : 0, "n": isBoosting ? 1 : 0])
+                     "b": braking ? 1 : 0, "r": (gear == .reverse && velocity < -1) ? 1 : 0, "n": isBoosting ? 1 : 0,
+                     "pp": police.map { [Double($0.position.x), Double($0.position.y), Double($0.heading)] } ?? []])
     }
 
     // MARK: Input
@@ -1691,6 +1700,8 @@ final class ParkingScene: SKScene {
     // MARK: City race
 
     private func gaveUp() {
+        endPoliceChase()
+        audio.setLoop("siren", volume: 0)
         localParked = true
         localTime = -1
         velocity = 0
@@ -2001,7 +2012,7 @@ final class ParkingScene: SKScene {
         friendMarker.isHidden = !friendPresent
         friendMarker.position = CGPoint(x: remotePosition.x * mapScale, y: remotePosition.y * mapScale)
         friendMarker.zRotation = remoteHeading
-        if let chase = police {
+        if let chase = police ?? remotePolice {
             policeMarker.isHidden = false
             policeMarker.position = CGPoint(x: chase.position.x * mapScale, y: chase.position.y * mapScale)
             let red = Int(lastUpdate * 6) % 2 == 0
@@ -2401,10 +2412,21 @@ final class ParkingScene: SKScene {
             trail.append(carPosition)
             if trail.count > 140 { trail.removeFirst(trail.count - 140) }
         }
-        if let chase = police {
+        // The friend's police car (online): shown where the friend's game says it is
+        var siren: CGFloat = 0
+        if let target = remotePoliceTarget, friendPresent, !remoteParked, let world = world, let city = level.city {
+            if remotePolice == nil {
+                remotePolice = PoliceChase(node: world.makePoliceNode(), map: city, start: target.position)
+            }
+            remotePolice?.mirror(dt, to: target.position, heading: target.heading, viewer: carPosition)
+            if let other = remotePolice { siren = max(siren, 0.6 - other.distance / 1600) }
+        } else if remotePolice != nil {
+            removeRemotePolice()
+        }
+        if let chase = police, driving {
             let outcome = chase.step(dt, player: carPosition, playerSpeed: abs(velocity), trail: trail)
             // The siren gets louder as the police closes in
-            audio.setLoop("siren", volume: Float(max(0.12, min(0.8, 0.85 - chase.distance / 1600))))
+            siren = max(siren, max(0.12, min(0.8, 0.85 - chase.distance / 1600)))
             updatePoliceWarning(chase)
             switch outcome {
             case .caught:
@@ -2422,7 +2444,16 @@ final class ParkingScene: SKScene {
             case .none:
                 break
             }
+        } else if police != nil {
+            endPoliceChase()
         }
+        audio.setLoop("siren", volume: phase == .driving && !localParked ? Float(max(0, siren)) : 0)
+    }
+
+    private func removeRemotePolice() {
+        guard let other = remotePolice else { return }
+        remotePolice = nil
+        other.node.runAction(.sequence([.fadeOut(duration: 0.5), .removeFromParentNode()]))
     }
 
     /// A crime (crash, hitting a pedestrian, a long drift, speeding past a radar) calls the police:
@@ -2469,6 +2500,9 @@ final class ParkingScene: SKScene {
     // MARK: Police warning
 
     private var policeCooldownUntil: TimeInterval = 0
+    /// The friend's police car: the last pose they sent, and its node here.
+    private var remotePoliceTarget: (position: CGPoint, heading: CGFloat)?
+    private var remotePolice: PoliceChase?
     private var policeBanner = SKNode()
     private var policeTitle = SKLabelNode()
     private var policeDetail = SKLabelNode()
@@ -2888,6 +2922,7 @@ final class ParkingScene: SKScene {
             flashBonus(Strings.driftPark)
         }
         if drifting { endDrift() }
+        endPoliceChase()
         audio.setLoop("skid", volume: 0)
         audio.setLoop("siren", volume: 0)
         if !level.race { velocity = 0 }

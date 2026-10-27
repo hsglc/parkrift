@@ -220,7 +220,7 @@ final class PoliceChase {
     private let map: CityMap
     private var waypoints: [CGPoint] = []
     private(set) var position: CGPoint
-    private var heading: CGFloat = 0
+    private(set) var heading: CGFloat = 0
     private var speed: CGFloat = 0
     private var clock: CGFloat = 0
     private var planClock: CGFloat = 0
@@ -267,15 +267,39 @@ final class PoliceChase {
         duration = max(duration, clock + 25)
     }
 
+    /// Flashing light bar: red and blue take turns.
+    private func flashLights() {
+        let redOn = Int(clock * 7) % 2 == 0
+        for lamp in redLamps { lamp.emission.contents = redOn ? UIColor(red: 1, green: 0.1, blue: 0.08, alpha: 1) : UIColor.black }
+        for lamp in blueLamps { lamp.emission.contents = redOn ? UIColor.black : UIColor(red: 0.15, green: 0.35, blue: 1, alpha: 1) }
+    }
+
+    /// The friend's police car in an online game: its pose arrives over the network and the car
+    /// eases to it, with the light bar flashing and the wheels turning.
+    func mirror(_ dt: CGFloat, to target: CGPoint, heading targetHeading: CGFloat, viewer: CGPoint) {
+        clock += dt
+        flashLights()
+        let k = min(1, dt * 10)
+        let before = position
+        if position.distance(to: target) > 300 {
+            position = target
+        } else {
+            position = CGPoint(x: position.x + (target.x - position.x) * k, y: position.y + (target.y - position.y) * k)
+        }
+        heading += CGFloat.angleDelta(heading, targetHeading) * k
+        distance = position.distance(to: viewer)
+        node.position = World3D.vec(position)
+        node.eulerAngles.y = Float(heading)
+        spin += position.distance(to: before) / 10 / 0.32
+        for wheel in wheels { wheel.eulerAngles.x = Float(spin) }
+    }
+
     /// `trail`: the player's recent positions, oldest first.
     func step(_ dt: CGFloat, player: CGPoint, playerSpeed: CGFloat, trail: [CGPoint]) -> Outcome {
         guard !finished else { return .none }
         clock += dt
         distance = position.distance(to: player)
-        // Flashing light bar: red and blue take turns
-        let redOn = Int(clock * 7) % 2 == 0
-        for lamp in redLamps { lamp.emission.contents = redOn ? UIColor(red: 1, green: 0.1, blue: 0.08, alpha: 1) : UIColor.black }
-        for lamp in blueLamps { lamp.emission.contents = redOn ? UIColor.black : UIColor(red: 0.15, green: 0.35, blue: 1, alpha: 1) }
+        flashLights()
 
         // Plan: along the streets while far, along the player's own path when close
         planClock -= dt
