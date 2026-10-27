@@ -1,4 +1,4 @@
-# ParkPark
+# Parkrift (eski adı ParkPark)
 
 Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 3D dünya + SpriteKit HUD, yatay ekran). Repo adı ve bundle ID tarihsel olarak `hop`.
 

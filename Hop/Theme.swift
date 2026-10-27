@@ -115,21 +115,20 @@ struct StarsRow: View {
     }
 }
 
-/// "ParkPark" wordmark in the two player colors.
+/// "Parkrift" wordmark: "Park" in the racing red, "rift" in the neon cyan of the icon's drift trail.
 struct Logo: View {
     var size: CGFloat = 50
 
     var body: some View {
         HStack(spacing: 0) {
             Text("Park")
-                .foregroundStyle(LinearGradient(colors: [Color(red: 1.0, green: 0.55, blue: 0.45), Palette.red],
+                .foregroundStyle(LinearGradient(colors: [Color(red: 1.0, green: 0.55, blue: 0.40), Color(red: 1.0, green: 0.24, blue: 0.35)],
                                                 startPoint: .top, endPoint: .bottom))
-            Text("Park")
-                .foregroundStyle(LinearGradient(colors: [Color(red: 0.55, green: 0.80, blue: 1.0), Palette.blue],
+            Text("rift")
+                .foregroundStyle(LinearGradient(colors: [Color(red: 0.55, green: 0.95, blue: 1.0), Color(red: 0.24, green: 0.80, blue: 1.0)],
                                                 startPoint: .top, endPoint: .bottom))
         }
-        .font(.system(size: size, weight: .black, design: .rounded))
-        .italic()
+        .font(.race(size * 1.08))
         .shadow(color: .black.opacity(0.55), radius: 0, x: 0, y: 3)
         .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
     }

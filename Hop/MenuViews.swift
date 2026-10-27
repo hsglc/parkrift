@@ -671,7 +671,7 @@ struct LobbyView: View {
                         Text(Strings.shareCode)
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundStyle(.white.opacity(0.65))
-                        ShareLink(item: "ParkPark – \(Strings.roomCode): \(model.roomCode)") {
+                        ShareLink(item: "Parkrift – \(Strings.roomCode): \(model.roomCode)") {
                             Label(Strings.shareCode, systemImage: "square.and.arrow.up")
                                 .labelStyle(.iconOnly)
                                 .font(.system(size: 15, weight: .black))

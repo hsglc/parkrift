@@ -1,0 +1,62 @@
+<!doctype html><html><body style="margin:0;background:#000">
+<svg id="i" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#2a1b6e"/><stop offset="0.55" stop-color="#16123a"/><stop offset="1" stop-color="#0a0b1c"/>
+  </linearGradient>
+  <radialGradient id="glow" cx="0.62" cy="0.40" r="0.45">
+    <stop offset="0" stop-color="#ffcf3a" stop-opacity="0.55"/><stop offset="1" stop-color="#ffcf3a" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="body" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#ff3d5a"/><stop offset="1" stop-color="#ff7a3d"/>
+  </linearGradient>
+  <linearGradient id="trail" x1="0" y1="1" x2="1" y2="0">
+    <stop offset="0" stop-color="#3ee8ff" stop-opacity="0"/><stop offset="1" stop-color="#3ee8ff" stop-opacity="0.95"/>
+  </linearGradient>
+  <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14"/></filter>
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<g transform="translate(-95 60) scale(1.06)">
+<!-- asphalt lane dashes -->
+<g opacity="0.18" fill="#ffffff">
+  <rect x="120" y="860" width="120" height="22" rx="11" transform="rotate(-38 180 871)"/>
+  <rect x="300" y="720" width="120" height="22" rx="11" transform="rotate(-38 360 731)"/>
+</g>
+<!-- parking bay -->
+<rect x="470" y="170" width="330" height="440" rx="40" fill="url(#glow)"/>
+<g fill="none" stroke="#ffcf3a" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M500 190 L500 600 M770 190 L770 600 M500 190 L770 190"/>
+</g>
+<text x="635" y="295" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="120" fill="#ffcf3a" text-anchor="middle" opacity="0.95">P</text>
+<!-- drift trail: two arcs from bottom-left into the bay -->
+<g fill="none" stroke="url(#trail)" stroke-width="34" stroke-linecap="round">
+  <path d="M150 960 C 260 700, 420 660, 560 520"/>
+  <path d="M250 990 C 360 760, 520 720, 660 580"/>
+</g>
+<g fill="none" stroke="#3ee8ff" stroke-width="80" stroke-linecap="round" opacity="0.25" filter="url(#soft)">
+  <path d="M200 975 C 310 730, 470 690, 610 550"/>
+</g>
+<!-- car (top view), rotated as it slides in -->
+<g transform="translate(612 470) rotate(-22)">
+  <ellipse cx="0" cy="10" rx="120" ry="200" fill="#000" opacity="0.35" filter="url(#soft)"/>
+  <rect x="-108" y="-190" width="216" height="380" rx="70" fill="url(#body)"/>
+  <!-- wheels -->
+  <g fill="#14151c"><rect x="-128" y="-140" width="34" height="78" rx="12"/><rect x="94" y="-140" width="34" height="78" rx="12"/>
+  <rect x="-128" y="70" width="34" height="78" rx="12"/><rect x="94" y="70" width="34" height="78" rx="12"/></g>
+  <!-- windshield + roof + rear glass -->
+  <path d="M-80 -95 Q0 -130 80 -95 L68 -30 Q0 -45 -68 -30 Z" fill="#1d2a48"/>
+  <rect x="-70" y="-28" width="140" height="120" rx="26" fill="#ff5f4a"/>
+  <path d="M-66 96 Q0 108 66 96 L76 140 Q0 158 -76 140 Z" fill="#1d2a48"/>
+  <!-- racing stripes -->
+  <rect x="-22" y="-188" width="16" height="376" fill="#ffffff" opacity="0.9"/>
+  <rect x="6" y="-188" width="16" height="376" fill="#ffffff" opacity="0.9"/>
+  <!-- headlights -->
+  <rect x="-86" y="-186" width="48" height="16" rx="8" fill="#fff6c8"/><rect x="38" y="-186" width="48" height="16" rx="8" fill="#fff6c8"/>
+  <!-- tail lights -->
+  <rect x="-86" y="172" width="44" height="14" rx="7" fill="#ffd1d8"/><rect x="42" y="172" width="44" height="14" rx="7" fill="#ffd1d8"/>
+</g>
+<!-- speed sparks -->
+<g fill="#ffffff" opacity="0.85">
+  <circle cx="420" cy="760" r="9"/><circle cx="470" cy="700" r="6"/><circle cx="380" cy="820" r="5"/>
+</g>
+</g></svg></body></html>

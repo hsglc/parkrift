@@ -1,0 +1,32 @@
+name: App Store Connect app info
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: App name (max 30 characters)
+        required: true
+        default: "Parkrift: Park & Race Duel"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID || '668Y8934S8' }}
+      ASC_ISSUER_ID: 1e043955-17da-4831-838a-b4e2d593d0b5
+      BUNDLE_ID: com.huseyingulcu.hop
+      APP_NAME: ${{ inputs.name }}
+      SUBTITLE_EN: "Park, drift and race a friend"
+      SUBTITLE_TR: "Park et, drift at, yarış"
+      PRIVACY_URL: https://parkpark.huseyinglc0-946.workers.dev/privacy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/key.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/key.p8" >> "$GITHUB_ENV"
+      - run: pip install pyjwt cryptography requests
+      - run: python3 tools/asc_app_info.py

@@ -3,7 +3,7 @@ import SpriteKit
 import SceneKit
 
 @main
-struct ParkParkApp: App {
+struct ParkriftApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {

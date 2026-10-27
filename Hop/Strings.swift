@@ -6,7 +6,7 @@ enum Strings {
 
     private static func t(_ tr: String, _ en: String) -> String { isTurkish ? tr : en }
 
-    static let appName = "ParkPark"
+    static let appName = "Parkrift"
     static var tagline: String { t("Arkadaşınla aynı otoparkta, en temiz parkı kim yapacak?", "Same parking lot, two drivers. Who parks cleanest?") }
     static var playSolo: String { t("Tek Başına", "Play Solo") }
     static var createRoom: String { t("Oda Kur", "Create Room") }
@@ -123,8 +123,8 @@ enum Strings {
     static var privacyPolicy: String { t("Gizlilik Politikası", "Privacy Policy") }
     static var support: String { t("Destek", "Support") }
     static var licenses: String { t("3D modeller ve lisanslar", "3D models and licenses") }
-    static var aboutText: String { t("ParkPark kişisel veri toplamaz; hesap, reklam ve takip yoktur. Online oyunda yalnızca oda kodu ve araba hareketleri arkadaşına iletilir.",
-                                     "ParkPark collects no personal data: no accounts, ads or tracking. In online play only the room code and car movements are relayed to your friend.") }
+    static var aboutText: String { t("Parkrift kişisel veri toplamaz; hesap, reklam ve takip yoktur. Online oyunda yalnızca oda kodu ve araba hareketleri arkadaşına iletilir.",
+                                     "Parkrift collects no personal data: no accounts, ads or tracking. In online play only the room code and car movements are relayed to your friend.") }
     static var close: String { t("Kapat", "Close") }
 
     // Garage
