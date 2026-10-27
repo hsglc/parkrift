@@ -892,7 +892,7 @@ final class ParkingScene: SKScene {
             FrameMonitor.shared.start()
         }
         if benchClock > 1.0 && benchClock - dt <= 1.0 { world?.saveSnapshot(named: "shot-start") }
-        if benchClock > 12 && benchClock - dt <= 12 { world?.saveSnapshot(named: "shot-mid") }
+        if benchClock > 12 && benchClock - dt <= 12 { world?.saveSnapshot(named: "shot-mid"); saveFullSnapshot() }
         if benchRecording && benchClock > 22 {
             finishBenchmark()
             return
@@ -915,6 +915,20 @@ final class ParkingScene: SKScene {
             autoReverse = 1.0
         }
         if nitro >= 1 && abs(relative) < 0.25 { fireNitro() }
+    }
+
+    /// Benchmark helper: 3D view plus the HUD drawn on top, saved as Documents/shot-hud.png.
+    private func saveFullSnapshot() {
+        guard let world = world, let base = world.renderer?.snapshot(), let skView = view,
+              let texture = skView.texture(from: self),
+              let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let hudImage = UIImage(cgImage: texture.cgImage())
+        let canvas = CGSize(width: size.width, height: size.height)
+        let image = UIGraphicsImageRenderer(size: canvas).image { _ in
+            base.draw(in: CGRect(origin: .zero, size: canvas))
+            hudImage.draw(in: CGRect(origin: .zero, size: canvas))
+        }
+        try? image.pngData()?.write(to: folder.appendingPathComponent("shot-hud.png"))
     }
 
     private func finishBenchmark() {
