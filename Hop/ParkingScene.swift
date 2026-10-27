@@ -110,7 +110,8 @@ final class ParkingScene: SKScene {
     private var nitroFiredAt: [Double] = []
     private var detailClock: CGFloat = 0
     private var finishTestPlaced = false
-    private var nitroShotTaken = false
+    private var nitroShock = SKSpriteNode()
+    private var nitroBanner = SKLabelNode()
     private var finishTestAt: Double = -1
     private var finishCrossAt: Double = -1
     /// While the results card is up the 3D world is neither updated nor drawn.
@@ -140,8 +141,10 @@ final class ParkingScene: SKScene {
     private var boostTime: CGFloat = 0        // seconds of boost left
     private var boostVisual: CGFloat = 0      // eased 0...1 for effects
     private var remoteBoost = false
-    private let boostDuration: CGFloat = 3.0
-    private let nitroFillTime: CGFloat = 10
+    private var boostDuration: CGFloat = 3.0
+    private var nitroFillTime: CGFloat = 10
+    /// Nitro push (units/s²) for the chosen car.
+    private var nitroPush: CGFloat = 300
     private var nitroButton = SKSpriteNode()
     private var nitroIcon = SKSpriteNode()
     private var nitroRing = SKShapeNode()
@@ -159,14 +162,14 @@ final class ParkingScene: SKScene {
     // MARK: Driving model (1 world unit ≈ 10 cm)
 
     private let wheelBase: CGFloat = 26
-    private let maxSteer: CGFloat = 0.64
-    private let steerRate: CGFloat = 2.6
-    private let engineAccel: CGFloat = 150
+    private var maxSteer: CGFloat = 0.64
+    private var steerRate: CGFloat = 2.6
+    private var engineAccel: CGFloat = 150
     private let reverseAccel: CGFloat = 95
     private let brakeDecel: CGFloat = 360
     private let rolling: CGFloat = 22
     private let airDrag: CGFloat = 0.22
-    private let maxForward: CGFloat = 150
+    private var maxForward: CGFloat = 150
     private let maxReverse: CGFloat = 70
     private let creepSpeed: CGFloat = 12
 
@@ -239,8 +242,31 @@ final class ParkingScene: SKScene {
         self.isHost = isHost
         self.friendPresent = online
         self.levelIndex = Levels.clamp(level)
-        localCar = world.makeCar(color: CarArt.playerColors[self.slot], style: .racer)
-        remoteCar = world.makeCar(color: CarArt.playerColors[1 - self.slot], style: .racer)
+        let mine = model.carChoice
+        localCar = world.makeCar(color: mine.color, style: .racer, model: mine.model)
+        let friend = model.friendCar ?? CarChoice.friendDefault
+        remoteCar = world.makeCar(color: friend.color, style: .racer, model: friend.model)
+        remoteChoice = friend
+        // The chosen car's driving character (small differences so online races stay fair)
+        let spec = mine.spec
+        maxForward = 150 * spec.topSpeed
+        engineAccel = 150 * spec.acceleration
+        maxSteer = 0.64 * min(1.1, spec.steering)
+        steerRate = 2.6 * spec.steering
+        nitroPush = 300 * spec.nitroPower
+        nitroFillTime = 10 * spec.nitroFill
+    }
+
+    private var remoteChoice = CarChoice.friendDefault
+
+    /// The friend picked another car (their choice can arrive after the world is built).
+    func friendCarChanged() {
+        guard let world = world, let choice = model?.friendCar, choice != remoteChoice else { return }
+        remoteChoice = choice
+        let hidden = remoteCar?.isHidden ?? true
+        remoteCar?.node.removeFromParentNode()
+        remoteCar = world.makeCar(color: choice.color, style: .racer, model: choice.model)
+        remoteCar?.isHidden = hidden
     }
 
     override func didMove(to view: SKView) {
@@ -576,7 +602,7 @@ final class ParkingScene: SKScene {
             line.color = UIColor(red: 0.75, green: 0.92, blue: 1.0, alpha: 1)
             line.colorBlendFactor = 0.6
             line.blendMode = .add
-            line.alpha = 0
+            line.alpha = 0.002
             line.zPosition = 45
             addChild(line)
             speedLines.append((line, CGFloat.random(in: 0...(2 * CGFloat.pi)), CGFloat.random(in: 0...size.width * 0.6)))
@@ -586,9 +612,27 @@ final class ParkingScene: SKScene {
         boostTint.position = CGPoint(x: size.width / 2, y: size.height / 2)
         boostTint.color = UIColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1)
         boostTint.colorBlendFactor = 1
-        boostTint.alpha = 0
+        // Effects rest at a nearly invisible alpha instead of 0: SpriteKit skips fully transparent
+        // nodes, so their blend pipelines would otherwise be set up on the first nitro
+        boostTint.alpha = 0.002
         boostTint.zPosition = 44
         addChild(boostTint)
+        nitroShock = SKSpriteNode(texture: CarArt.nitroRingTexture)
+        nitroShock.size = CGSize(width: 90, height: 90)
+        nitroShock.blendMode = .add
+        nitroShock.alpha = 0.002
+        nitroShock.position = CGPoint(x: size.width / 2, y: size.height * 0.35)
+        nitroShock.zPosition = 46
+        addChild(nitroShock)
+        nitroBanner = makeLabel(Strings.nitroGo, size: 34, color: UIColor(red: 0.45, green: 0.9, blue: 1.0, alpha: 1))
+        nitroBanner.position = CGPoint(x: size.width / 2, y: size.height * 0.62)
+        nitroBanner.zPosition = 20
+        nitroBanner.alpha = 0.002
+        hud.addChild(nitroBanner)
+        // Haptic engines start lazily; get them ready so the first bump or nitro does not wait
+        bumpHaptic.prepare()
+        tickHaptic.prepare()
+        notifyHaptic.prepare()
 
         let gearDisc = makeGlass(width: 36, height: 36)
         gearDisc.position = CGPoint(x: reversePedal.position.x, y: reversePedal.position.y + reverseSize.height / 2 + 26)
@@ -613,10 +657,9 @@ final class ParkingScene: SKScene {
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
         if level.race {
-            let gold = UIColor(red: 1.0, green: 0.84, blue: 0.22, alpha: 1)
-            _ = CarArt.glowTitle(Strings.finishBig, fontSize: 74, color: gold)
-            _ = CarArt.glowTitle(Strings.youWon.uppercased(), fontSize: 74, color: gold)
-            _ = CarArt.checkerStrip()
+            // Draws once with the plate's fonts so the finish moment does not lay out glyphs cold
+            _ = CarArt.finishPlate(kicker: Strings.raceComplete, title: Strings.finishBig, stats: [("stopwatch.fill", "0.0 s")],
+                                   badgeTop: "P1", badgeBottom: Strings.placeShort, accent: .white, badgeText: .black)
         }
         defer {
             stage("level loaded")
@@ -1038,29 +1081,20 @@ final class ParkingScene: SKScene {
         bumpHaptic.impactOccurred(intensity: 1.0)
         world?.shake(strength: 3)
         boostVisual = 1.3   // lens punch, eases back to 1
-        if benchmark && !nitroShotTaken {
-            nitroShotTaken = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.world?.saveSnapshot(named: "shot-nitro") }
-        }
-        // Shockwave ring from behind the car
-        let ring = SKShapeNode(circleOfRadius: 40)
-        ring.strokeColor = UIColor(red: 0.45, green: 0.85, blue: 1.0, alpha: 1)
-        ring.lineWidth = 5
-        ring.glowWidth = 6
-        ring.fillColor = .clear
-        ring.position = CGPoint(x: size.width / 2, y: size.height * 0.35)
-        ring.zPosition = 46
-        addChild(ring)
-        let expand = SKAction.group([.scale(to: 9, duration: 0.45), .fadeOut(withDuration: 0.45)])
+        // Shockwave ring from behind the car and the banner: both made when the level is built
+        // (an SKShapeNode glow compiled its shader on the first nitro and stalled a frame)
+        nitroShock.removeAllActions()
+        nitroShock.setScale(0.6)
+        nitroShock.alpha = 1
+        let expand = SKAction.group([.scale(to: 6, duration: 0.45), .fadeAlpha(to: 0.002, duration: 0.45)])
         expand.timingMode = .easeOut
-        ring.run(.sequence([expand, .removeFromParent()]))
-        let banner = makeLabel(Strings.nitroGo, size: 34, color: UIColor(red: 0.45, green: 0.9, blue: 1.0, alpha: 1))
-        banner.position = CGPoint(x: size.width / 2, y: size.height * 0.62)
-        banner.zPosition = 20
-        banner.setScale(0.5)
-        hud.addChild(banner)
-        banner.run(.sequence([.scale(to: 1.15, duration: 0.12), .scale(to: 1.0, duration: 0.1), .wait(forDuration: 0.5),
-                              .group([.fadeOut(withDuration: 0.3), .moveBy(x: 0, y: 20, duration: 0.3)]), .removeFromParent()]))
+        nitroShock.run(expand)
+        nitroBanner.removeAllActions()
+        nitroBanner.position = CGPoint(x: size.width / 2, y: size.height * 0.62)
+        nitroBanner.setScale(0.5)
+        nitroBanner.alpha = 1
+        nitroBanner.run(.sequence([.scale(to: 1.15, duration: 0.12), .scale(to: 1.0, duration: 0.1), .wait(forDuration: 0.5),
+                                   .group([.fadeAlpha(to: 0.002, duration: 0.3), .moveBy(x: 0, y: 20, duration: 0.3)])]))
     }
 
     private func updateNitro(_ dt: CGFloat) {
@@ -1102,13 +1136,13 @@ final class ParkingScene: SKScene {
         }
 
         // Speed lines and blue tint
-        boostTint.alpha = boostVisual * 0.75
+        boostTint.alpha = max(0.002, boostVisual * 0.75)
         let center = CGPoint(x: size.width / 2, y: size.height * 0.45)
         let maxRadius = hypot(size.width, size.height) * 0.6
         for index in speedLines.indices {
             var line = speedLines[index]
             if boostVisual < 0.02 {
-                line.sprite.alpha = 0
+                line.sprite.alpha = 0.002
                 continue
             }
             line.radius += (700 + 900 * boostVisual) * dt
@@ -1819,7 +1853,7 @@ final class ParkingScene: SKScene {
         }
         if isBoosting && gear == .drive {
             braking = false
-            velocity += 300 * dt
+            velocity += nitroPush * dt
         }
         let topSpeed = isBoosting ? maxForward * 1.7 : maxForward
         if velocity > topSpeed {
@@ -2120,16 +2154,8 @@ final class ParkingScene: SKScene {
         layer.addChild(flash)
         flash.run(.sequence([.fadeOut(withDuration: 0.35), .removeFromParent()]))
 
-        // Darkened edges and letterbox bars
-        let shade = SKSpriteNode(texture: boostTint.texture)
-        shade.size = size
-        shade.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        shade.color = .black
-        shade.colorBlendFactor = 1
-        shade.alpha = 0
-        layer.addChild(shade)
-        shade.run(.sequence([.fadeAlpha(to: 0.7, duration: 0.3), .wait(forDuration: 3.4), .fadeOut(withDuration: 0.3)]))
-        let barHeight = size.height * 0.12
+        // Letterbox bars
+        let barHeight = size.height * 0.1
         for top in [true, false] {
             let bar = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: barHeight))
             bar.anchorPoint = CGPoint(x: 0.5, y: top ? 0 : 1)
@@ -2144,51 +2170,53 @@ final class ParkingScene: SKScene {
         for node in [hud, controlsLayer, fxLayer] {
             node.run(.sequence([.fadeOut(withDuration: 0.25), .wait(forDuration: 3.5), .fadeIn(withDuration: 0.3)]))
         }
-        speedLines.forEach { $0.sprite.alpha = 0 }
+        speedLines.forEach { $0.sprite.alpha = 0.002 }
 
-        // Checkered bands
-        let bandWidth = size.width * 1.4
-        for (index, y) in [size.height * 0.74, size.height * 0.26].enumerated() {
-            let band = SKSpriteNode(texture: CarArt.checkerStrip())
-            band.size = CGSize(width: bandWidth, height: 34)
-            band.zRotation = -0.06
-            let fromLeft = index == 0
-            band.position = CGPoint(x: fromLeft ? -bandWidth / 2 : size.width + bandWidth / 2, y: y)
-            layer.addChild(band)
-            let slideIn = SKAction.moveTo(x: size.width / 2, duration: 0.35)
-            slideIn.timingMode = .easeOut
-            let slideOut = SKAction.moveTo(x: fromLeft ? size.width + bandWidth / 2 : -bandWidth / 2, duration: 0.35)
-            slideOut.timingMode = .easeIn
-            band.run(.sequence([.wait(forDuration: 0.05 + Double(index) * 0.08), slideIn, .wait(forDuration: 2.6), slideOut]))
-        }
+        // Light streak sweeping across the screen as the car crosses the line
+        let streak = SKSpriteNode(texture: CarArt.speedLineTexture)
+        streak.size = CGSize(width: 6, height: size.width * 0.9)
+        streak.zRotation = CGFloat.pi / 2
+        streak.blendMode = .add
+        streak.color = .white
+        streak.colorBlendFactor = 1
+        streak.position = CGPoint(x: -size.width * 0.5, y: size.height * 0.36)
+        layer.addChild(streak)
+        let sweep = SKAction.moveTo(x: size.width * 1.5, duration: 0.45)
+        sweep.timingMode = .easeIn
+        streak.run(.sequence([sweep, .removeFromParent()]))
 
-        // Title (pre-rendered glow) with place, time and crashes
+        // Lower-third result plate
         let place = online && friendPresent && remoteParked && remoteTime >= 0 ? 2 : 1
-        let won = online && friendPresent && place == 1
-        let titleTexture = CarArt.glowTitle(won ? Strings.youWon.uppercased() : Strings.finishBig, fontSize: 74,
-                                            color: UIColor(red: 1.0, green: 0.84, blue: 0.22, alpha: 1))
-        let title = SKSpriteNode(texture: titleTexture)
-        title.size = titleTexture.size()
-        title.position = CGPoint(x: size.width / 2, y: size.height / 2 + 16)
-        title.setScale(2.4)
-        title.alpha = 0
-        layer.addChild(title)
-        let pop = SKAction.group([.fadeIn(withDuration: 0.16), .scale(to: 1.0, duration: 0.24)])
-        pop.timingMode = .easeOut
-        title.run(.sequence([.wait(forDuration: 0.1), pop, .scale(to: 1.08, duration: 2.6),
-                             .group([.fadeOut(withDuration: 0.3), .scale(to: 1.35, duration: 0.3)])]))
-
-        var detail = String(format: "%.1f s", localTime)
-        if level.race { detail += "  ·  " + Strings.crashes(hits) }
-        if online && friendPresent { detail = Strings.place(place) + "  ·  " + detail }
-        let sub = makeLabel(detail, size: 20, color: .white)
-        sub.position = CGPoint(x: size.width / 2, y: size.height / 2 - 40)
-        sub.alpha = 0
-        layer.addChild(sub)
-        sub.run(.sequence([.wait(forDuration: 0.45), .group([.fadeIn(withDuration: 0.25), .moveBy(x: 0, y: 6, duration: 0.25)]),
-                           .wait(forDuration: 2.4), .fadeOut(withDuration: 0.3)]))
+        let together = online && friendPresent
+        let won = together && place == 1
+        let accent: UIColor = won ? UIColor(red: 1.0, green: 0.78, blue: 0.12, alpha: 1)
+            : (together ? UIColor(red: 0.86, green: 0.88, blue: 0.92, alpha: 1) : UIColor(red: 0.22, green: 0.84, blue: 1.0, alpha: 1))
+        var stats: [(icon: String, text: String)] = [("stopwatch.fill", String(format: "%.1f s", localTime))]
+        if level.race { stats.append(("exclamationmark.triangle.fill", Strings.crashes(hits))) }
+        let round = levelIndex - Levels.raceBase + 1
+        let plateTexture = CarArt.finishPlate(
+            kicker: Strings.raceComplete,
+            title: won ? Strings.youWon.uppercased() : Strings.finishBig,
+            stats: stats,
+            badgeTop: together ? "P\(place)" : "\(max(1, round))/\(Levels.raceRounds)",
+            badgeBottom: together ? Strings.placeShort : Strings.roundShort,
+            accent: accent, badgeText: UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1))
+        let plate = SKSpriteNode(texture: plateTexture)
+        plate.size = plateTexture.size()
+        let plateX = 26 + plate.size.width / 2
+        plate.position = CGPoint(x: -plate.size.width / 2, y: barHeight + plate.size.height / 2 + 14)
+        layer.addChild(plate)
+        let enter = SKAction.moveTo(x: plateX, duration: 0.42)
+        enter.timingMode = .easeOut
+        let leave = SKAction.group([.moveBy(x: -40, y: 0, duration: 0.3), .fadeOut(withDuration: 0.3)])
+        leave.timingMode = .easeIn
+        plate.run(.sequence([.wait(forDuration: 0.25), enter, .moveBy(x: 10, y: 0, duration: 2.8), leave]))
 
         run(.wait(forDuration: 1.0)) { [weak self] in self?.finishShotB(layer: layer) }
+        if benchmark {
+            // After the critical first second, so the capture does not count as a finish hitch
+            run(.wait(forDuration: 2.2)) { Task { @MainActor in saveWindowSnapshot(named: "shot-finish") } }
+        }
         layer.run(.sequence([.wait(forDuration: 4.1), .removeFromParent()]))
         run(.wait(forDuration: 4.0)) { [weak self] in
             guard let self = self else { return }
@@ -2199,72 +2227,8 @@ final class ParkingScene: SKScene {
 
     private func finishShotB(layer: SKNode) {
         world?.celebrate()
-        // 2D fireworks and confetti (sprites sharing one texture: no first-use stall)
-        let colors = [UIColor(red: 1, green: 0.82, blue: 0.2, alpha: 1), UIColor(red: 0.3, green: 0.85, blue: 1, alpha: 1),
-                      UIColor(red: 1, green: 0.35, blue: 0.6, alpha: 1)]
-        let spots = [CGPoint(x: size.width * 0.26, y: size.height * 0.66), CGPoint(x: size.width * 0.74, y: size.height * 0.7),
-                     CGPoint(x: size.width * 0.5, y: size.height * 0.8)]
-        for index in 0..<3 {
-            layer.run(.wait(forDuration: 0.1 + Double(index) * 0.4)) { [weak self] in
-                self?.firework(at: spots[index], color: colors[index], in: layer)
-            }
-        }
-        confettiRain(in: layer)
         audio.play("park", volume: 0.9)
         bumpHaptic.impactOccurred(intensity: 1.0)
-        let flash = SKSpriteNode(color: .white, size: size)
-        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        flash.alpha = 0.5
-        flash.zPosition = -1
-        layer.addChild(flash)
-        flash.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
-    }
-
-    private func firework(at center: CGPoint, color: UIColor, in layer: SKNode) {
-        let count = 34
-        for index in 0..<count {
-            let spark = SKSpriteNode(texture: dotTexture)
-            spark.size = CGSize(width: 9, height: 9)
-            spark.color = color
-            spark.colorBlendFactor = 1
-            spark.blendMode = .add
-            spark.position = center
-            layer.addChild(spark)
-            let angle = CGFloat(index) / CGFloat(count) * 2 * CGFloat.pi + CGFloat.random(in: -0.08...0.08)
-            let distance = CGFloat.random(in: 95...140)
-            let burst = SKAction.move(by: CGVector(dx: cos(angle) * distance, dy: sin(angle) * distance), duration: 0.7)
-            burst.timingMode = .easeOut
-            spark.run(.sequence([
-                .group([burst, .sequence([.wait(forDuration: 0.45), .fadeOut(withDuration: 0.5)]),
-                        .sequence([.wait(forDuration: 0.5), .moveBy(x: 0, y: -26, duration: 0.45)]),
-                        .scale(to: 0.4, duration: 0.95)]),
-                .removeFromParent()
-            ]))
-        }
-        let core = SKSpriteNode(texture: dotTexture)
-        core.size = CGSize(width: 60, height: 60)
-        core.color = color
-        core.colorBlendFactor = 0.4
-        core.blendMode = .add
-        core.position = center
-        layer.addChild(core)
-        core.run(.sequence([.group([.scale(to: 2.2, duration: 0.25), .fadeOut(withDuration: 0.3)]), .removeFromParent()]))
-    }
-
-    private func confettiRain(in layer: SKNode) {
-        let colors: [UIColor] = [CarArt.playerColors[0], CarArt.playerColors[1], UIColor(red: 1, green: 0.85, blue: 0.3, alpha: 1),
-                                 UIColor(red: 0.4, green: 1, blue: 0.6, alpha: 1), .white]
-        for index in 0..<70 {
-            let piece = SKSpriteNode(color: colors[index % colors.count], size: CGSize(width: 8, height: 5))
-            piece.position = CGPoint(x: CGFloat.random(in: 0...size.width), y: size.height + CGFloat.random(in: 0...80))
-            piece.zRotation = CGFloat.random(in: 0...CGFloat.pi)
-            layer.addChild(piece)
-            let fall = SKAction.moveBy(x: CGFloat.random(in: -60...60), y: -(size.height + 120), duration: Double.random(in: 2.2...3.2))
-            fall.timingMode = .easeIn
-            piece.run(.sequence([.wait(forDuration: Double.random(in: 0...0.6)),
-                                 .group([fall, .rotate(byAngle: CGFloat.random(in: -10...10), duration: 3)]),
-                                 .removeFromParent()]))
-        }
     }
 
     private func confetti(at point: CGPoint) {

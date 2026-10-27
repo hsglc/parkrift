@@ -21,8 +21,28 @@ final class AppModel: ObservableObject {
     enum Screen {
         case menu
         case lobby
+        case garage
         case game
     }
+
+    /// Where the garage leads: straight into a level, or back to the online lobby.
+    enum GarageExit: Equatable {
+        case play(level: Int)
+        case lobby
+        case menu
+    }
+    @Published var garageExit: GarageExit = .play(level: 0)
+
+    /// The player's car from the garage (saved, and sent to the friend online).
+    @Published var carChoice = CarChoice.saved {
+        didSet {
+            guard carChoice != oldValue else { return }
+            CarChoice.saved = carChoice
+            if online { net.send(carChoice.message) }
+        }
+    }
+    /// The friend's car, once their choice arrives.
+    private(set) var friendCar: CarChoice?
 
     @Published var screen: Screen = .menu
     @Published var roomCode = ""
@@ -69,25 +89,35 @@ final class AppModel: ObservableObject {
 
     // MARK: Menu actions
 
-    func playSolo() {
-        online = false
-        mySlot = 0
-        friendHere = false
-        beginGame(level: selectedLevel)
+    func playSolo() { openGarage(.play(level: selectedLevel)) }
+
+    func playCity() { openGarage(.play(level: Levels.cityBase)) }
+
+    func playRace() { openGarage(.play(level: Levels.raceBase)) }
+
+    /// Mode chosen: pick the car first.
+    func openGarage(_ exit: GarageExit) {
+        garageExit = exit
+        screen = .garage
     }
 
-    func playCity() {
-        online = false
-        mySlot = 0
-        friendHere = false
-        beginGame(level: Levels.cityBase)
-    }
-
-    func playRace() {
-        online = false
-        mySlot = 0
-        friendHere = false
-        beginGame(level: Levels.raceBase)
+    /// Garage confirmed: start the chosen level, or go back to the lobby.
+    func leaveGarage(confirmed: Bool) {
+        switch garageExit {
+        case .lobby:
+            screen = online ? .lobby : .menu
+        case .menu:
+            screen = .menu
+        case .play(let level):
+            guard confirmed else {
+                screen = .menu
+                return
+            }
+            online = false
+            mySlot = 0
+            friendHere = false
+            beginGame(level: level)
+        }
     }
 
     func setOnlineMode(_ mode: OnlineMode) {
@@ -117,6 +147,7 @@ final class AppModel: ObservableObject {
         errorText = nil
         connecting = true
         friendHere = false
+        friendCar = nil
         online = true
         net.connect(code: roomCode, asHost: isHost)
     }
@@ -240,9 +271,11 @@ final class AppModel: ObservableObject {
             let peers = message["peers"] as? [Int] ?? []
             friendHere = !peers.isEmpty
             screen = .lobby
+            net.send(carChoice.message)
         case "join":
             friendHere = true
             if isHost { net.send(["t": "mode", "m": onlineMode.rawValue]) }
+            net.send(carChoice.message)
             scene?.friendJoined()
         case "leave":
             friendHere = false
@@ -259,6 +292,12 @@ final class AppModel: ObservableObject {
             online = false
             errorText = Strings.roomFull
             screen = .menu
+        case "car":
+            if let choice = CarChoice(message: message) {
+                friendCar = choice
+                objectWillChange.send()
+                scene?.friendCarChanged()
+            }
         case "mode":
             if let raw = message["m"] as? String, let mode = OnlineMode(rawValue: raw) { onlineMode = mode }
         case "lvl":
@@ -302,6 +341,9 @@ struct RootView: View {
             case .lobby:
                 LobbyView()
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            case .garage:
+                GarageView()
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
             case .game:
                 ZStack {
                 if let scene = model.scene, let world = model.world {
@@ -334,6 +376,12 @@ struct RootView: View {
                 AudioManager.shared.isMuted = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { saveWindowSnapshot(named: "menu") }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { model.playRace() }
+                // Garage snapshot, then start the race from it
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                    saveWindowSnapshot(named: "garage")
+                    GarageStage.shared.saveSnapshot(named: "garage3d")
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { model.leaveGarage(confirmed: true) }
             }
         }
     }

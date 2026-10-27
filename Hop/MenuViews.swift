@@ -100,15 +100,45 @@ struct MenuView: View {
                 } else {
                     HStack(spacing: 12) {
                         RoundIconButton(systemImage: "chevron.left") { go(.home) }
-                        Text(pageTitle)
-                            .font(.system(size: 26, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.4), radius: 0, y: 2)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(Strings.chooseMode.uppercased())
+                                .font(.kicker(9))
+                                .tracking(1.5)
+                                .foregroundStyle(Palette.neon)
+                            Text(pageTitle.uppercased())
+                                .font(.race(28))
+                                .foregroundStyle(.white)
+                                .shadow(color: .black.opacity(0.4), radius: 0, y: 2)
+                        }
                     }
                     .transition(.opacity)
                 }
             }
             Spacer()
+            Button {
+                AudioManager.shared.play("click", volume: 0.6)
+                model.openGarage(.menu)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "car.side.fill")
+                        .foregroundStyle(Color(model.carChoice.color.lighter(by: 0.25)))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(Strings.garage.uppercased())
+                            .font(.kicker(8))
+                            .tracking(1.2)
+                            .foregroundStyle(.white.opacity(0.6))
+                        Text(model.carChoice.spec.name.uppercased())
+                            .font(.race(15))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.leading, 16)
+                .padding(.trailing, 12)
+                .frame(height: 42)
+                .background(SlantedShape(skew: 10).fill(Palette.ink.opacity(0.8)))
+                .overlay(SlantedShape(skew: 10).stroke(Color.white.opacity(0.2), lineWidth: 1))
+            }
+            .buttonStyle(PressScaleStyle())
             HStack(spacing: 6) {
                 Image(systemName: "star.fill").foregroundStyle(Palette.gold)
                 Text("\(totalStars)")
@@ -137,16 +167,16 @@ struct MenuView: View {
     }
 
     private var homeCards: some View {
-        HStack(spacing: 14) {
-            ModeCard(title: Strings.modeSoloTitle, subtitle: Strings.modeSoloSub, icon: "parkingsign.circle.fill",
+        HStack(spacing: 12) {
+            ModeTile(number: "01", title: Strings.modeSoloTitle, subtitle: Strings.modeSoloSub, icon: "parkingsign",
                      chips: [Strings.levelsCount(Levels.all.count), "★ \(totalStars)/\(Levels.all.count * 3)"],
-                     colors: [Color(red: 1.0, green: 0.55, blue: 0.28), Color(red: 0.86, green: 0.22, blue: 0.22)]) { go(.levels) }
-            ModeCard(title: Strings.modeCityTitle, subtitle: Strings.modeCitySub, icon: "building.2.crop.circle.fill",
+                     accent: Color(red: 1.0, green: 0.55, blue: 0.18)) { go(.levels) }
+            ModeTile(number: "02", title: Strings.modeCityTitle, subtitle: Strings.modeCitySub, icon: "flag.checkered",
                      chips: [Strings.carRace, Strings.parkRace],
-                     colors: [Color(red: 0.55, green: 0.42, blue: 1.0), Color(red: 0.26, green: 0.20, blue: 0.72)]) { go(.city) }
-            ModeCard(title: Strings.modeOnlineTitle, subtitle: Strings.modeOnlineSub, icon: "person.2.circle.fill",
+                     accent: Color(red: 1.0, green: 0.25, blue: 0.45)) { go(.city) }
+            ModeTile(number: "03", title: Strings.modeOnlineTitle, subtitle: Strings.modeOnlineSub, icon: "person.2.fill",
                      chips: [Strings.twoPlayersOnline],
-                     colors: [Color(red: 0.25, green: 0.78, blue: 0.62), Color(red: 0.08, green: 0.45, blue: 0.52)]) { go(.online) }
+                     accent: Palette.neon) { go(.online) }
         }
     }
 
@@ -160,29 +190,25 @@ struct MenuView: View {
         case .levels:
             levelsPage
         case .city:
-            HStack(spacing: 14) {
-                OptionCard(title: Strings.carRace, subtitle: Strings.carRaceInfo, icon: "flag.checkered",
-                           tint: Color(red: 1.0, green: 0.78, blue: 0.2), buttonTitle: Strings.play,
-                           buttonColors: Palette.orange) { model.playRace() }
-                OptionCard(title: Strings.parkRace, subtitle: Strings.cityRaceInfo, icon: "parkingsign",
-                           tint: Color(red: 0.5, green: 0.75, blue: 1.0), buttonTitle: Strings.play,
-                           buttonColors: Palette.blueButton) { model.playCity() }
+            HStack(spacing: 12) {
+                OptionTile(title: Strings.carRace, subtitle: Strings.carRaceInfo, icon: "flag.checkered",
+                           accent: Color(red: 1.0, green: 0.25, blue: 0.45), buttonTitle: Strings.play) { model.playRace() }
+                OptionTile(title: Strings.parkRace, subtitle: Strings.cityRaceInfo, icon: "parkingsign",
+                           accent: Color(red: 0.55, green: 0.45, blue: 1.0), buttonTitle: Strings.play) { model.playCity() }
             }
         case .online:
-            HStack(spacing: 14) {
-                OptionCard(title: Strings.createRoom, subtitle: Strings.createRoomSub, icon: "plus.circle.fill",
-                           tint: Color(red: 0.5, green: 0.75, blue: 1.0), buttonTitle: Strings.createRoom,
-                           buttonColors: Palette.blueButton) { model.createRoom() }
+            HStack(spacing: 12) {
+                OptionTile(title: Strings.createRoom, subtitle: Strings.createRoomSub, icon: "plus.circle.fill",
+                           accent: Palette.neon, buttonTitle: Strings.createRoom) { model.createRoom() }
                 ZStack {
                     if showJoin {
                         JoinPanel(showJoin: $showJoin)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .panel()
+                            .racePlate(skew: 16, padding: 14)
                             .transition(.scale(scale: 0.92).combined(with: .opacity))
                     } else {
-                        OptionCard(title: Strings.joinRoom, subtitle: Strings.joinRoomSub, icon: "keyboard.fill",
-                                   tint: Color(red: 0.45, green: 0.95, blue: 0.65), buttonTitle: Strings.enterCode,
-                                   buttonColors: Palette.green) {
+                        OptionTile(title: Strings.joinRoom, subtitle: Strings.joinRoomSub, icon: "keyboard.fill",
+                                   accent: Color(red: 0.35, green: 0.95, blue: 0.55), buttonTitle: Strings.enterCode) {
                             withAnimation(pageAnimation) { showJoin = true }
                         }
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
@@ -202,8 +228,8 @@ struct MenuView: View {
                     .font(.system(size: 12, weight: .black, design: .rounded))
                     .foregroundStyle(.white.opacity(0.6))
                     .tracking(1.2)
-                Text(level.name)
-                    .font(.system(size: 24, weight: .black, design: .rounded))
+                Text(level.name.uppercased())
+                    .font(.race(28))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -218,12 +244,15 @@ struct MenuView: View {
                 .foregroundStyle(.white.opacity(0.8))
                 Spacer(minLength: 0)
                 Button { model.playSolo() } label: {
-                    Label(Strings.play, systemImage: "play.fill")
+                    HStack(spacing: 8) {
+                        Text(Strings.play.uppercased())
+                        Image(systemName: "chevron.right.2").font(.system(size: 16, weight: .black))
+                    }
                 }
-                .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 52, fontSize: 20))
+                .buttonStyle(RaceButtonStyle(color: Palette.gold, height: 50, fontSize: 22))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .panel()
+            .racePlate(skew: 16, padding: 16)
             .animation(.easeOut(duration: 0.2), value: index)
         }
     }
@@ -245,110 +274,140 @@ struct MenuView: View {
     }
 }
 
-/// Big tappable mode card on the home page.
-private struct ModeCard: View {
+/// Big mode tile on the home page, racing-game style: slanted carbon plate, accent art at the top
+/// with speed stripes, a large number, condensed italic title and an accent bar at the bottom.
+private struct ModeTile: View {
+    let number: String
     let title: String
     let subtitle: String
     let icon: String
     let chips: [String]
-    let colors: [Color]
+    let accent: Color
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .topLeading) {
-                // Large faded icon as decoration
-                Image(systemName: icon)
-                    .font(.system(size: 130, weight: .black))
-                    .foregroundStyle(.white.opacity(0.12))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .offset(x: 26, y: 26)
-                VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: icon)
-                        .font(.system(size: 26, weight: .black))
-                        .foregroundStyle(.white)
-                        .frame(width: 50, height: 50)
-                        .background(Circle().fill(Color.white.opacity(0.2)))
+                TileArt(icon: icon, accent: accent)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(number)
+                        .font(.race(34))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .shadow(color: .black.opacity(0.35), radius: 0, x: 2, y: 2)
                     Spacer(minLength: 0)
-                    Text(title)
-                        .font(.system(size: 24, weight: .black, design: .rounded))
+                    Text(title.uppercased())
+                        .font(.race(30))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                        .minimumScaleFactor(0.6)
                     Text(subtitle)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         ForEach(chips, id: \.self) { chip in
-                            Text(chip)
-                                .font(.system(size: 10, weight: .black, design: .rounded))
-                                .foregroundStyle(.white)
+                            Text(chip.uppercased())
+                                .font(.race(11, weight: .heavy))
+                                .foregroundStyle(.white.opacity(0.9))
                                 .lineLimit(1)
                                 .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Color.black.opacity(0.22)))
+                                .padding(.vertical, 3)
+                                .background(SlantedShape(skew: 4).fill(Color.white.opacity(0.1)))
                         }
-                    }
-                    HStack {
-                        Spacer()
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 26))
-                            .foregroundStyle(.white.opacity(0.9))
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right.2")
+                            .font(.system(size: 14, weight: .black))
+                            .foregroundStyle(accent)
                     }
                 }
-                .padding(16)
+                .padding(.leading, 26)
+                .padding(.trailing, 18)
+                .padding(.vertical, 14)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0.05)],
-                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1.2)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .shadow(color: (colors.last ?? .black).opacity(0.5), radius: 18, y: 10)
+            .background(SlantedShape(skew: 18).fill(Palette.carbon.opacity(0.88)))
+            .clipShape(SlantedShape(skew: 18))
+            .overlay(SlantedShape(skew: 18).stroke(Color.white.opacity(0.14), lineWidth: 1))
+            .overlay(alignment: .bottom) {
+                SlantedShape(skew: 2).fill(accent).frame(height: 4).padding(.leading, 4).padding(.trailing, 22)
+            }
+            .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
         }
         .buttonStyle(PressableCardStyle())
     }
 }
 
-/// Option inside a mode page: icon, title, description and a play button.
-private struct OptionCard: View {
+/// Accent gradient, speed stripes and a big icon in the top part of a tile.
+private struct TileArt: View {
+    let icon: String
+    let accent: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topTrailing) {
+                LinearGradient(colors: [accent.opacity(0.85), accent.opacity(0.25), .clear],
+                               startPoint: .topTrailing, endPoint: UnitPoint(x: 0.1, y: 0.75))
+                // Speed stripes
+                ForEach(0..<4, id: \.self) { index in
+                    SlantedShape(skew: 30)
+                        .fill(Color.white.opacity(0.10 - Double(index) * 0.02))
+                        .frame(width: 70 - CGFloat(index) * 10, height: 7)
+                        .offset(x: -CGFloat(index) * 26 - 8, y: 30 + CGFloat(index) * 13)
+                }
+                Image(systemName: icon)
+                    .font(.system(size: min(96, proxy.size.height * 0.36), weight: .black))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .shadow(color: accent.opacity(0.8), radius: 16)
+                    .rotationEffect(.degrees(-6))
+                    .padding(.top, 22)
+                    .padding(.trailing, 26)
+            }
+        }
+    }
+}
+
+/// Option inside a mode page: tile art, title, description and a slanted play button.
+private struct OptionTile: View {
     let title: String
     let subtitle: String
     let icon: String
-    let tint: Color
+    let accent: Color
     let buttonTitle: String
-    let buttonColors: Palette.ButtonColors
     let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 24, weight: .black))
-                .foregroundStyle(tint)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(tint.opacity(0.16)))
-            Text(title)
-                .font(.system(size: 22, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-            Text(subtitle)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.7))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            Button(action: action) {
-                Label(buttonTitle, systemImage: "play.fill")
+        ZStack(alignment: .topLeading) {
+            TileArt(icon: icon, accent: accent)
+            VStack(alignment: .leading, spacing: 8) {
+                Spacer(minLength: 0)
+                Text(title.uppercased())
+                    .font(.race(30))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: action) {
+                    HStack(spacing: 8) {
+                        Text(buttonTitle.uppercased())
+                        Image(systemName: "chevron.right.2").font(.system(size: 15, weight: .black))
+                    }
+                }
+                .buttonStyle(RaceButtonStyle(color: accent, textColor: Palette.ink, height: 46, fontSize: 20))
+                .padding(.top, 2)
             }
-            .buttonStyle(ChunkyButtonStyle(colors: buttonColors, height: 48, fontSize: 18))
+            .padding(.leading, 26)
+            .padding(.trailing, 20)
+            .padding(.vertical, 16)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .panel()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SlantedShape(skew: 18).fill(Palette.carbon.opacity(0.9)))
+        .clipShape(SlantedShape(skew: 18))
+        .overlay(SlantedShape(skew: 18).stroke(Color.white.opacity(0.14), lineWidth: 1))
+        .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
     }
 }
 
@@ -454,7 +513,7 @@ struct LevelPicker: View {
             }
         }
         .frame(width: 302)
-        .panel(padding: 14)
+        .racePlate(skew: 14, padding: 12)
     }
 
     private var totalStars: Int {
@@ -547,7 +606,7 @@ struct LobbyView: View {
                     }
                 }
                 .frame(width: 270)
-                .panel()
+                .racePlate(skew: 16, padding: 16)
 
                 // Players and start
                 VStack(alignment: .leading, spacing: 12) {
@@ -555,8 +614,25 @@ struct LobbyView: View {
                         .font(.system(size: 13, weight: .black, design: .rounded))
                         .foregroundStyle(.white.opacity(0.6))
                         .tracking(1.5)
-                    PlayerChip(name: Strings.you, slot: model.mySlot, present: true)
-                    PlayerChip(name: Strings.friend, slot: 1 - model.mySlot, present: model.friendHere)
+                    PlayerChip(name: Strings.you, slot: model.mySlot, present: true, car: model.carChoice.spec.name)
+                    PlayerChip(name: Strings.friend, slot: 1 - model.mySlot, present: model.friendHere,
+                               car: model.friendHere ? model.friendCar?.spec.name : nil)
+                    Button {
+                        AudioManager.shared.play("click", volume: 0.6)
+                        model.openGarage(.lobby)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                            Text(Strings.changeCar.uppercased())
+                        }
+                        .font(.race(14, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 32)
+                        .background(SlantedShape(skew: 8).fill(Color.white.opacity(0.1)))
+                        .overlay(SlantedShape(skew: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                    }
+                    .buttonStyle(PressScaleStyle())
 
                     HStack(spacing: 8) {
                         ModeChip(title: Strings.carRace, icon: "flag.checkered", selected: model.onlineMode == .race,
@@ -584,8 +660,8 @@ struct LobbyView: View {
                         .foregroundStyle(.white.opacity(0.75))
                     }
                 }
-                .frame(width: 250)
-                .panel()
+                .frame(width: 270)
+                .racePlate(skew: 16, padding: 14)
             }
             .padding(.horizontal, 20)
         }
@@ -614,6 +690,7 @@ private struct PlayerChip: View {
     let name: String
     let slot: Int
     let present: Bool
+    var car: String? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -623,9 +700,17 @@ private struct PlayerChip: View {
                 .frame(width: 38, height: 32)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(present ? Palette.player(slot) : Color.white.opacity(0.08)))
-            Text(name)
-                .font(.system(size: 16, weight: .black, design: .rounded))
-                .foregroundStyle(.white.opacity(present ? 1 : 0.5))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(name)
+                    .font(.race(17))
+                    .foregroundStyle(.white.opacity(present ? 1 : 0.5))
+                if let car = car {
+                    Text(car.uppercased())
+                        .font(.kicker(8))
+                        .tracking(1)
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            }
             Spacer()
             if present {
                 Image(systemName: "checkmark.circle.fill")

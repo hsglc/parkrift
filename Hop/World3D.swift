@@ -636,45 +636,6 @@ private enum CarFactory {
     }
 }
 
-/// The players' sports car, loaded from USDZ (converted from "Ferrari 458 Italia" by vicent091036,
-/// CC BY 4.0 — see tools/convert_car.py). Parts are named meshes that get the game's materials.
-private enum RacerModel {
-    static let body: SCNNode? = load("car_body")
-    static let wheel: SCNNode? = load("car_wheel")
-    /// Wheel centers (x, y, z) taken from the model; front wheels steer.
-    static let wheelSpots: [(Float, Float, Float, Bool)] = [(1.121, 0.347, -0.811, true), (1.121, 0.347, 0.811, true),
-                                                            (-1.451, 0.347, -0.799, false), (-1.451, 0.347, 0.799, false)]
-
-    private static func load(_ name: String) -> SCNNode? {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
-              let scene = try? SCNScene(url: url, options: nil) else { return nil }
-        let holder = SCNNode()
-        for child in scene.rootNode.childNodes { holder.addChildNode(child) }
-        let materials: [String: SCNMaterial] = [
-            "glass": CarShapes.canopy, "headlight": CarShapes.led, "chrome": CarShapes.chrome,
-            "carbon": CarShapes.carbon, "darkplastic": CarShapes.trim, "metal": CarShapes.graphite,
-            "tire": Mat.pbr(UIColor(white: 0.05, alpha: 1), metal: 0, rough: 0.85),
-            "rim": Mat.pbr(UIColor(white: 0.78, alpha: 1), metal: 0.95, rough: 0.22),
-            "caliper": Mat.pbr(UIColor(red: 0.95, green: 0.78, blue: 0.1, alpha: 1), metal: 0.3, rough: 0.4),
-            "hub": CarShapes.chrome,
-            "paint": Mat.pbr(.gray), "taillight": Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
-        ]
-        holder.enumerateHierarchy { node, _ in
-            guard let geometry = node.geometry, let name = node.name, let material = materials[name] else { return }
-            if name == "glass" {
-                // Thin shells: draw both sides so decimation gaps do not show the inside
-                let glass = material.copy() as! SCNMaterial
-                glass.isDoubleSided = true
-                geometry.materials = [glass]
-            } else {
-                geometry.materials = [material]
-            }
-            if name == "tire" || name == "rim" || name == "hub" || name == "caliper" { node.castsShadow = false }
-        }
-        return holder
-    }
-}
-
 /// 3D car: extruded body silhouette with wheel arches, cabin, glass, lights, bumpers and mirrors.
 /// Faces +x in its local frame (meters).
 final class Car3D {
@@ -699,11 +660,16 @@ final class Car3D {
     private var lowNode: SCNNode?
 
     /// `parked`: a car that never moves (wheels and lights baked into one geometry).
-    init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false) {
+    /// Wheel radius used for the rolling animation.
+    private var wheelRadius: CGFloat = 0.37
+
+    /// `model`: which garage car a player's racer uses.
+    init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false, model carModel: CarModelID = .italia) {
         brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
         reverseMaterial = Mat.glow(UIColor(white: 0.35, alpha: 1))
         node.addChildNode(body)
-        let model = style == .racer ? RacerModel.body : nil
+        let model = style == .racer ? CarModels.body(carModel) : nil
+        let spec = CarSpec.of(carModel)
 
         if let model = model {
             // Real car model: per-car paint and brake-light materials on copies of those meshes
@@ -711,6 +677,10 @@ final class Car3D {
             if let paintNode = car.childNode(withName: "paint", recursively: true) {
                 paintNode.geometry = paintNode.geometry?.copy() as? SCNGeometry
                 paintNode.geometry?.materials = [CarFactory.racerPaint(color)]
+            }
+            if let textured = car.childNode(withName: "textured", recursively: true) {
+                textured.geometry = textured.geometry?.copy() as? SCNGeometry
+                textured.geometry?.materials = [CarModels.retroPaint(color)]
             }
             if let tail = car.childNode(withName: "taillight", recursively: true) {
                 tail.geometry = tail.geometry?.copy() as? SCNGeometry
@@ -735,10 +705,11 @@ final class Car3D {
         }
 
         if style == .racer {
-            for z: Float in (model != nil ? [0.13, -0.13] : [0.24, -0.24]) {
+            let exhausts = model != nil ? spec.exhausts : [SCNVector3(-2.3, 0.33, 0.24), SCNVector3(-2.3, 0.33, -0.24)]
+            for exhaust in exhausts {
                 let made = CarShapes.makeFlame()
                 let flame = made.root
-                flame.position = model != nil ? SCNVector3(-2.26, 0.42, z) : SCNVector3(-2.3, 0.33, z)
+                flame.position = exhaust
                 // Kept in the scene but shrunk to nothing when off, so its shaders are compiled
                 // with the level instead of on the first nitro
                 flame.scale = SCNVector3(0.001, 0.001, 0.001)
@@ -765,22 +736,13 @@ final class Car3D {
                 lights.append(CarFactory.box(0.05, 0.05, 0.3, 0.02, reverseMaterial, at: SCNVector3(-2.27, tailY - 0.11, 0), to: body))
             } else {
                 lights.append(CarFactory.box(0.04, 0.04, 0.22, 0.01, reverseMaterial, at: SCNVector3(-2.2, 0.62, 0), to: body))
+                if spec.textured {
+                    // The retro car's lamps are painted in its texture; lit lenses on top of them
+                    for z: Float in [0.84, -0.84] {
+                        lights.append(CarFactory.box(0.05, 0.16, 0.12, 0.03, brakeMaterial, at: SCNVector3(-2.16, 0.74, z), to: body))
+                    }
+                }
             }
-            // Neon underglow in the car's color
-            let glow = SCNPlane(width: 4.8, height: 2.6)
-            let glowMaterial = SCNMaterial()
-            glowMaterial.lightingModel = .constant
-            glowMaterial.diffuse.contents = CarArt.glowParticle()
-            glowMaterial.multiply.contents = color.lighter(by: 0.25)
-            glowMaterial.blendMode = .add
-            glowMaterial.writesToDepthBuffer = false
-            glow.materials = [glowMaterial]
-            let glowNode = SCNNode(geometry: glow)
-            glowNode.eulerAngles.x = -Float.pi / 2
-            glowNode.position = SCNVector3(0, 0.03, 0)
-            glowNode.castsShadow = false
-            glowNode.opacity = 0.75
-            node.addChildNode(glowNode)
         } else {
             for z: Float in [0.66, -0.66] {
                 lights.append(CarFactory.box(0.07, 0.12, 0.42, 0.03, brakeMaterial, at: SCNVector3(-2.2, tailY, z), to: body))
@@ -793,14 +755,15 @@ final class Car3D {
         }
 
         // Wheels: pivot (steering) -> spin (rolling) -> tyre + rim
-        if model != nil, let wheelModel = RacerModel.wheel {
-            for spot in RacerModel.wheelSpots {
+        if model != nil, let wheelModel = CarModels.wheel(carModel) {
+            wheelRadius = CGFloat(spec.wheelRadius)
+            for spot in spec.wheelSpots {
                 let pivot = SCNNode()
                 pivot.position = SCNVector3(spot.0, spot.1, spot.2)
                 let spinner = SCNNode()
                 let wheel = wheelModel.clone()
-                // The model is a left wheel; turn it around for the right side
-                if spot.2 > 0 { wheel.eulerAngles.y = Float.pi }
+                // The model is a wheel from one side; turn it around for the other side
+                if (spot.2 > 0) != (spec.wheelModelSide > 0) { wheel.eulerAngles.y = Float.pi }
                 spinner.addChildNode(wheel)
                 pivot.addChildNode(spinner)
                 node.addChildNode(pivot)
@@ -844,7 +807,7 @@ final class Car3D {
             let dx = position.x - last.x
             let dy = position.y - last.y
             let travelled = (dx * cos(heading) + dy * sin(heading)) / 10   // meters
-            spin -= travelled / 0.37
+            spin -= travelled / wheelRadius
             for spinner in spinNodes { spinner.eulerAngles.z = Float(spin) }
         }
         lastPosition = position
@@ -1310,8 +1273,8 @@ final class World3D {
 
     // MARK: Level
 
-    func makeCar(color: UIColor, style: CarStyle = .sedan) -> Car3D {
-        let car = Car3D(color: color, style: style)
+    func makeCar(color: UIColor, style: CarStyle = .sedan, model: CarModelID = .italia) -> Car3D {
+        let car = Car3D(color: color, style: style, model: model)
         scene.rootNode.addChildNode(car.node)
         return car
     }
@@ -1839,7 +1802,7 @@ final class World3D {
             return
         }
         var objects: [Any] = [scene.rootNode]
-        if PerfSettings.optimized { objects += CarFactory.allGeometries }
+        if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries }
         renderer.prepare(objects) { _ in
             DispatchQueue.main.async { completion?() }
         }
@@ -1850,9 +1813,11 @@ final class World3D {
     static func prewarmCars() {
         guard PerfSettings.optimized else { return }
         var jobs: [() -> Void] = []
-        for color in CarArt.playerColors {
-            jobs.append { _ = CarFactory.body(style: .racer, color: color, parked: false) }
+        for id in CarModelID.allCases {
+            jobs.append { _ = CarModels.body(id); _ = CarModels.wheel(id) }
         }
+        let saved = CarChoice.saved
+        jobs.append { _ = saved.model == .retro ? CarModels.retroPaint(saved.color) : CarFactory.racerPaint(saved.color) }
         for color in CarArt.parkedColors {
             for style in [CarStyle.sedan, .hatch, .suv] {
                 jobs.append { _ = CarFactory.body(style: style, color: color, parked: false) }

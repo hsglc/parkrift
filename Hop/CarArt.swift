@@ -168,6 +168,105 @@ enum CarArt {
         return texture
     }
 
+    /// Racing-game font: heavy, condensed and italic.
+    static func raceFont(_ size: CGFloat, weight: UIFont.Weight = .black, italic: Bool = true) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: weight, width: .condensed)
+        guard italic, let descriptor = base.fontDescriptor.withSymbolicTraits(.traitItalic) else { return base }
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    /// Soft glowing ring for the nitro shockwave (a sprite: SKShapeNode glow compiles a shader
+    /// on first use, which stalled the first nitro).
+    static let nitroRingTexture: SKTexture = render(CGSize(width: 160, height: 160), scale: 1) { context, s in
+        let center = CGPoint(x: s.width / 2, y: s.height / 2)
+        for (width, alpha) in [(16.0, 0.12), (10.0, 0.25), (5.0, 0.6), (2.5, 1.0)] as [(CGFloat, CGFloat)] {
+            context.setStrokeColor(UIColor(red: 0.55, green: 0.9, blue: 1.0, alpha: alpha).cgColor)
+            context.setLineWidth(width)
+            context.strokeEllipse(in: CGRect(x: center.x - 62, y: center.y - 62, width: 124, height: 124))
+        }
+    }
+
+    /// Lower-third result plate for the finish moment, in the style of racing games: a slanted
+    /// dark plate with an accent edge, a small kicker, a big white title, a stats line and a
+    /// position block on the right. Plain text on a solid plate so it reads over any scene.
+    static func finishPlate(kicker: String, title: String, stats: [(icon: String, text: String)],
+                            badgeTop: String?, badgeBottom: String, accent: UIColor, badgeText: UIColor) -> SKTexture {
+        let size = CGSize(width: 470, height: 132)
+        let skew: CGFloat = 22
+        func slanted(_ rect: CGRect) -> CGPath {
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: rect.minX + skew, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - skew, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.closeSubpath()
+            return path
+        }
+        return render(size, scale: 2) { context, s in
+            let badgeWidth: CGFloat = 112
+            let plate = CGRect(x: 0, y: 8, width: s.width - badgeWidth + skew - 6, height: s.height - 16)
+            // Plate with a soft drop shadow
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: 6), blur: 14, color: UIColor.black.withAlphaComponent(0.55).cgColor)
+            context.addPath(slanted(plate))
+            context.setFillColor(UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 0.92).cgColor)
+            context.fillPath()
+            context.restoreGState()
+            // Faint top highlight
+            context.saveGState()
+            context.addPath(slanted(plate))
+            context.clip()
+            if let shine = gradient([UIColor.white.withAlphaComponent(0.10), UIColor.white.withAlphaComponent(0)]) {
+                context.drawLinearGradient(shine, start: CGPoint(x: 0, y: plate.minY), end: CGPoint(x: 0, y: plate.midY), options: [])
+            }
+            // Accent edge
+            context.setFillColor(accent.cgColor)
+            context.fill(CGRect(x: 0, y: plate.minY, width: skew + 10, height: plate.height))
+            context.restoreGState()
+
+            let left: CGFloat = skew + 22
+            let kickerFont = UIFont.systemFont(ofSize: 12, weight: .heavy, width: .expanded)
+            (kicker as NSString).draw(at: CGPoint(x: left + 4, y: plate.minY + 12),
+                                      withAttributes: [.font: kickerFont, .foregroundColor: accent, .kern: 2.2])
+            (title as NSString).draw(at: CGPoint(x: left, y: plate.minY + 24),
+                                     withAttributes: [.font: raceFont(48), .foregroundColor: UIColor.white, .kern: 0.5])
+            // Stats: icon + text pairs
+            var x = left - 4
+            let statFont = UIFont.monospacedDigitSystemFont(ofSize: 16, weight: .bold)
+            let statY = plate.maxY - 28
+            for stat in stats {
+                if let icon = UIImage(systemName: stat.icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))?
+                    .withTintColor(accent, renderingMode: .alwaysOriginal) {
+                    icon.draw(at: CGPoint(x: x, y: statY + (20 - icon.size.height) / 2))
+                    x += icon.size.width + 6
+                }
+                let attributes: [NSAttributedString.Key: Any] = [.font: statFont, .foregroundColor: UIColor.white.withAlphaComponent(0.92)]
+                (stat.text as NSString).draw(at: CGPoint(x: x, y: statY), withAttributes: attributes)
+                x += (stat.text as NSString).size(withAttributes: attributes).width + 22
+            }
+
+            // Position block
+            let badge = CGRect(x: s.width - badgeWidth, y: 0, width: badgeWidth, height: s.height)
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: 6), blur: 14, color: UIColor.black.withAlphaComponent(0.5).cgColor)
+            context.addPath(slanted(badge))
+            context.setFillColor(accent.cgColor)
+            context.fillPath()
+            context.restoreGState()
+            let centered = NSMutableParagraphStyle()
+            centered.alignment = .center
+            let bigFont = raceFont(badgeTop == nil ? 40 : 54)
+            let big = badgeTop ?? "✓"
+            let bigSize = (big as NSString).size(withAttributes: [.font: bigFont])
+            (big as NSString).draw(in: CGRect(x: badge.minX, y: badge.midY - bigSize.height / 2 - 10, width: badge.width, height: bigSize.height),
+                                   withAttributes: [.font: bigFont, .foregroundColor: badgeText, .paragraphStyle: centered])
+            (badgeBottom as NSString).draw(in: CGRect(x: badge.minX, y: badge.maxY - 30, width: badge.width, height: 16),
+                                           withAttributes: [.font: UIFont.systemFont(ofSize: 11, weight: .heavy, width: .expanded),
+                                                            .foregroundColor: badgeText.withAlphaComponent(0.8), .kern: 1.6,
+                                                            .paragraphStyle: centered])
+        }
+    }
+
     /// Nitro flame strip: bright white-cyan at the nozzle (right) fading to deep blue and black at
     /// the tip (left), soft at the top and bottom edges, with a few streaks. Drawn opaque on black
     /// for additive blending.

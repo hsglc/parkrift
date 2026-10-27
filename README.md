@@ -60,6 +60,13 @@ Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 
 
 ## Credits
 
-- Players' car: "Ferrari 458 Italia" by vicent091036 (https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6),
-  licensed CC BY 4.0. Modified: interior removed, maker badges removed, decimated and converted to USDZ
-  with `tools/convert_car.py` (source taken from the three.js examples). Files: `Hop/Models/car_body.usdz`, `Hop/Models/car_wheel.usdz`.
+Garage cars (converted with `tools/convert_cars.py`, files `Hop/Models/*_body.usdz`, `*_wheel.usdz`):
+
+- "Italia GT": "Ferrari 458 Italia" by vicent091036 (https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6),
+  CC BY 4.0, taken from the three.js examples. Modified: maker badges removed, closed hardtop roof added,
+  simplified interior, decimated, converted to USDZ.
+- "Vector X": "Car Concept" from the Khronos glTF Sample Assets (https://github.com/KhronosGroup/glTF-Sample-Assets),
+  CC BY 4.0 © Khronos Group, based on the CC0 "Free Concept Car 004" by Unity Fan. Modified: licence plate
+  and Khronos logos removed, wipers removed, decimated, converted to USDZ.
+- "Hot Rod 55": "Toy Car" from the Khronos glTF Sample Assets, CC0. Modified: fabric and cameras removed,
+  wheels cut out to spin, paint areas made tintable, decimated, converted to USDZ.

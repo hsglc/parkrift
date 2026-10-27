@@ -166,3 +166,98 @@ struct SoundToggle: View {
         }
     }
 }
+
+// MARK: - Racing style (garage, menu)
+
+extension Font {
+    /// Heavy condensed italic, the racing-game display face.
+    static func race(_ size: CGFloat, weight: Font.Weight = .black) -> Font {
+        .system(size: size, weight: weight).width(.condensed).italic()
+    }
+
+    /// Small wide caps for labels above titles.
+    static func kicker(_ size: CGFloat = 11) -> Font {
+        .system(size: size, weight: .heavy).width(.expanded)
+    }
+}
+
+extension Palette {
+    static let neon = Color(red: 0.22, green: 0.84, blue: 1.0)
+    static let carbon = Color(red: 0.035, green: 0.04, blue: 0.06)
+}
+
+/// Parallelogram leaning right by `skew` points, the shape of racing-game plates and buttons.
+struct SlantedShape: Shape {
+    var skew: CGFloat = 14
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + skew, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - skew, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Big slanted call-to-action button with a light sweep.
+struct RaceButtonStyle: ButtonStyle {
+    var color: Color = Palette.gold
+    var textColor: Color = Palette.ink
+    var height: CGFloat = 54
+    var fontSize: CGFloat = 22
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.race(fontSize))
+            .tracking(0.5)
+            .foregroundStyle(textColor)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .background(
+                SlantedShape(skew: 16)
+                    .fill(LinearGradient(colors: [color, color.opacity(0.82)], startPoint: .top, endPoint: .bottom))
+            )
+            .overlay(SlantedShape(skew: 16).strokeBorderCompat(Color.white.opacity(0.45), lineWidth: 1))
+            .shadow(color: color.opacity(0.45), radius: configuration.isPressed ? 4 : 14, y: configuration.isPressed ? 2 : 6)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+extension Shape {
+    /// Stroke that stays inside the shape (Shape has no strokeBorder before InsettableShape).
+    func strokeBorderCompat(_ color: Color, lineWidth: CGFloat) -> some View {
+        stroke(color, lineWidth: lineWidth).padding(lineWidth / 2)
+    }
+}
+
+/// Dark slanted glass plate for racing panels.
+struct RacePlate: ViewModifier {
+    var skew: CGFloat = 18
+    var padding: CGFloat = 18
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.vertical, padding)
+            .padding(.leading, padding + skew * 0.6)
+            .padding(.trailing, padding)
+            .background(
+                SlantedShape(skew: skew)
+                    .fill(LinearGradient(colors: [Palette.carbon.opacity(0.88), Palette.carbon.opacity(0.94)],
+                                         startPoint: .top, endPoint: .bottom))
+            )
+            .overlay(
+                SlantedShape(skew: skew)
+                    .strokeBorderCompat(Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
+    }
+}
+
+extension View {
+    func racePlate(skew: CGFloat = 18, padding: CGFloat = 18) -> some View {
+        modifier(RacePlate(skew: skew, padding: padding))
+    }
+}

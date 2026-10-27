@@ -8,3 +8,4 @@ build/
 *.p8
 .DS_Store
 xcuserdata/
+__pycache__/

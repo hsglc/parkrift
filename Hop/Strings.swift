@@ -117,6 +117,36 @@ enum Strings {
     static var enterCode: String { t("Kodu gir", "Enter code") }
     static var createRoomSub: String { t("Bir oda kodu oluştur ve arkadaşına gönder.", "Create a room code and send it to your friend.") }
     static var joinRoomSub: String { t("Arkadaşının verdiği 4 harfli kodu yaz.", "Type the 4-letter code your friend gave you.") }
-    static var credits: String { t("Araba modeli: \"Ferrari 458 Italia\" — vicent091036, CC BY 4.0 (değiştirildi)",
-                                     "Car model: \"Ferrari 458 Italia\" by vicent091036, CC BY 4.0 (modified)") }
+    static var credits: String { t("Araba modelleri: \"Ferrari 458 Italia\" — vicent091036, CC BY 4.0 · \"Car Concept\" — Khronos Group, CC BY 4.0 · \"Toy Car\" — Khronos, CC0 (değiştirildi)",
+                                     "Car models: \"Ferrari 458 Italia\" by vicent091036, CC BY 4.0 · \"Car Concept\" by Khronos Group, CC BY 4.0 · \"Toy Car\" by Khronos, CC0 (modified)") }
+
+    // Garage
+    static var garage: String { t("Garaj", "Garage") }
+    static var paint: String { t("Boya", "Paint") }
+    static var carClass: String { t("SINIF", "CLASS") }
+    static var statSpeed: String { t("Hız", "Speed") }
+    static var statAccel: String { t("Hızlanma", "Accel") }
+    static var statHandling: String { t("Yol tutuş", "Handling") }
+    static var statNitro: String { t("Nitro", "Nitro") }
+    static var raceStart: String { t("Yarışa başla", "Race") }
+    static var selectCar: String { t("Arabayı seç", "Select car") }
+    static var changeCar: String { t("Arabayı değiştir", "Change car") }
+    static var yourCar: String { t("Araban", "Your car") }
+    static var paintRed: String { t("Yarış kırmızısı", "Racing red") }
+    static var paintBlue: String { t("Gece mavisi", "Midnight blue") }
+    static var paintLime: String { t("Neon yeşil", "Neon lime") }
+    static var paintYellow: String { t("Sarı", "Yellow") }
+    static var paintOrange: String { t("Turuncu", "Orange") }
+    static var paintPurple: String { t("Mor", "Purple") }
+    static var paintWhite: String { t("İnci beyaz", "Pearl white") }
+    static var paintBlack: String { t("Gece siyahı", "Jet black") }
+
+    // Finish plate
+    static var raceComplete: String { t("YARIŞ TAMAMLANDI", "RACE COMPLETE") }
+    static var placeShort: String { t("SIRA", "PLACE") }
+    static var roundShort: String { t("TUR", "ROUND") }
+
+    // Menu
+    static var chooseMode: String { t("Mod seç", "Choose mode") }
+    static var playNow: String { t("Oyna", "Play") }
 }
