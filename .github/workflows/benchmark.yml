@@ -75,6 +75,7 @@ jobs:
             cp "$DATA/Documents/shot-start.png" "results/$label-start.png" 2>/dev/null || true
             cp "$DATA/Documents/shot-mid.png" "results/$label-mid.png" 2>/dev/null || true
             cp "$DATA/Documents/shot-hud.png" "results/$label-hud.png" 2>/dev/null || true
+            cp "$DATA/Documents/menu.png" "results/$label-menu.png" 2>/dev/null || true
             for i in $(seq 1 20); do kill -0 $pid 2>/dev/null || break; sleep 1; done
             kill $pid 2>/dev/null || true
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true

@@ -319,7 +319,8 @@ struct RootView: View {
             AudioManager.shared.ensureRunning()
             if PerfSettings.benchmark && model.screen == .menu {
                 AudioManager.shared.isMuted = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.playRace() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { saveWindowSnapshot(named: "menu") }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { model.playRace() }
             }
         }
     }
@@ -359,3 +360,15 @@ struct SceneKitView: UIViewRepresentable {
     }
 }
 
+
+/// Benchmark helper: saves the key window (SwiftUI content) to Documents/<name>.png.
+@MainActor
+func saveWindowSnapshot(named name: String) {
+    guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+          let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first,
+          let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+    }
+    try? image.pngData()?.write(to: folder.appendingPathComponent(name + ".png"))
+}
