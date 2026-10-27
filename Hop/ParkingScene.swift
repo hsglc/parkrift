@@ -83,6 +83,15 @@ final class ParkingScene: SKScene {
     private var steerLabel = SKLabelNode()
     private let minimap = SKNode()
     private var mapScale: CGFloat = 0.168
+    private let mapRadius: CGFloat = 56
+    private var mapContent = SKNode()
+    private var targetPointer = SKSpriteNode()
+
+    // Speedometer
+    private var speedDial = SKNode()
+    private var speedArc = SKShapeNode()
+    private var speedLabel = SKLabelNode()
+    private var shownSpeed: CGFloat = 0
     private var myMarker = SKShapeNode()
     private var hudLeft: CGFloat = 10
     private var routeLine = SKShapeNode()
@@ -396,6 +405,7 @@ final class ParkingScene: SKScene {
         minimap.removeAllChildren()
         hudLeft = left
         hud.addChild(minimap)
+        buildSpeedometer(left: left, top: top)
 
         navNode = SKNode()
         navNode.position = CGPoint(x: size.width / 2 + 40, y: top - 46)
@@ -1331,6 +1341,7 @@ final class ParkingScene: SKScene {
 
         updateRemoteCar(dt)
         updateNitro(dt)
+        updateSpeedometer(dt)
 
         timerLabel.text = String(format: "%.1f", localParked ? localTime : elapsed)
         world?.follow(position: carPosition, heading: heading, dt: dt)
@@ -1420,20 +1431,123 @@ final class ParkingScene: SKScene {
         navLabel.text = (level.race ? Strings.finishLine : Strings.toTarget) + " · \(Int((toTarget / 10).rounded())) m"
     }
 
+    // MARK: Speedometer
+
+    private let speedRadius: CGFloat = 50
+    private let dialStart: CGFloat = CGFloat.pi * 1.25   // lower left
+    private let dialSweep: CGFloat = CGFloat.pi * 1.5    // 270 degrees, clockwise
+    private let dialMaxKmh: CGFloat = 100
+
+    private func buildSpeedometer(left: CGFloat, top: CGFloat) {
+        speedDial = SKNode()
+        speedDial.position = CGPoint(x: left + speedRadius + 14, y: top - 44 - speedRadius)
+        hud.addChild(speedDial)
+
+        let disc = SKShapeNode(circleOfRadius: speedRadius + 6)
+        disc.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.7)
+        disc.strokeColor = UIColor.white.withAlphaComponent(0.2)
+        disc.lineWidth = 1
+        speedDial.addChild(disc)
+
+        let track = SKShapeNode()
+        let trackPath = CGMutablePath()
+        trackPath.addArc(center: .zero, radius: speedRadius - 4, startAngle: dialStart, endAngle: dialStart - dialSweep, clockwise: true)
+        track.path = trackPath
+        track.strokeColor = UIColor.white.withAlphaComponent(0.14)
+        track.lineWidth = 7
+        track.lineCap = .round
+        speedDial.addChild(track)
+
+        // Tick marks every 10 km/h, longer every 20
+        let ticks = SKShapeNode()
+        let tickPath = CGMutablePath()
+        for step in 0...10 {
+            let angle = dialStart - dialSweep * CGFloat(step) / 10
+            let inner = speedRadius - (step % 2 == 0 ? 17 : 13)
+            let outer = speedRadius - 10
+            tickPath.move(to: CGPoint(x: cos(angle) * inner, y: sin(angle) * inner))
+            tickPath.addLine(to: CGPoint(x: cos(angle) * outer, y: sin(angle) * outer))
+        }
+        ticks.path = tickPath
+        ticks.strokeColor = UIColor.white.withAlphaComponent(0.45)
+        ticks.lineWidth = 1.5
+        speedDial.addChild(ticks)
+
+        speedArc = SKShapeNode()
+        speedArc.lineWidth = 7
+        speedArc.lineCap = .round
+        speedArc.glowWidth = 1.5
+        speedDial.addChild(speedArc)
+
+        speedLabel = makeLabel("0", size: 28, color: .white)
+        speedLabel.position = CGPoint(x: 0, y: 2)
+        speedDial.addChild(speedLabel)
+        let unit = makeLabel("km/h", size: 10, color: UIColor.white.withAlphaComponent(0.6), font: "AvenirNext-Bold")
+        unit.position = CGPoint(x: 0, y: -20)
+        speedDial.addChild(unit)
+    }
+
+    /// 1 world unit = 10 cm, so units/s * 0.36 = km/h.
+    private func updateSpeedometer(_ dt: CGFloat) {
+        let kmh = abs(velocity) * 0.36
+        shownSpeed += (kmh - shownSpeed) * min(1, dt * 10)
+        speedLabel.text = "\(Int(shownSpeed.rounded()))"
+        let fraction = min(1, shownSpeed / dialMaxKmh)
+        if fraction > 0.005 {
+            let path = CGMutablePath()
+            path.addArc(center: .zero, radius: speedRadius - 4, startAngle: dialStart,
+                        endAngle: dialStart - dialSweep * fraction, clockwise: true)
+            speedArc.path = path
+        } else {
+            speedArc.path = nil
+        }
+        let color: UIColor
+        if isBoosting {
+            color = UIColor(red: 0.35, green: 0.9, blue: 1.0, alpha: 1)
+        } else if fraction < 0.5 {
+            color = UIColor(red: 0.4, green: 0.95, blue: 0.55, alpha: 1)
+        } else if fraction < 0.8 {
+            color = UIColor(red: 1.0, green: 0.82, blue: 0.25, alpha: 1)
+        } else {
+            color = UIColor(red: 1.0, green: 0.42, blue: 0.32, alpha: 1)
+        }
+        speedArc.strokeColor = color
+        speedLabel.fontColor = isBoosting ? color : .white
+    }
+
     // MARK: Minimap
 
+    /// Heading-up minimap in the top-right corner: the player stays in the middle pointing up and
+    /// the map turns and slides underneath.
     private func buildMinimap() {
         minimap.removeAllChildren()
         botDots.removeAll()
-        let mapWidth: CGFloat = isCity ? 190 : 168
-        mapScale = mapWidth / level.world.width
-        let mapSize = CGSize(width: level.world.width * mapScale, height: level.world.height * mapScale)
-        minimap.position = CGPoint(x: hudLeft + 6, y: size.height - 80 - mapSize.height)
-        let background = SKShapeNode(rect: CGRect(origin: .zero, size: mapSize).insetBy(dx: -4, dy: -4), cornerRadius: 10)
-        background.fillColor = isCity ? UIColor(red: 0.30, green: 0.31, blue: 0.35, alpha: 0.85) : UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.6)
-        background.strokeColor = UIColor.white.withAlphaComponent(0.3)
-        background.lineWidth = 1
-        minimap.addChild(background)
+        let right = max(insets.right, 10)
+        let radius = mapRadius
+        minimap.position = CGPoint(x: size.width - right - radius - 8, y: size.height - 56 - radius)
+        codeLabel.position = CGPoint(x: minimap.position.x, y: minimap.position.y - radius - 14)
+        mapScale = isCity ? radius / 700 : radius / 420
+
+        let backdrop = SKShapeNode(circleOfRadius: radius + 3)
+        backdrop.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.75)
+        backdrop.strokeColor = UIColor.white.withAlphaComponent(0.35)
+        backdrop.lineWidth = 1.5
+        minimap.addChild(backdrop)
+
+        let crop = SKCropNode()
+        let mask = SKShapeNode(circleOfRadius: radius)
+        mask.fillColor = .white
+        mask.strokeColor = .clear
+        crop.maskNode = mask
+        minimap.addChild(crop)
+        mapContent = SKNode()
+        crop.addChild(mapContent)
+
+        let worldRect = CGRect(x: 0, y: 0, width: level.world.width * mapScale, height: level.world.height * mapScale)
+        let ground = SKShapeNode(rect: worldRect)
+        ground.fillColor = isCity ? UIColor(red: 0.33, green: 0.34, blue: 0.38, alpha: 1) : UIColor(red: 0.22, green: 0.24, blue: 0.29, alpha: 1)
+        ground.strokeColor = UIColor.white.withAlphaComponent(0.25)
+        mapContent.addChild(ground)
 
         func shape(center: CGPoint, size: CGSize, angle: CGFloat) -> SKShapeNode {
             let node = SKShapeNode(rectOf: CGSize(width: max(2, size.width * mapScale), height: max(2, size.height * mapScale)),
@@ -1448,32 +1562,22 @@ final class ParkingScene: SKScene {
             for block in city.blocks {
                 let node = SKShapeNode(rect: CGRect(x: block.minX * mapScale, y: block.minY * mapScale,
                                                     width: block.width * mapScale, height: block.height * mapScale), cornerRadius: 2)
-                node.fillColor = UIColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 0.95)
+                node.fillColor = UIColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 1)
                 node.strokeColor = .clear
-                minimap.addChild(node)
+                mapContent.addChild(node)
             }
             routeLine = SKShapeNode()
             routeLine.strokeColor = UIColor(red: 1.0, green: 0.82, blue: 0.20, alpha: 1)
-            routeLine.lineWidth = 3
+            routeLine.lineWidth = 3.5
             routeLine.lineCap = .round
             routeLine.lineJoin = .round
-            routeLine.glowWidth = 1
-            minimap.addChild(routeLine)
+            mapContent.addChild(routeLine)
             for _ in traffic?.bots ?? [] {
-                if PerfSettings.optimized {
-                    // Sprites with one shared texture are drawn in a single batch
-                    let dot = SKSpriteNode(texture: dotTexture)
-                    dot.size = CGSize(width: 5, height: 5)
-                    dot.alpha = 0.8
-                    minimap.addChild(dot)
-                    botDots.append(dot)
-                } else {
-                    let dot = SKShapeNode(circleOfRadius: 1.8)
-                    dot.fillColor = UIColor.white.withAlphaComponent(0.75)
-                    dot.strokeColor = .clear
-                    minimap.addChild(dot)
-                    botDots.append(dot)
-                }
+                let dot = SKSpriteNode(texture: dotTexture)
+                dot.size = CGSize(width: 5, height: 5)
+                dot.alpha = 0.85
+                mapContent.addChild(dot)
+                botDots.append(dot)
             }
         } else {
             for obstacle in level.obstacles {
@@ -1483,7 +1587,7 @@ final class ParkingScene: SKScene {
                 case .car: node.fillColor = UIColor(white: 0.55, alpha: 0.9)
                 case .cone: node.fillColor = UIColor(red: 1.0, green: 0.5, blue: 0.15, alpha: 1)
                 }
-                minimap.addChild(node)
+                mapContent.addChild(node)
             }
         }
 
@@ -1493,9 +1597,9 @@ final class ParkingScene: SKScene {
             let color = CarArt.playerColors[spotSlot]
             let node: SKShapeNode
             if isCity {
-                node = SKShapeNode(circleOfRadius: spotSlot == slot ? 6 : 4)
+                node = SKShapeNode(circleOfRadius: spotSlot == slot ? 5 : 3.5)
                 node.position = CGPoint(x: def.center.x * mapScale, y: def.center.y * mapScale)
-                node.fillColor = color
+                node.fillColor = level.race ? UIColor(red: 1, green: 0.82, blue: 0.2, alpha: 1) : color
                 node.strokeColor = .white
                 node.lineWidth = 1.5
             } else {
@@ -1508,7 +1612,7 @@ final class ParkingScene: SKScene {
                 node.glowWidth = 2
                 node.run(.repeatForever(.sequence([.fadeAlpha(to: 0.4, duration: 0.5), .fadeAlpha(to: 1, duration: 0.5)])))
             }
-            minimap.addChild(node)
+            mapContent.addChild(node)
         }
 
         func marker(_ color: UIColor) -> SKShapeNode {
@@ -1525,17 +1629,27 @@ final class ParkingScene: SKScene {
             return node
         }
         friendMarker = marker(CarArt.playerColors[otherSlot])
-        minimap.addChild(friendMarker)
+        mapContent.addChild(friendMarker)
+        // The player: fixed in the middle, always pointing up
         myMarker = marker(CarArt.playerColors[slot])
-        myMarker.setScale(1.15)
+        myMarker.setScale(1.3)
+        myMarker.zRotation = CGFloat.pi / 2
         minimap.addChild(myMarker)
+        // Arrow on the rim pointing at the target when it is off the map
+        targetPointer = makeIcon("arrowtriangle.up.fill", size: 11, color: level.race ? UIColor(red: 1, green: 0.82, blue: 0.2, alpha: 1)
+                                                                                : CarArt.playerColors[slot].lighter(by: 0.3))
+        minimap.addChild(targetPointer)
         navNode.isHidden = !isCity
         updateMinimap()
     }
 
     private func updateMinimap() {
-        myMarker.position = CGPoint(x: carPosition.x * mapScale, y: carPosition.y * mapScale)
-        myMarker.zRotation = heading
+        // Rotate the map so the car's heading points up, and keep the car in the middle
+        let rotation = CGFloat.pi / 2 - heading
+        mapContent.zRotation = rotation
+        let car = CGPoint(x: carPosition.x * mapScale, y: carPosition.y * mapScale)
+        mapContent.position = CGPoint(x: -(car.x * cos(rotation) - car.y * sin(rotation)),
+                                      y: -(car.x * sin(rotation) + car.y * cos(rotation)))
         friendMarker.isHidden = !friendPresent
         friendMarker.position = CGPoint(x: remotePosition.x * mapScale, y: remotePosition.y * mapScale)
         friendMarker.zRotation = remoteHeading
@@ -1543,6 +1657,20 @@ final class ParkingScene: SKScene {
             for (index, dot) in botDots.enumerated() where index < bots.count {
                 dot.position = CGPoint(x: bots[index].position.x * mapScale, y: bots[index].position.y * mapScale)
             }
+        }
+        // Target pointer on the rim
+        let target = level.spots[slot].center
+        let dx = (target.x - carPosition.x) * mapScale
+        let dy = (target.y - carPosition.y) * mapScale
+        let rx = dx * cos(rotation) - dy * sin(rotation)
+        let ry = dx * sin(rotation) + dy * cos(rotation)
+        let distance = hypot(rx, ry)
+        if distance > mapRadius - 6 && !localParked {
+            targetPointer.isHidden = false
+            targetPointer.position = CGPoint(x: rx / distance * (mapRadius - 7), y: ry / distance * (mapRadius - 7))
+            targetPointer.zRotation = atan2(ry, rx) - CGFloat.pi / 2
+        } else {
+            targetPointer.isHidden = true
         }
     }
 
