@@ -484,7 +484,7 @@ struct GarageView: View {
                     .foregroundStyle(.white.opacity(0.85))
             }
             .padding(.top, 4)
-            HStack(spacing: 7) {
+            HStack(spacing: 4) {
                 ForEach(CarSpec.paints.indices, id: \.self) { index in
                     let selected = index == choice.paint
                     Button {
@@ -494,7 +494,7 @@ struct GarageView: View {
                         Circle()
                             .fill(LinearGradient(colors: [Color(CarSpec.paints[index].color.lighter(by: 0.25)), Color(CarSpec.paints[index].color)],
                                                  startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 25, height: 25)
+                            .frame(width: 22, height: 22)
                             .overlay(Circle().stroke(Color.white.opacity(selected ? 1 : 0.25), lineWidth: selected ? 2.5 : 1))
                             .padding(3)
                             .overlay(Circle().stroke(selected ? accent : .clear, lineWidth: 1.5))
