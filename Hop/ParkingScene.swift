@@ -110,6 +110,7 @@ final class ParkingScene: SKScene {
     private var nitroFiredAt: [Double] = []
     private var detailClock: CGFloat = 0
     private var finishTestPlaced = false
+    private var nitroShotTaken = false
     private var finishTestAt: Double = -1
     private var finishCrossAt: Double = -1
     /// While the results card is up the 3D world is neither updated nor drawn.
@@ -1037,6 +1038,10 @@ final class ParkingScene: SKScene {
         bumpHaptic.impactOccurred(intensity: 1.0)
         world?.shake(strength: 3)
         boostVisual = 1.3   // lens punch, eases back to 1
+        if benchmark && !nitroShotTaken {
+            nitroShotTaken = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.world?.saveSnapshot(named: "shot-nitro") }
+        }
         // Shockwave ring from behind the car
         let ring = SKShapeNode(circleOfRadius: 40)
         ring.strokeColor = UIColor(red: 0.45, green: 0.85, blue: 1.0, alpha: 1)
