@@ -8,6 +8,7 @@ import simd
 enum PerfSettings {
     static let optimized = !CommandLine.arguments.contains("-legacy")
     static let benchmark = CommandLine.arguments.contains("-benchmark")
+    static let finishTest = CommandLine.arguments.contains("-finishtest")
 
     /// Cars farther than this (meters) use the simple body and skip wheels/lights.
     static let carDetailDistance: CGFloat = 38

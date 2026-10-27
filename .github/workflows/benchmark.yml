@@ -89,7 +89,8 @@ jobs:
               tail -20 "results/$label.log" | while read -r l; do echo "::warning::$l"; done
             fi
           }
-          run optimized-1
+          run finish-1 -finishtest
+          run finish-2 -finishtest
 
       - name: Collect crash reports
         if: always()

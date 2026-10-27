@@ -109,6 +109,8 @@ final class ParkingScene: SKScene {
     private var finishClock: CGFloat = 0
     private var nitroFiredAt: [Double] = []
     private var detailClock: CGFloat = 0
+    private var finishTestPlaced = false
+    private var finishTestAt: Double = -1
     /// False until the first level is fully loaded; the countdown waits for it.
     private var ready = false
     private var navNode = SKNode()
@@ -890,8 +892,8 @@ final class ParkingScene: SKScene {
     /// 20 seconds of frames once driving has settled.
     private func runAutopilot(_ dt: CGFloat) {
         autoControls = []
-        guard phase == .driving, !benchDone else { return }
-        benchClock += dt
+        guard phase != .countdown, !benchDone else { return }
+        benchClock += finishAnimating ? CGFloat(1.0 / 60.0) : dt
         if !benchRecording && benchClock > 2 {
             benchRecording = true
             FrameMonitor.shared.start()
@@ -902,6 +904,25 @@ final class ParkingScene: SKScene {
             finishBenchmark()
             return
         }
+        // Finish test: put the car just before the finish line at speed so it crosses it
+        if PerfSettings.finishTest && level.race && !finishTestPlaced && benchClock > 6 {
+            finishTestPlaced = true
+            let finish = level.spots[slot]
+            let dir = CGPoint(x: cos(finish.angle), y: sin(finish.angle))
+            let normal = CGPoint(x: dir.y, y: -dir.x)
+            carPosition = CGPoint(x: finish.center.x - dir.x * 140 + normal.x * CityMap.laneOffset,
+                                  y: finish.center.y - dir.y * 140 + normal.y * CityMap.laneOffset)
+            heading = finish.angle
+            velocity = 120
+            gear = .drive
+            finishTestAt = Double(benchClock - 2)
+        }
+        if PerfSettings.finishTest && finishTestPlaced && level.race && phase == .driving && !localParked {
+            checkParking(dt)
+            autoControls = [.forward]
+            return
+        }
+        guard phase == .driving else { return }
         if autoReverse > 0 {
             autoReverse -= dt
             autoControls = [.reverse, .left]
@@ -962,7 +983,8 @@ final class ParkingScene: SKScene {
             "levelLoadMs": (levelLoadMilliseconds * 10).rounded() / 10,
             "hits": hits,
             "spikes": FrameMonitor.shared.spikes(over: 50),
-            "nitroAt": nitroFiredAt
+            "nitroAt": nitroFiredAt,
+            "finishTestAt": finishTestAt
         ]
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8) {
