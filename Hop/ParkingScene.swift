@@ -116,6 +116,7 @@ final class ParkingScene: SKScene {
     private var worldFrozen = false
     /// False until the first level is fully loaded; the countdown waits for it.
     private var ready = false
+    private var readyRequested = false
     private var navNode = SKNode()
     private var navArrow = SKSpriteNode()
     private var navLabel = SKLabelNode()
@@ -748,15 +749,25 @@ final class ParkingScene: SKScene {
     }
 
     private func becomeReady() {
-        guard !ready else { return }
+        guard !ready, !readyRequested else { return }
+        readyRequested = true
         stage("ready")
+        if let model = model {
+            model.sceneReady { [weak self] in self?.startCountdown() }
+        } else {
+            startCountdown()
+        }
+    }
+
+    /// Runs once the loading screen has gone.
+    private func startCountdown() {
+        guard !ready else { return }
         ready = true
         countdownNode.isHidden = false
         countdown = 3
         setCountdown("3")
         countdownDial.alpha = 0
         popCountdown(go: false)
-        model?.sceneReady()
         tickHaptic.impactOccurred()
         audio.play("beep", volume: 0.6)
     }

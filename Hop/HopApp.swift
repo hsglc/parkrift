@@ -146,6 +146,7 @@ final class AppModel: ObservableObject {
         // Show the loading screen first, then build the world on the next turn of the main loop
         // (building it blocks the main thread, which used to leave a black screen).
         loadingLevel = level
+        loadingStartedAt = Date()
         loading = true
         scene = nil
         world = nil
@@ -164,8 +165,19 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func sceneReady() {
-        withAnimation(.easeOut(duration: 0.35)) { loading = false }
+    /// The loading screen always stays at least this long, whatever the mode.
+    static let minimumLoading: TimeInterval = 2.0
+    private var loadingStartedAt = Date()
+
+    /// Called when the world is built; hides the loading screen once it has been up for
+    /// `minimumLoading`, then `start` begins the countdown.
+    func sceneReady(then start: @escaping () -> Void) {
+        let remaining = max(0, AppModel.minimumLoading - Date().timeIntervalSince(loadingStartedAt))
+        DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
+            guard let self = self, self.screen == .game else { return }
+            withAnimation(.easeOut(duration: 0.35)) { self.loading = false }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { start() }
+        }
     }
 
     func send(_ message: [String: Any]) {

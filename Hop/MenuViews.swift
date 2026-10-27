@@ -673,6 +673,7 @@ private struct ModeChip: View {
 struct LoadingView: View {
     let level: Int
     @State private var tip = Strings.tips.randomElement() ?? ""
+    @State private var progress: CGFloat = 0
 
     private var modeTitle: String {
         if Levels.isRace(level) { return Strings.carRace }
@@ -716,6 +717,14 @@ struct LoadingView: View {
                 Text(Strings.loadingText)
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.75))
+                // Fills over the minimum loading time
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.1))
+                    Capsule()
+                        .fill(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: 220 * progress)
+                }
+                .frame(width: 220, height: 6)
                 if !tip.isEmpty {
                     HStack(spacing: 8) {
                         Image(systemName: "lightbulb.fill")
@@ -734,5 +743,8 @@ struct LoadingView: View {
             .padding(.horizontal, 20)
         }
         .ignoresSafeArea()
+        .onAppear {
+            withAnimation(.easeInOut(duration: AppModel.minimumLoading)) { progress = 1 }
+        }
     }
 }
