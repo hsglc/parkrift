@@ -332,7 +332,7 @@ def toy_texture(g, blob, out):
     shade = np.clip(gr / np.median(gr[mask]) * 0.92, 0, 1)
     a[mask] = shade[mask][:, None]
     Image.fromarray((a * 255).astype(np.uint8)).save(os.path.join(out, 'retro_basecolor.jpg'), quality=88)
-    Image.fromarray((mask * 255).astype(np.uint8)).resize((512, 512)).save(os.path.join(out, 'retro_mask.png'))
+    Image.fromarray((mask * 255).astype(np.uint8)).resize((512, 512)).convert('RGB').save(os.path.join(out, 'retro_mask.png'))
     print('retro texture', img.size, ext)
 
 

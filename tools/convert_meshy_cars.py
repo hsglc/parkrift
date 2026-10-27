@@ -160,7 +160,9 @@ def texture(obj, car, out):
     base = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8)).resize((TEXTURE_SIZE, TEXTURE_SIZE), Image.LANCZOS)
     base.save(os.path.join(out, car['id'] + '_basecolor.jpg'), quality=88)
     m = Image.fromarray((mask * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3))
-    m.resize((MASK_SIZE, MASK_SIZE), Image.LANCZOS).save(os.path.join(out, car['id'] + '_mask.png'))
+    # RGB, not grayscale: SceneKit turns 8-bit gray images into an R8 sRGB texture, a format the
+    # simulator and Macs do not have (the app crashed there)
+    m.resize((MASK_SIZE, MASK_SIZE), Image.LANCZOS).convert('RGB').save(os.path.join(out, car['id'] + '_mask.png'))
     return mask.mean()
 
 
