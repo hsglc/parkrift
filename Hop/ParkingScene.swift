@@ -981,7 +981,11 @@ final class ParkingScene: SKScene {
         }
         if benchClock > 1.0 && benchClock - dt <= 1.0 { world?.saveSnapshot(named: "shot-start") }
         // (not behind the results card: a snapshot of the paused 3D view stalls)
-        if benchClock > 12 && benchClock - dt <= 12 && !worldFrozen { world?.saveSnapshot(named: "shot-mid"); saveFullSnapshot() }
+        if benchClock > 12 && benchClock - dt <= 12 && !worldFrozen {
+            FrameMonitor.shared.mark("snapshot")
+            world?.saveSnapshot(named: "shot-mid")
+            saveFullSnapshot()
+        }
         if benchRecording && benchClock > 22 {
             finishBenchmark()
             return
@@ -1099,8 +1103,18 @@ final class ParkingScene: SKScene {
         engaged = true
         if gear == .reverse && velocity <= 2 { gear = .drive }
         velocity = max(velocity, 0) + 45
+        var t0 = CACurrentMediaTime()
+        func lap(_ name: String) {
+            guard benchmark else { return }
+            let now = CACurrentMediaTime()
+            let ms = (now - t0) * 1000
+            if ms > 5 { stage(String(format: "nitro %@ %.0f ms", name, ms)) }
+            t0 = now
+        }
         audio.play("nitro", volume: 0.8)
+        lap("audio")
         bumpHaptic.impactOccurred(intensity: 1.0)
+        lap("haptic")
         world?.shake(strength: 3)
         boostVisual = 1.3   // lens punch, eases back to 1
         // Shockwave ring from behind the car and the banner: both made when the level is built
@@ -1117,6 +1131,7 @@ final class ParkingScene: SKScene {
         nitroBanner.alpha = 1
         nitroBanner.run(.sequence([.scale(to: 1.15, duration: 0.12), .scale(to: 1.0, duration: 0.1), .wait(forDuration: 0.5),
                                    .group([.fadeAlpha(to: 0.002, duration: 0.3), .moveBy(x: 0, y: 20, duration: 0.3)])]))
+        lap("effects")
     }
 
     private func updateNitro(_ dt: CGFloat) {

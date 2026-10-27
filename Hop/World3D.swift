@@ -1228,6 +1228,14 @@ final class World3D {
     func follow(position: CGPoint, heading: CGFloat, dt: CGFloat, snap: Bool = false) {
         let carPoint = World3D.vec(position)
         if sweepClock >= 0 {
+            if sweepClock < 1.0 {
+                // Show every signal color once while the screen is covered
+                let state = Int(sweepClock * 3) % 3
+                for index in signalHeads.indices {
+                    signalHeads[index].lamp.geometry?.materials = [World3D.signalMaterials[state]]
+                    signalHeads[index].state = -1
+                }
+            }
             sweepClock += Float(dt)
             let turn: Float = 1.4
             let angle = sweepClock / turn * 2 * .pi

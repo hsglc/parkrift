@@ -308,12 +308,17 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
     }
 
     /// The slowest game updates: [time s, ms].
-    func slowUpdates(over threshold: Double) -> [[Double]] {
+    func slowUpdates(over threshold: Double) -> [[Any]] {
         lock.lock()
-        let times = renderTimes, updates = updateSamples
+        let times = renderTimes, updates = updateSamples, events = marks
         lock.unlock()
         guard let first = times.first else { return [] }
-        return Array(updates.filter { $0.ms > threshold }.map { [(($0.time - first) * 10).rounded() / 10, $0.ms.rounded()] }.prefix(20))
+        return Array(updates.filter { $0.ms > threshold }.map { sample -> [Any] in
+            // Marks are stamped during the update, which ends at `sample.time`
+            let start = sample.time - sample.ms / 1000 - 0.02
+            let named = events.filter { $0.time >= start && $0.time <= sample.time + 0.01 }.map { $0.label }
+            return [((sample.time - first) * 10).rounded() / 10, sample.ms.rounded(), named.joined(separator: ",")]
+        }.prefix(20))
     }
 
     struct Summary {
