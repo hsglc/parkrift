@@ -3,7 +3,7 @@ name: Benchmark (iOS Simulator)
 on:
   workflow_dispatch:
   push:
-    branches: [bench]
+    branches: [bench, bench-old]
 
 permissions:
   contents: write
