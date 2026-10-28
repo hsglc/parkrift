@@ -3500,6 +3500,27 @@ final class ParkingScene: SKScene {
         let round = levelIndex - Levels.raceBase + 1
         stats.append(("flag.checkered", together ? "P\(place)" : "\(max(1, round))/\(Levels.raceRounds)"))
         let title = won ? Strings.youWon.uppercased() : Strings.finishBig
+        // Cinematic bars slide in for the replay-style shots and out before the results
+        let barHeight = size.height * 0.11
+        for top in [true, false] {
+            let bar = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: barHeight))
+            bar.anchorPoint = CGPoint(x: 0.5, y: top ? 0 : 1)
+            let edge = top ? size.height : 0
+            bar.position = CGPoint(x: size.width / 2, y: edge)
+            bar.zPosition = -5
+            layer.addChild(bar)
+            let inside = SKAction.moveTo(y: top ? edge - barHeight : barHeight, duration: 0.35)
+            inside.timingMode = .easeOut
+            let outside = SKAction.moveTo(y: edge, duration: 0.3)
+            outside.timingMode = .easeIn
+            bar.run(.sequence([inside, .wait(forDuration: 3.3), outside]))
+            // Thin accent line on the inner edge of each bar
+            let line = SKSpriteNode(color: accent, size: CGSize(width: size.width + 40, height: 2))
+            line.position = CGPoint(x: 0, y: top ? 1 : -1)
+            line.alpha = 0.7
+            line.blendMode = .add
+            bar.addChild(line)
+        }
         presentFinishTitle(in: layer, title: title, kicker: Strings.raceComplete, stats: stats, accent: accent, hold: 3.0)
 
         run(.wait(forDuration: 1.0)) { [weak self] in self?.finishShotB(layer: layer) }
@@ -3693,6 +3714,14 @@ final class ParkingScene: SKScene {
     }
 
     private func finishShotB(layer: SKNode) {
+        // A white flash covers the cut to the orbit
+        let flash = SKSpriteNode(color: .white, size: CGSize(width: size.width + 40, height: size.height + 40))
+        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        flash.zPosition = -4
+        flash.alpha = 0.85
+        flash.blendMode = .add
+        layer.addChild(flash)
+        flash.run(.sequence([.fadeOut(withDuration: 0.35), .removeFromParent()]))
         world?.celebrate()
         audio.play("park", volume: 0.9)
         bumpHaptic.impactOccurred(intensity: 1.0)

@@ -316,6 +316,9 @@ enum Strings {
     static func unlockFor(_ price: Int) -> String { t("\(price) PARAYA AÇ", "UNLOCK · \(price)", "DESBLOQUEAR · \(price)") }
     static func needMoreCoins(_ missing: Int) -> String { t("\(missing) para daha gerek", "\(missing) more coins needed", "Faltan \(missing) monedas") }
     static var locked: String { t("Kilitli", "Locked", "Bloqueado") }
+    static var carUnlocked: String { t("Yeni araba açıldı", "New car unlocked", "Coche desbloqueado") }
+    static var addedToGarage: String { t("Garajına eklendi", "Added to your garage", "Añadido a tu garaje") }
+    static var tapToContinue: String { t("Devam etmek için dokun", "Tap to continue", "Toca para continuar") }
     static var quickMatch: String { t("Hızlı eşleşme", "Quick match", "Partida rápida") }
     static var quickMatchSub: String { t("Rastgele bir rakiple hemen yarış", "Race a random opponent right away", "Compite ya contra un rival al azar") }
     static var searching: String { t("Rakip aranıyor…", "Finding an opponent…", "Buscando rival…") }

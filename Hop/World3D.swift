@@ -1221,15 +1221,64 @@ final class World3D {
         cinematicActive = true
         cinematicShotB = false
         cinematicTime = 0
+        orbitReach = 99
         let p = World3D.vec(position)
+        let car = SIMD3<Float>(p.x, p.y, p.z)
         let forward = SIMD3<Float>(cos(Float(heading)), 0, -sin(Float(heading)))
         let side = SIMD3<Float>(sin(Float(heading)), 0, cos(Float(heading)))
-        shotAEye = SIMD3<Float>(p.x, p.y, p.z) + forward * 16 + side * 3.4 + SIMD3<Float>(0, 0.75, 0)
+        // The low pass shot from ahead of the car, on whichever side has a clear view: crossing the
+        // line while turning used to put the camera behind a wall, so the shot began on a wall
+        let candidates: [SIMD3<Float>] = [
+            forward * 16 + side * 3.4, forward * 16 - side * 3.4,
+            forward * 11 + side * 4.5, forward * 11 - side * 4.5,
+            forward * 7 + side * 6, forward * 7 - side * 6,
+            side * 8 + forward * 2, -side * 8 + forward * 2,
+        ]
+        let target = car + SIMD3<Float>(0, 0.9, 0)
+        shotAEye = car - forward * 7 + SIMD3<Float>(0, 3.2, 0)   // fallback: high behind the car
+        for offset in candidates {
+            let eye = car + offset + SIMD3<Float>(0, 0.75, 0)
+            if lineIsClear(from: target, to: eye, margin: 1.2) {
+                shotAEye = eye
+                break
+            }
+        }
         celebrationPoint = World3D.vec(finishLine, y: 6.4)
         // Only the lens changes: post-processing (depth of field, HDR, bloom) would make the GPU
         // rebuild its pipelines mid-frame and stall
         cameraNode.camera?.fieldOfView = 38
     }
+
+    /// True when nothing solid (buildings, walls, props, parked cars) lies between two points,
+    /// also checking `margin` meters past the end so the camera never sits inside a wall.
+    private func lineIsClear(from start: SIMD3<Float>, to end: SIMD3<Float>, margin: Float = 0) -> Bool {
+        hitDistance(from: start, to: end, margin: margin) == nil
+    }
+
+    /// Distance from `start` to the first solid hit towards `end` (+ margin), or nil.
+    private func hitDistance(from start: SIMD3<Float>, to end: SIMD3<Float>, margin: Float = 0) -> Float? {
+        let direction = end - start
+        let length = simd_length(direction)
+        guard length > 0.01 else { return nil }
+        let far = start + direction / length * (length + margin)
+        let options: [String: Any] = [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue,
+                                      SCNHitTestOption.ignoreHiddenNodes.rawValue: true,
+                                      SCNHitTestOption.backFaceCulling.rawValue: false]
+        var nearest: Float?
+        for root in [levelRoot, lotRoot] where !root.isHidden {
+            let hits = root.hitTestWithSegment(from: SCNVector3(start.x, start.y, start.z),
+                                               to: SCNVector3(far.x, far.y, far.z), options: options)
+            if let hit = hits.first {
+                let w = hit.worldCoordinates
+                let d = simd_distance(start, SIMD3<Float>(w.x, w.y, w.z))
+                nearest = min(nearest ?? d, d)
+            }
+        }
+        return nearest
+    }
+
+    /// How far the orbit camera may go from the car before a wall (smoothed).
+    private var orbitReach: Float = 99
 
     /// Shot B: hard cut to an orbit around the car, fireworks, confetti and a graded, glowing image.
     func celebrate() {
@@ -1237,6 +1286,17 @@ final class World3D {
         cinematicTime = 0
         let toCamera = shotAEye - cameraFocus
         cinematicAngle = atan2(-toCamera.z, toCamera.x) + 0.6
+        // Start the orbit where the car can be seen
+        let look = cameraFocus + SIMD3<Float>(0, 0.9, 0)
+        for step in 0..<8 {
+            let angle = cinematicAngle + Float(step) * .pi / 4
+            let eye = cameraFocus + SIMD3<Float>(cos(angle) * 5.4, 0.55, -sin(angle) * 5.4)
+            if lineIsClear(from: look, to: eye, margin: 0.8) {
+                cinematicAngle = angle
+                break
+            }
+        }
+        orbitReach = 99
         // Fireworks and confetti are drawn by the 2D layer: 3D particle systems stalled a frame
         // the first time they appeared
         cameraNode.camera?.fieldOfView = 52
@@ -1415,14 +1475,29 @@ final class World3D {
         }
         if cinematicActive && !snap {
             cinematicTime += Float(dt)
-            cinematicAngle += Float(dt) * (0.9 - min(cinematicTime, 2.5) * 0.25)
+            let t = cinematicTime
             cameraFocus += (focus - cameraFocus) * min(1, Float(dt) * 8)
-            let radius = 10 - min(cinematicTime, 2) * 1.6
-            let height = 2.2 + sin(min(cinematicTime, 3) * 0.6) * 1.6
-            let eye = cameraFocus + SIMD3<Float>(cos(cinematicAngle) * radius, height, -sin(cinematicAngle) * radius)
+            // Two moves: a fast, low sweep close past the car's nose, then the camera eases out and
+            // cranes up into a wide shot over the car with the fireworks behind
+            let crane = easeStep(1.3, 2.9, t)
+            cinematicAngle += Float(dt) * (1.7 * (1 - crane) + 0.32 * crane)
+            var radius = 5.4 + crane * 5.6
+            let height = 0.55 + crane * 4.6
+            // Never behind a wall: pull in before anything solid between the car and the camera
+            let look = cameraFocus + SIMD3<Float>(0, 0.9 + crane * 0.3, 0)
+            let direction = SIMD3<Float>(cos(cinematicAngle), 0, -sin(cinematicAngle))
+            let wanted = cameraFocus + direction * radius + SIMD3<Float>(0, height, 0)
+            if let hit = hitDistance(from: look, to: wanted, margin: 0.8) {
+                orbitReach = min(orbitReach, max(2.2, hit - 0.8))
+            } else {
+                orbitReach += (99 - orbitReach) * min(1, Float(dt) * 1.5)
+            }
+            radius = min(radius, orbitReach)
+            let eye = cameraFocus + direction * radius + SIMD3<Float>(0, height, 0)
             cameraNode.simdPosition = eye
-            cameraNode.simdLook(at: cameraFocus + SIMD3<Float>(0, 0.9, 0), up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+            cameraNode.simdLook(at: look, up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
             cameraNode.camera?.focusDistance = CGFloat(radius)
+            cameraNode.camera?.fieldOfView = CGFloat(44 + crane * 10)
             return
         }
         let yaw = Float(heading)
@@ -2542,4 +2617,10 @@ final class World3D {
     var isSweeping: Bool { sweepClock >= 0 }
     /// The tour has shown the map from above and both rings around the start once.
     var sweepComplete: Bool { sweepClock < 0 || sweepClock >= 3 * 1.2 + 0.1 }
+}
+
+/// 0 below `a`, 1 above `b`, smooth in between.
+func easeStep(_ a: Float, _ b: Float, _ x: Float) -> Float {
+    let t = max(0, min(1, (x - a) / (b - a)))
+    return t * t * (3 - 2 * t)
 }
