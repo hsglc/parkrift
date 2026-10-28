@@ -8,7 +8,7 @@ Vertex colours, node names (wheel-fl, ...) and the hierarchy are kept.
 Usage: blender python: refine_polyfork_cars.py <folder with <asset>.glb> <output folder>
 """
 import sys, os, math
-import bpy
+import bpy, bmesh
 
 SRC, OUT = sys.argv[-2], sys.argv[-1]
 VOXEL = float(os.environ.get('VOXEL', '0.03'))
@@ -88,6 +88,7 @@ CARS = {   # asset -> paint knobs, knobs recoloured dark (as in convert_polyfork
     'family-crossover-suv-42027f': ({'body': 0.92}, {}),
 }
 LAMP_LINEAR = []
+TONES = {}
 
 
 def to_linear(c255):
@@ -120,6 +121,8 @@ def clean_palette(src, linear, asset):
     out[classes == 'dark'] = hex255('#0c0e14')
     for k, v in recolor.items():
         out[np.linalg.norm(c255 - hex255(knobs[k]), axis=1) < 4.5] = hex255(v)
+    TONES['main'] = to_linear(main)
+    TONES['dark'] = to_linear(hex255('#0c0e14'))
     LAMP_LINEAR[:] = list(to_linear(np.unique(out[np.isin(classes, ['headlight', 'taillight'])], axis=0)))
     print(asset, {k: int((classes == k).sum()) for k in set(classes)}, flush=True)
     return to_linear(out)
@@ -190,6 +193,10 @@ def copy_face_colours(original, obj, asset):
             _, _, idx, _ = tree.find_nearest(c)
             best = (idx, 0)
         picked[f.index] = src_colour[best[0]]
+        # Bonnet and roof are never black: dark there is the engine bay or a recess showing
+        # through after the rounding
+        if n.z > 0.45 and np.allclose(picked[f.index][:3], TONES['dark'], atol=2e-3):
+            picked[f.index][:3] = TONES['main']
     # Clean the borders: a face whose edge neighbours mostly share another colour takes it
     # (removes the saw teeth and single stray faces where pieces meet)
     import bmesh
