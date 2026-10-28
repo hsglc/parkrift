@@ -983,25 +983,31 @@ enum CarArt {
     }
 
     /// Chunky colored pedal with a darker raised edge (matches the menu buttons).
+    /// A driving control: dark see-through glass with an accent edge and a soft accent glow at
+    /// the bottom (the game stays visible behind the buttons).
     static func pedal(size: CGSize, accent: UIColor) -> SKTexture {
         render(size) { context, s in
-            let depth: CGFloat = 6
-            let body = CGRect(x: 2, y: 2, width: s.width - 4, height: s.height - 4 - depth)
-            let edge = body.offsetBy(dx: 0, dy: depth)
-            let corner: CGFloat = 18
-            context.addPath(CGPath(roundedRect: edge, cornerWidth: corner, cornerHeight: corner, transform: nil))
-            context.setFillColor(accent.darker(by: 0.45).withAlphaComponent(0.95).cgColor)
-            context.fillPath()
+            let body = CGRect(x: 2, y: 2, width: s.width - 4, height: s.height - 4)
+            let corner: CGFloat = min(20, min(body.width, body.height) * 0.3)
             let face = CGPath(roundedRect: body, cornerWidth: corner, cornerHeight: corner, transform: nil)
-            fill(context, path: face, colors: [accent.lighter(by: 0.18).withAlphaComponent(0.95), accent.darker(by: 0.12).withAlphaComponent(0.95)],
-                 from: CGPoint(x: 0, y: body.minY), to: CGPoint(x: 0, y: body.maxY))
+            context.addPath(face)
+            context.setFillColor(UIColor(red: 0.03, green: 0.04, blue: 0.07, alpha: 0.5).cgColor)
+            context.fillPath()
             context.saveGState()
             context.addPath(face)
             context.clip()
-            if let sheen = gradient([UIColor.white.withAlphaComponent(0.35), UIColor.white.withAlphaComponent(0.0)]) {
-                context.drawLinearGradient(sheen, start: CGPoint(x: 0, y: body.minY), end: CGPoint(x: 0, y: body.minY + 22), options: [])
+            if let glow = gradient([accent.withAlphaComponent(0.0), accent.withAlphaComponent(0.32)]) {
+                context.drawLinearGradient(glow, start: CGPoint(x: 0, y: body.minY + body.height * 0.35),
+                                           end: CGPoint(x: 0, y: body.maxY), options: [])
+            }
+            if let sheen = gradient([UIColor.white.withAlphaComponent(0.14), UIColor.white.withAlphaComponent(0.0)]) {
+                context.drawLinearGradient(sheen, start: CGPoint(x: 0, y: body.minY), end: CGPoint(x: 0, y: body.minY + 18), options: [])
             }
             context.restoreGState()
+            context.addPath(CGPath(roundedRect: body.insetBy(dx: 0.75, dy: 0.75), cornerWidth: corner, cornerHeight: corner, transform: nil))
+            context.setStrokeColor(accent.withAlphaComponent(0.85).cgColor)
+            context.setLineWidth(1.5)
+            context.strokePath()
         }
     }
 

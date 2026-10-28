@@ -905,11 +905,13 @@ private struct ModeChip: View {
 
 // MARK: - Loading
 
-/// Shown while a level is built (instead of a black screen) until the countdown can start.
+/// Shown while a level is built (instead of a black screen) until the countdown can start: the
+/// mode's key art, the level and its difficulty in the racing style, a filling neon line and a tip.
 struct LoadingView: View {
     let level: Int
     @State private var tip = Strings.tips.randomElement() ?? ""
     @State private var progress: CGFloat = 0
+    @State private var shown = false
 
     private var modeTitle: String {
         if Levels.isRace(level) { return Strings.carRace }
@@ -917,79 +919,94 @@ struct LoadingView: View {
         return Levels.title(level)
     }
 
-    private var modeIcon: String {
-        if Levels.isRace(level) { return "flag.checkered" }
-        if Levels.isCity(level) { return "building.2.fill" }
-        return "parkingsign"
+    private var levelName: String {
+        Levels.isCity(level) ? Strings.homeCityKicker : Levels.level(level).name
+    }
+
+    private var art: String {
+        if Levels.isRace(level) { return "menu_city.jpg" }
+        if Levels.isCity(level) { return "menu_parkrace.jpg" }
+        return "menu_park.jpg"
+    }
+
+    private var accent: Color {
+        Levels.isCity(level) ? (Levels.isRace(level) ? Neo.magenta : Palette.gold) : TierColor.of(level: level)
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Palette.card, Palette.ink], startPoint: .top, endPoint: .bottom)
-            // Road stripes along the bottom
-            GeometryReader { proxy in
-                Path { path in
-                    var x: CGFloat = -20
-                    while x < proxy.size.width {
-                        path.addRect(CGRect(x: x, y: proxy.size.height - 46, width: 34, height: 6))
-                        x += 70
-                    }
+        GeometryReader { proxy in
+            ZStack(alignment: .bottomLeading) {
+                Neo.ink
+                if let image = UIImage(named: art) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .scaleEffect(shown ? 1.06 : 1.0)
+                        .clipped()
+                        .animation(.easeOut(duration: 3), value: shown)
                 }
-                .fill(Palette.gold.opacity(0.35))
-            }
-            VStack(spacing: 14) {
-                Logo(size: 44)
-                HStack(spacing: 8) {
-                    Image(systemName: modeIcon)
-                    Text(modeTitle.uppercased())
-                        .tracking(1.5)
-                }
-                .font(.system(size: 14, weight: .black, design: .rounded))
-                .foregroundStyle(Palette.gold)
-                if !Levels.isCity(level) {
-                    // How hard this parking level is (Challenge.swift)
-                    Text(Strings.levelTier(Strings.tierNames[min(4, max(0, level) / 10)]))
-                        .font(.system(size: 12, weight: .heavy, design: .rounded))
-                        .tracking(1)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.white.opacity(0.08)))
-                }
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(.white)
-                    .padding(.top, 4)
-                Text(Strings.loadingText)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.75))
-                // Fills over the minimum loading time
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.1))
-                    Capsule()
-                        .fill(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: 220 * progress)
-                }
-                .frame(width: 220, height: 6)
-                if !tip.isEmpty {
+                LinearGradient(colors: [Neo.ink.opacity(0.92), Neo.ink.opacity(0.55), Neo.ink.opacity(0.2)],
+                               startPoint: .leading, endPoint: .trailing)
+                LinearGradient(colors: [.clear, Neo.ink.opacity(0.8)], startPoint: .center, endPoint: .bottom)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Wordmark(size: 22)
+                    Spacer()
                     HStack(spacing: 8) {
-                        Image(systemName: "lightbulb.fill")
-                            .foregroundStyle(Palette.gold)
-                        Text(tip)
-                            .foregroundStyle(.white.opacity(0.7))
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(modeTitle.uppercased())
+                            .font(.kicker(10)).tracking(1.5)
+                            .foregroundStyle(.white.opacity(0.75))
+                        if !Levels.isCity(level) {
+                            Text(Strings.tierNames[min(4, max(0, level) / 10)])
+                                .font(.race(11)).foregroundStyle(Neo.ink)
+                                .padding(.horizontal, 8).padding(.vertical, 1)
+                                .background(SlantedShape(skew: 5).fill(accent))
+                        }
                     }
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(Color.white.opacity(0.07)))
-                    .frame(maxWidth: 420)
+                    Text(levelName.uppercased())
+                        .font(.race(44))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .shadow(color: .black.opacity(0.5), radius: 10)
+                        .padding(.top, 2)
+                    HStack(spacing: 10) {
+                        SlantedBar(value: Double(progress), color: accent)
+                            .frame(width: 260, height: 6)
+                        Text(Strings.loadingText.uppercased())
+                            .font(.kicker(9)).tracking(1.2)
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                    .padding(.top, 12)
+                    if !tip.isEmpty {
+                        HStack(spacing: 10) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 13, weight: .black))
+                                .foregroundStyle(accent)
+                            Text(tip)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.8))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.leading, 18)
+                        .padding(.trailing, 14)
+                        .background(NeoPanel())
+                        .frame(maxWidth: 460, alignment: .leading)
+                        .padding(.top, 16)
+                    }
                 }
+                .padding(.horizontal, max(32, proxy.size.width * 0.06))
+                .padding(.vertical, 26)
+                .opacity(shown ? 1 : 0)
+                .offset(x: shown ? 0 : -20)
+                .animation(.spring(response: 0.55, dampingFraction: 0.9), value: shown)
             }
-            .padding(.horizontal, 20)
         }
         .ignoresSafeArea()
         .onAppear {
+            shown = true
             withAnimation(.easeInOut(duration: AppModel.minimumLoading)) { progress = 1 }
         }
     }

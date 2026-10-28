@@ -659,20 +659,18 @@ final class ParkingScene: SKScene {
         track.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.55)
         track.strokeColor = UIColor.white.withAlphaComponent(0.2)
         track.position = barCenter
-        controlsLayer.addChild(track)
+        // The steering bar is no longer shown (a calmer HUD); its nodes stay for the gauge code
+        _ = track
         let tick = SKShapeNode(rect: CGRect(x: -1, y: -6, width: 2, height: 12))
         tick.fillColor = UIColor.white.withAlphaComponent(0.6)
         tick.strokeColor = .clear
         tick.position = barCenter
-        controlsLayer.addChild(tick)
         steerArc = SKShapeNode()
         steerArc.fillColor = UIColor(red: 1.0, green: 0.78, blue: 0.10, alpha: 1)
         steerArc.strokeColor = .clear
         steerArc.position = barCenter
-        controlsLayer.addChild(steerArc)
         steerLabel = makeLabel("", size: 12, color: UIColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1))
         steerLabel.position = CGPoint(x: barCenter.x, y: barCenter.y + 16)
-        controlsLayer.addChild(steerLabel)
 
         let gasSize = CGSize(width: 68, height: 116)
         gasPedal = SKSpriteNode(texture: CarArt.pedal(size: gasSize, accent: UIColor(red: 0.30, green: 0.85, blue: 0.50, alpha: 1)))
@@ -801,6 +799,10 @@ final class ParkingScene: SKScene {
         levelIndex = Levels.clamp(index)
         level = Levels.level(levelIndex)
         challenge = ParkChallenge.make(index: levelIndex, level: level, slot: slot)
+        controlsLayer.removeAllActions()
+        controlsLayer.alpha = 1
+        hud.removeAllActions()
+        hud.alpha = 1
         if challenge.wetGround { level.weather = .rain }
         failReason = nil
         lastHitWarned = false
@@ -905,6 +907,8 @@ final class ParkingScene: SKScene {
         audio.setLoop("rain", volume: isRaining ? 0.42 : 0)
         // Spray particles exist from the start (no first-use hitch), idle until the car moves
         localCar?.setSpray(isRaining ? 0.001 : 0)
+        // The horn matters in traffic only: parking levels keep fewer buttons
+        hornButton.isHidden = !isCity
         setupRainLayers()
         audio.setLoop("siren", volume: 0)
         audio.setLoop("skid", volume: 0)
@@ -1581,7 +1585,7 @@ final class ParkingScene: SKScene {
                 resetCar()
                 continue
             }
-            if hornButton.contains(point) {
+            if !hornButton.isHidden && hornButton.contains(point) {
                 honk()
                 continue
             }
@@ -1883,7 +1887,8 @@ final class ParkingScene: SKScene {
         gaveUp()
     }
 
-    /// The level's rules, shown over the countdown: difficulty and what is asked.
+    /// The level's rules over the countdown: one slim chip under the top bar (difficulty in its
+    /// colour, then the rules), gone a moment after the start.
     private func showChallengeCard() {
         challengeCard.removeAllActions()
         challengeCard.removeAllChildren()
@@ -1893,40 +1898,24 @@ final class ParkingScene: SKScene {
                       UIColor(red: 1, green: 0.55, blue: 0.25, alpha: 1), UIColor(red: 1, green: 0.32, blue: 0.35, alpha: 1),
                       UIColor(red: 0.78, green: 0.45, blue: 1, alpha: 1)]
         let color = colors[min(challenge.tier, colors.count - 1)]
-        let rules = challenge.rules
-        let rowHeight: CGFloat = 26
-        let width: CGFloat = 300
-        let height = 46 + CGFloat(rules.count) * rowHeight
-        let glass = makeGlass(width: width, height: height, corner: 18)
+        let tier = makeLabel(challenge.tierName, size: 12, color: color, font: "AvenirNext-Heavy")
+        tier.horizontalAlignmentMode = .left
+        let rules = makeLabel(challenge.rules.map { $0.text }.joined(separator: "  ·  "), size: 12,
+                              color: UIColor.white.withAlphaComponent(0.85), font: "AvenirNext-DemiBold")
+        rules.horizontalAlignmentMode = .left
+        let gap: CGFloat = rules.text?.isEmpty == false ? 12 : 0
+        let width = tier.frame.width + gap + rules.frame.width + 32
+        let glass = makeGlass(width: width, height: 28)
         challengeCard.addChild(glass)
-        let tier = makeLabel(Strings.levelTier(challenge.tierName), size: 15, color: color, font: "AvenirNext-Heavy")
-        tier.position = CGPoint(x: 0, y: height / 2 - 26)
+        tier.position = CGPoint(x: -width / 2 + 16, y: 0)
         challengeCard.addChild(tier)
-        // Five bars: how hard this level is
-        for bar in 0..<5 {
-            let filled = Double(bar) <= Double(challenge.number - 1) / 10
-            let node = SKShapeNode(rectOf: CGSize(width: 18, height: 4), cornerRadius: 2)
-            node.fillColor = filled ? color : UIColor.white.withAlphaComponent(0.18)
-            node.strokeColor = .clear
-            node.position = CGPoint(x: CGFloat(bar - 2) * 22, y: height / 2 - 40)
-            challengeCard.addChild(node)
-        }
-        for (index, rule) in rules.enumerated() {
-            let y = height / 2 - 62 - CGFloat(index) * rowHeight
-            let icon = makeIcon(rule.icon, size: 13, color: color)
-            icon.position = CGPoint(x: -width / 2 + 28, y: y)
-            challengeCard.addChild(icon)
-            let label = makeLabel(rule.text, size: 14, color: .white, font: "AvenirNext-DemiBold")
-            label.horizontalAlignmentMode = .left
-            label.position = CGPoint(x: -width / 2 + 46, y: y)
-            challengeCard.addChild(label)
-        }
-        challengeCard.position = CGPoint(x: size.width - max(insets.right, 10) - width / 2 - 8, y: size.height / 2 + 10)
+        rules.position = CGPoint(x: tier.position.x + tier.frame.width + gap, y: 0)
+        challengeCard.addChild(rules)
+        challengeCard.position = CGPoint(x: size.width / 2 + 40, y: size.height - 24 - 40)
         challengeCard.zPosition = 120
         challengeCard.alpha = 0
-        challengeCard.setScale(0.92)
         addChild(challengeCard)
-        challengeCard.run(.group([.fadeIn(withDuration: 0.3), .scale(to: 1, duration: 0.3)]))
+        challengeCard.run(.fadeIn(withDuration: 0.3))
     }
 
     // MARK: - Rain
@@ -3682,6 +3671,12 @@ final class ParkingScene: SKScene {
     /// Parking levels: the same modern title, shorter, then the results.
     private func playParkedSequence() {
         finishAnimating = true
+        // A clean frame for the title: no status text over it, controls and HUD fade away
+        statusLabel.text = ""
+        challengeCard.removeAllActions()
+        challengeCard.alpha = 0
+        controlsLayer.run(.fadeAlpha(to: 0, duration: 0.25))
+        hud.run(.fadeAlpha(to: 0, duration: 0.25))
         let layer = SKNode()
         layer.zPosition = 300
         addChild(layer)
