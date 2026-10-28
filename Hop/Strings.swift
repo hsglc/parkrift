@@ -334,11 +334,11 @@ enum Strings {
     static var weekendBonus: String { t("Hafta sonu x2", "Weekend x2", "Fin de semana x2") }
     static var weekendEvent: String { t("HAFTA SONU ETKİNLİĞİ · 2x PARA", "WEEKEND EVENT · 2x COINS", "EVENTO DE FIN DE SEMANA · 2x MONEDAS") }
     static var upgrade: String { t("Geliştir", "Upgrade", "Mejorar") }
-    static var upgradeHint: String { t("Geliştirmeler tek kişilik ve şehir modlarında geçerli; online yarışlar herkes için eşit.", "Upgrades count in solo and city modes; online races stay equal for everyone.", "Las mejoras cuentan en solitario y ciudad; las carreras online son iguales para todos.") }
+    static var upgradeHint: String { t("Her seviye arabanı her modda güçlendirir: motor +5 km/sa son hız ve daha güçlü çekiş, yol tutuş daha keskin viraj, nitro daha güçlü itiş ve daha hızlı dolum.", "Every level makes your car better in every mode: engine +5 km/h top speed and more pull, grip sharper corners, nitro a stronger push that refills faster.", "Cada nivel mejora tu coche en todos los modos: motor +5 km/h de punta y más empuje, agarre curvas más cerradas, nitro más fuerte y que se recarga antes.") }
     static var upgradeEngine: String { t("Motor", "Engine", "Motor") }
     static var upgradeGrip: String { t("Yol tutuş", "Grip", "Agarre") }
     static var upgradeNitro: String { t("Nitro", "Nitro", "Nitro") }
-    static var upgradeEngineInfo: String { t("Daha yüksek son hız ve çekiş", "Higher top speed and pull", "Más velocidad punta y empuje") }
+    static var upgradeEngineInfo: String { t("+5 km/sa son hız, daha güçlü çekiş", "+5 km/h top speed, more pull", "+5 km/h de punta, más empuje") }
     static var upgradeGripInfo: String { t("Virajda daha az kayma", "Less sliding in corners", "Menos derrape en curvas") }
     static var upgradeNitroInfo: String { t("Daha güçlü ve hızlı dolan nitro", "Stronger nitro that fills faster", "Nitro más fuerte y rápido") }
     static var maxLevel: String { t("MAKS", "MAX", "MÁX") }

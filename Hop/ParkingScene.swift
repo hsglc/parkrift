@@ -377,18 +377,18 @@ final class ParkingScene: SKScene {
         remoteCar?.setTexturesLoaded(online)
         remoteCar?.setRim(friend.rimColor)
         remoteChoice = friend
-        // The chosen car's driving character (small differences so online races stay fair)
+        // The chosen car's driving character with its upgrades (online too: every bought level
+        // counts). Race and city rounds use the full top speed; parking levels a calmer 80 %.
         let spec = mine.spec
-        // Upgrades bought with coins count only offline, so online races stay fair
-        let upgrade = online ? Progression.Upgrades() : Progression.upgrades(for: mine.model)
-        let engine = CGFloat(upgrade.engine), grip = CGFloat(upgrade.grip), boost = CGFloat(upgrade.nitro)
-        maxForward = 150 * spec.topSpeed * (1 + 0.025 * engine)
-        engineAccel = 150 * spec.acceleration * (1 + 0.05 * engine)
-        maxSteer = 0.64 * min(1.1, spec.steering) * (1 + 0.02 * grip)
-        steerRate = 2.6 * spec.steering * (1 + 0.04 * grip)
-        lateralGrip = 420 + 30 * grip
-        nitroPush = 300 * spec.nitroPower * (1 + 0.06 * boost)
-        nitroFillTime = 10 * spec.nitroFill * (1 - 0.06 * boost)
+        let perf = CarPerformance.of(spec, upgrades: Progression.upgrades(for: mine.model))
+        let open = Levels.isRace(levelIndex) || Levels.isCity(levelIndex)
+        maxForward = perf.topKmh / 0.36 * (open ? 1 : 0.8)
+        engineAccel = maxForward * perf.acceleration
+        maxSteer = 0.64 * min(1.15, perf.handling)
+        steerRate = 2.6 * perf.handling
+        lateralGrip = 420 * perf.handling
+        nitroPush = 300 * perf.nitroPower * (open ? 1 : 0.8)
+        nitroFillTime = 10 * perf.nitroFill
     }
 
     private var remoteChoice = CarChoice.friendDefault

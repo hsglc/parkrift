@@ -458,6 +458,8 @@ struct GarageView: View {
     private let stage = GarageStage.shared
 
     private var spec: CarSpec { choice.spec }
+    /// The bars with this car's upgrades in (the driving model uses the same numbers).
+    private var ratings: CarStats { CarPerformance.ratings(spec, upgrades: Progression.upgrades(for: choice.model)) }
     private var isPlay: Bool {
         if case .play = model.garageExit { return true }
         return false
@@ -662,10 +664,10 @@ struct GarageView: View {
                 .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
 
             VStack(spacing: 7) {
-                StatBar(label: Strings.statSpeed, value: spec.stats.speed, shown: statsShown, color: accent)
-                StatBar(label: Strings.statAccel, value: spec.stats.acceleration, shown: statsShown, color: accent)
-                StatBar(label: Strings.statHandling, value: spec.stats.handling, shown: statsShown, color: accent)
-                StatBar(label: Strings.statNitro, value: spec.stats.nitro, shown: statsShown, color: accent)
+                StatBar(label: Strings.statSpeed, value: ratings.speed, shown: statsShown, color: accent)
+                StatBar(label: Strings.statAccel, value: ratings.acceleration, shown: statsShown, color: accent)
+                StatBar(label: Strings.statHandling, value: ratings.handling, shown: statsShown, color: accent)
+                StatBar(label: Strings.statNitro, value: ratings.nitro, shown: statsShown, color: accent)
             }
             .padding(.top, 2)
 

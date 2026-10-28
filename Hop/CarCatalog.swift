@@ -65,6 +65,45 @@ struct CarChoice: Equatable {
     }
 }
 
+/// What a car really does on the road, from its ratings and its upgrades. The garage bars and
+/// the driving model both come from here, so a higher bar always means a faster, quicker or
+/// grippier car, and every upgrade level is felt.
+struct CarPerformance {
+    /// Top speed in km/h on race and city rounds (parking levels run calmer, see the scene).
+    let topKmh: CGFloat
+    /// Engine pull relative to the top speed (how fast it gets there).
+    let acceleration: CGFloat
+    /// Steering and tyre grip multiplier.
+    let handling: CGFloat
+    /// Nitro push multiplier and refill time multiplier (lower refills faster).
+    let nitroPower: CGFloat
+    let nitroFill: CGFloat
+
+    private static func span(_ value: Double, _ low: Double, _ high: Double) -> CGFloat {
+        CGFloat(max(0, min(1, (value - low) / (high - low))))
+    }
+
+    static func of(_ spec: CarSpec, upgrades: Progression.Upgrades) -> CarPerformance {
+        let stats = spec.stats
+        let engine = CGFloat(upgrades.engine), grip = CGFloat(upgrades.grip), boost = CGFloat(upgrades.nitro)
+        return CarPerformance(
+            topKmh: 66 + 26 * span(stats.speed, 0.80, 0.96) + 5 * engine,
+            acceleration: 0.85 + 0.40 * span(stats.acceleration, 0.80, 0.90) + 0.08 * engine,
+            handling: 0.85 + 0.32 * span(stats.handling, 0.70, 0.90) + 0.06 * grip,
+            nitroPower: 0.85 + 0.45 * span(stats.nitro, 0.72, 0.92) + 0.10 * boost,
+            nitroFill: 1.15 - 0.35 * span(stats.nitro, 0.72, 0.92) - 0.08 * boost)
+    }
+
+    /// Garage bars (0...1) including the upgrades bought for this car.
+    static func ratings(_ spec: CarSpec, upgrades: Progression.Upgrades) -> CarStats {
+        let s = spec.stats
+        return CarStats(speed: min(1, s.speed + 0.03 * Double(upgrades.engine)),
+                        acceleration: min(1, s.acceleration + 0.03 * Double(upgrades.engine)),
+                        handling: min(1, s.handling + 0.03 * Double(upgrades.grip)),
+                        nitro: min(1, s.nitro + 0.025 * Double(upgrades.nitro)))
+    }
+}
+
 struct CarStats {
     /// 0...1 bars shown in the garage.
     let speed: Double
@@ -136,27 +175,27 @@ struct CarSpec {
 
     static let all: [CarSpec] = [
         meshy(.italia, name: "Rosso GT", maker: "CORSA", className: "S",
-              stats: CarStats(speed: 0.88, acceleration: 0.84, handling: 0.86, nitro: 0.72),
+              stats: CarStats(speed: 0.88, acceleration: 0.85, handling: 0.88, nitro: 0.74),
               tuning: (1.02, 1.0, 1.02, 1.0, 1.0),
               wheels: [(1.180, 0.330, -0.818, true), (1.181, 0.330, 0.824, true), (-1.400, 0.334, -0.814, false), (-1.398, 0.332, 0.814, false)],
               radius: 0.332, rear: -2.250, height: 1.136),
         meshy(.strada, name: "Strada S", maker: "NORDWERK", className: "A",
-              stats: CarStats(speed: 0.82, acceleration: 0.90, handling: 0.90, nitro: 0.74),
+              stats: CarStats(speed: 0.81, acceleration: 0.90, handling: 0.90, nitro: 0.78),
               tuning: (1.0, 1.04, 1.04, 1.0, 1.0),
               wheels: [(1.077, 0.410, -0.929, true), (1.084, 0.410, 0.930, true), (-1.272, 0.415, -0.929, false), (-1.270, 0.415, 0.930, false)],
               radius: 0.413, rear: -2.050, height: 1.753),
         meshy(.toro, name: "Volta R", maker: "VOLTA", className: "S+",
-              stats: CarStats(speed: 0.96, acceleration: 0.90, handling: 0.82, nitro: 0.78),
+              stats: CarStats(speed: 0.96, acceleration: 0.89, handling: 0.78, nitro: 0.82),
               tuning: (1.06, 1.04, 0.98, 1.02, 1.0),
               wheels: [(1.086, 0.297, -0.822, true), (1.086, 0.297, 0.825, true), (-1.449, 0.309, -0.819, false), (-1.447, 0.309, 0.823, false)],
               radius: 0.303, rear: -2.375, height: 0.860),
         meshy(.arrow, name: "Arrow GT", maker: "ARROWWORKS", className: "S",
-              stats: CarStats(speed: 0.92, acceleration: 0.86, handling: 0.88, nitro: 0.76),
+              stats: CarStats(speed: 0.92, acceleration: 0.86, handling: 0.84, nitro: 0.76),
               tuning: (1.04, 1.02, 1.04, 1.0, 1.0),
               wheels: [(1.401, 0.335, -0.798, true), (1.401, 0.333, 0.791, true), (-1.295, 0.335, -0.797, false), (-1.301, 0.333, 0.789, false)],
               radius: 0.334, rear: -2.350, height: 1.215),
         meshy(.bison, name: "Bison", maker: "ATLAS", className: "A",
-              stats: CarStats(speed: 0.80, acceleration: 0.84, handling: 0.70, nitro: 0.92),
+              stats: CarStats(speed: 0.80, acceleration: 0.82, handling: 0.72, nitro: 0.92),
               tuning: (0.98, 1.0, 0.94, 1.1, 0.88),
               wheels: [(1.350, 0.382, -0.855, true), (1.353, 0.381, 0.855, true), (-1.313, 0.380, -0.865, false), (-1.313, 0.380, 0.865, false)],
               radius: 0.381, rear: -2.250, height: 2.088),
