@@ -40,6 +40,13 @@ def refine(asset):
             original = obj.copy()
             original.data = mesh.copy()
             bpy.context.scene.collection.objects.link(original)
+            if 'crossover' in asset:
+                # Its bonnet and sides are single thin sheets: give them thickness first, or the
+                # remesh tears holes in them
+                solid = obj.modifiers.new('solid', 'SOLIDIFY')
+                solid.thickness = 0.05
+                solid.offset = -1
+                bpy.ops.object.modifier_apply(modifier='solid')
             obj.data.remesh_voxel_size = VOXEL
             obj.data.remesh_voxel_adaptivity = 0.0
             bpy.ops.object.voxel_remesh()
