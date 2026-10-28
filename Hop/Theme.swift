@@ -270,6 +270,8 @@ struct CoinPill: View {
                 .foregroundStyle(Palette.gold)
             Text("\(coins)")
                 .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
                 .contentTransition(.numericText())
         }
         .font(.race(17))
