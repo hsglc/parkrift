@@ -9,6 +9,9 @@ on:
       submit:
         description: Submit for App Review (1 = yes)
         default: "1"
+      phone:
+        description: App Review contact phone (when the REVIEW_PHONE secret is not set)
+        default: ""
   push:
     branches: [release]
 
@@ -21,7 +24,7 @@ jobs:
       ASC_ISSUER_ID: 1e043955-17da-4831-838a-b4e2d593d0b5
       BUNDLE_ID: com.huseyingulcu.hop
       SUBMIT: ${{ inputs.submit || '1' }}
-      REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
+      REVIEW_PHONE: ${{ secrets.REVIEW_PHONE || inputs.phone }}
     steps:
       - uses: actions/checkout@v4
 
