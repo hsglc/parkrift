@@ -2380,7 +2380,7 @@ final class World3D {
         guard PerfSettings.optimized else { return }
         var jobs: [() -> Void] = []
         let saved = CarChoice.saved
-        jobs.append { _ = saved.model == .retro ? CarModels.retroPaint(saved.color) : CarFactory.racerPaint(saved.color) }
+        jobs.append { _ = CarModels.texturePaint(CarSpec.of(saved.model), saved.color) }
 
         jobs.append { _ = CarFactory.wheelTemplate }
         func next(_ index: Int) {

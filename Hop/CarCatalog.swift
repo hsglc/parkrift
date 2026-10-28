@@ -3,15 +3,18 @@ import UIKit
 
 /// The player cars in the garage: Polyfork's free low poly cars converted by
 /// tools/convert_polyfork_cars.py (see README credits); the numbers come from that script.
+/// Garage cars (Meshy AI designs). Raw values are kept from earlier versions (saved choices and
+/// owned cars); 1 and 2 were cars that left the garage.
 enum CarModelID: Int, CaseIterable {
-    case italia
-    case concept
-    case retro
-    case strada
-    case toro
-    case arrow
-    case bison
-    case classico
+    case italia = 0
+    case strada = 3
+    case toro = 4
+    case arrow = 5
+    case bison = 6
+    case classico = 7
+
+    /// Position in the garage (0...).
+    var order: Int { CarModelID.allCases.firstIndex(of: self) ?? 0 }
 }
 
 /// A car plus paint, as picked in the garage (and sent to the friend online).
@@ -123,16 +126,6 @@ struct CarSpec {
     ]
 
     static let all: [CarSpec] = [
-        polyfork(.concept, name: "Tempesta V8", maker: "VOLTA", className: "S+",
-                 stats: CarStats(speed: 0.96, acceleration: 0.86, handling: 0.72, nitro: 0.80),
-                 tuning: (1.06, 1.0, 0.95, 1.05, 1.0),
-                 wheels: [(1.252, 0.322, -0.829, true), (1.252, 0.322, 0.829, true), (-1.368, 0.322, -0.829, false), (-1.368, 0.322, 0.829, false)],
-                 radius: 0.322, rear: -2.300, height: 1.228),
-        polyfork(.retro, name: "Coral 59", maker: "CLASSIC", className: "A",
-                 stats: CarStats(speed: 0.74, acceleration: 0.90, handling: 0.92, nitro: 0.96),
-                 tuning: (0.94, 1.07, 1.08, 1.1, 0.85),
-                 wheels: [(1.475, 0.288, -0.808, true), (1.475, 0.288, 0.808, true), (-1.128, 0.288, -0.808, false), (-1.128, 0.288, 0.808, false)],
-                 radius: 0.288, rear: -2.300, height: 1.243),
         meshy(.italia, name: "Rosso GT", maker: "CORSA", className: "S",
               stats: CarStats(speed: 0.88, acceleration: 0.84, handling: 0.86, nitro: 0.72),
               tuning: (1.02, 1.0, 1.02, 1.0, 1.0),
@@ -193,7 +186,7 @@ struct CarSpec {
                        textured: true, textureBase: file + "_palette.png", textureMask: file + "_mask.png", height: height)
     }
 
-    static func of(_ id: CarModelID) -> CarSpec { all[id.rawValue] }
+    static func of(_ id: CarModelID) -> CarSpec { all.first { $0.id == id } ?? all[0] }
 }
 
 /// Loads the USDZ car models once and gives them the game's materials.
@@ -361,7 +354,6 @@ enum CarModels {
     }
 
     /// The retro car in a paint (kept for callers that only know the color).
-    static func retroPaint(_ color: UIColor) -> SCNMaterial { texturePaint(CarSpec.of(.retro), color) }
 
     /// Material for a textured car (its own copy, so each car keeps its own paint), or the plain
     /// Kenney palette for cars with a fixed livery.

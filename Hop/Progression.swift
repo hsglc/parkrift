@@ -44,12 +44,10 @@ enum Progression {
     static func price(_ id: CarModelID) -> Int {
         switch id {
         case .italia, .strada: return 0
-        case .toro: return 600
         case .arrow: return 800
-        case .retro: return 1000
         case .bison: return 1200
         case .classico: return 1500
-        case .concept: return 2500
+        case .toro: return 2500
         }
     }
 

@@ -410,7 +410,7 @@ struct GarageView: View {
             Spacer(minLength: 0)
             HStack(spacing: 10) {
                 arrow("chevron.left") { step(-1) }
-                Text(String(format: "%02d / %02d", spec.id.rawValue + 1, CarSpec.all.count))
+                Text(String(format: "%02d / %02d", spec.id.order + 1, CarSpec.all.count))
                     .font(.race(18, weight: .heavy))
                     .monospacedDigit()
                     .foregroundStyle(.white.opacity(0.9))
@@ -628,9 +628,9 @@ struct GarageView: View {
     }
 
     private func step(_ delta: Int) {
-        let count = CarSpec.all.count
-        let next = (choice.model.rawValue + delta + count) % count
-        select(CarModelID(rawValue: next) ?? .italia)
+        let ids = CarModelID.allCases
+        let next = (choice.model.order + delta + ids.count) % ids.count
+        select(ids[next])
     }
 
     private func select(_ id: CarModelID) {
