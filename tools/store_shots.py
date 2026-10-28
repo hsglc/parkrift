@@ -133,6 +133,10 @@ def main():
             shot = Image.open(path).convert('RGB')
             if shot.height > shot.width:
                 shot = shot.rotate(90, expand=True)
+            # Landscape simulator shots keep the Dynamic Island as a black pill on the left
+            # edge; trim that strip (a plain crop, the game image itself is untouched).
+            cut = int(shot.width * 0.056)
+            shot = shot.crop((cut, 0, shot.width, shot.height))
             n += 1
             compose(shot, *captions[locale]).save(os.path.join(OUT, locale, f'{n:02d}-{name}.png'))
             made += 1
