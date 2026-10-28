@@ -32,8 +32,8 @@ jobs:
         run: |
           RUNTIME=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-27-1' | head -1)
           mkdir -p duo
-          for DEV in iPhone-Duo iPhone-18-Pro-Max; do
-            UDID=$(xcrun simctl create "$DEV" "com.apple.CoreSimulator.SimDeviceType.$DEV" "$RUNTIME")
+          for DEV in iPhone-Duo iPhone-17-Pro-Max; do
+            UDID=$(xcrun simctl create "$DEV" "com.apple.CoreSimulator.SimDeviceType.$DEV" "$RUNTIME") || continue
             xcrun simctl boot "$UDID"
             xcrun simctl bootstatus "$UDID" -b
             xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
@@ -41,7 +41,7 @@ jobs:
             shot() {
               local out=$1
               xcrun simctl io "$UDID" screenshot --mask=ignored "$out" 2>/dev/null && return
-              for d in internal external main inner outer 0 1; do
+              for d in 1 2 3; do
                 xcrun simctl io "$UDID" screenshot --display="$d" --mask=ignored "${out%.png}-$d.png" 2>/dev/null && echo "display $d ok"
               done
               true
@@ -68,6 +68,7 @@ jobs:
           done
           ls -la duo
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: duo
           path: duo
