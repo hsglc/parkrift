@@ -181,6 +181,8 @@ final class ParkingScene: SKScene {
     private var ghostCar: Car3D?
     private let ghostStep: TimeInterval = 0.1
 
+    static let slowCountdown = ProcessInfo.processInfo.arguments.contains("-slowcountdown")
+
     /// Best-run ghost car on solo parking levels (turned off).
     static let ghostEnabled = false
 
@@ -1805,7 +1807,8 @@ final class ParkingScene: SKScene {
         case .countdown:
             guard ready else { break }
             let before = Int(ceil(countdown))
-            countdown -= dt
+            // -slowcountdown (simulator screenshots only): four times slower so every stage is caught
+            countdown -= dt * (ParkingScene.slowCountdown ? 0.25 : 1)
             let after = Int(ceil(countdown))
             if countdown <= 0 {
                 phase = .driving
