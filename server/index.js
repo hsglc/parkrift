@@ -6,7 +6,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/health") {
-      return new Response("parkpark ok", { headers: { "content-type": "text/plain" } });
+      return new Response("parkrift ok", { headers: { "content-type": "text/plain" } });
     }
     if (url.pathname === "/" || url.pathname === "/support") return page(SUPPORT);
     if (url.pathname === "/privacy") return page(PRIVACY);
@@ -42,11 +42,13 @@ const SUPPORT = `<h1>Parkrift</h1><p class="muted">Destek · Support</p>
 <p>For questions, bug reports or ideas, email <a href="mailto:${CONTACT}">${CONTACT}</a>. We usually reply within a few days.</p>
 <p><a href="/privacy">Privacy Policy</a></p>`;
 
-const PRIVACY = `<h1>Gizlilik Politikası · Privacy Policy</h1><p class="muted">Parkrift · Son güncelleme / Last updated: 27 Ekim / October 2026</p>
+const PRIVACY = `<h1>Gizlilik Politikası · Privacy Policy</h1><p class="muted">Parkrift · Son güncelleme / Last updated: 28 Ekim / October 2026</p>
 <h2>Türkçe</h2>
 <p><b>Kişisel veri toplamıyoruz.</b> Parkrift'ta hesap, kayıt, reklam, analitik ya da takip yoktur. Konum, kişiler, kamera, mikrofon gibi izinler istenmez.</p>
 <p><b>Cihazda saklananlar:</b> Bölüm yıldızların, en iyi sürelerin, seçtiğin araba ve boya ile ses ayarı yalnızca telefonunda saklanır. Uygulamayı silince bunlar da silinir.</p>
 <p><b>Online oyun:</b> Bir oda kurduğunda ya da bir odaya katıldığında, oyun 4 harfli oda kodunu ve oyun sırasındaki araba konumu, hız, korna ve seçilen araba gibi oyun mesajlarını, arkadaşının cihazına iletmek için sunucumuz üzerinden gönderir. Sunucu (Cloudflare Workers) bu mesajları yalnızca iletir; saklamaz ve kimseyle paylaşmaz. Bağlantı sırasında barındırma sağlayıcısı, hizmeti çalıştırmak için IP adresi gibi teknik bilgileri kısa süreli işleyebilir.</p>
+<p><b>Game Center:</b> Sıralamalar için Apple'ın Game Center hizmeti kullanılır; skorların ve Game Center takma adın Apple tarafından, Apple'ın gizlilik politikasına göre işlenir. Biz bu bilgileri toplamayız.</p>
+<p><b>Hızlı eşleşme:</b> Hızlı eşleşmede de yalnızca oyun mesajları (araba konumu, hız, seçilen araba) rakibinin cihazına iletilir. Sohbet ya da kullanıcı içeriği yoktur.</p>
 <p><b>Çocuklar:</b> Uygulama bilerek çocuklardan kişisel veri toplamaz.</p>
 <p><b>Silme ve onay:</b> Online oyunu kullanmazsan hiçbir veri gönderilmez. Cihazdaki verileri uygulamayı silerek kaldırabilirsin. Soruların için: <a href="mailto:${CONTACT}">${CONTACT}</a></p>
 <p><b>Değişiklikler:</b> Bu politika değişirse bu sayfa güncellenir.</p>
@@ -54,6 +56,8 @@ const PRIVACY = `<h1>Gizlilik Politikası · Privacy Policy</h1><p class="muted"
 <p><b>We do not collect personal data.</b> Parkrift has no accounts, sign-up, ads, analytics or tracking. It does not ask for location, contacts, camera or microphone access.</p>
 <p><b>Stored on your device:</b> your level stars, best times, chosen car and paint, and sound setting are kept only on your phone. Deleting the app deletes them.</p>
 <p><b>Online play:</b> when you create or join a room, the game sends the 4-letter room code and game messages (car position, speed, horn, chosen car) through our server so they reach your friend's device. The server (Cloudflare Workers) only relays these messages; it does not store or share them. While connected, the hosting provider may briefly process technical information such as your IP address to run the service.</p>
+<p><b>Game Center:</b> leaderboards use Apple's Game Center; your scores and Game Center nickname are handled by Apple under Apple's privacy policy. We do not collect them.</p>
+<p><b>Quick match:</b> quick match also sends only game messages (car position, speed, chosen car) to your opponent's device. There is no chat or user content.</p>
 <p><b>Children:</b> the app does not knowingly collect personal data from children.</p>
 <p><b>Deletion and consent:</b> if you do not use online play, nothing is sent. You can remove the on-device data by deleting the app. Questions: <a href="mailto:${CONTACT}">${CONTACT}</a></p>
 <p><b>Changes:</b> if this policy changes, this page will be updated.</p>

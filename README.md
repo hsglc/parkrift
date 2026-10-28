@@ -1,4 +1,4 @@
-# Parkrift (eski adı ParkPark)
+# Parkrift
 
 Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 3D dünya + SpriteKit HUD, yatay ekran). Repo adı ve bundle ID tarihsel olarak `hop`.
 
@@ -34,14 +34,14 @@ Arkadaşınla aynı otoparkta, online araba park etme oyunu (SwiftUI + SceneKit 
 | `Hop/CarArt.swift` | Kodla çizilen dokular |
 | `Hop/NetClient.swift` | Oda sunucusuna WebSocket bağlantısı |
 | `Hop/Strings.swift` | TR/EN metinler |
-| `server/index.js` | Cloudflare Worker + Durable Object oda sunucusu (`parkpark`) |
+| `server/index.js` | Cloudflare Worker + Durable Object oda sunucusu (`parkrift`) |
 | `server/test-rooms.mjs` | İki sahte oyuncuyla sunucu testi |
 | `.github/workflows/testflight.yml` | Derle → imzala → TestFlight'a yükle |
 | `.github/workflows/server-check.yml` | Sunucu testi |
 
 ## Oda sunucusu
 
-`https://parkpark.huseyinglc0-946.workers.dev` — `GET /health`, WebSocket: `/room/ABCD?role=host|guest`. Odada en fazla 2 kişi; sunucu sadece mesajları karşı tarafa iletir (`welcome`, `join`, `leave`, `full`, `noroom`, `ping/pong`; oyun mesajları `s` konum, `p` park etti, `lvl` bölüm başlat).
+`https://parkrift.huseyinglc0-946.workers.dev` — `GET /health`, WebSocket: `/room/ABCD?role=host|guest`. Odada en fazla 2 kişi; sunucu sadece mesajları karşı tarafa iletir (`welcome`, `join`, `leave`, `full`, `noroom`, `ping/pong`; oyun mesajları `s` konum, `p` park etti, `lvl` bölüm başlat).
 
 ## Bir kerelik kurulum (telefondan yapılabilir)
 
@@ -95,7 +95,7 @@ cars; they were removed because a free model licence does not cover the car make
 
 ## App Store
 
-- Privacy policy: https://parkpark.huseyinglc0-946.workers.dev/privacy
-- Support: https://parkpark.huseyinglc0-946.workers.dev/support
+- Privacy policy: https://parkrift.huseyinglc0-946.workers.dev/privacy
+- Support: https://parkrift.huseyinglc0-946.workers.dev/support
 - Both pages are served by the room server (`server/index.js`).
 - The benchmark modes only exist in builds compiled with the `BENCHMARK` condition (benchmark workflow).

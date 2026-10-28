@@ -620,7 +620,7 @@ extension Notification.Name {
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var language = Strings.languageChoice
-    static let site = "https://parkpark.huseyinglc0-946.workers.dev"
+    static let site = "https://parkrift.huseyinglc0-946.workers.dev"
 
     private struct Credit: Identifiable {
         let id = UUID()

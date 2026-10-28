@@ -98,7 +98,7 @@ TEXTS = {
         promotionalText='50 niveles, derrape real, persecuciones y carreras online con amigos. ¡Monedas dobles el finde!',
     ),
 }
-SUPPORT_URL = 'https://parkpark.huseyinglc0-946.workers.dev/support'
+SUPPORT_URL = 'https://parkrift.huseyinglc0-946.workers.dev/support'
 SUBTITLES = {'en-US': 'Park, Drift & Race Online', 'tr': 'Park Et, Drift At, Yarış', 'es-ES': 'Aparca, derrapa y compite'}
 
 LEADERBOARDS = [
@@ -193,7 +193,7 @@ def app_info(app_id):
         # Keep the app's name as it is (it went through the name check already)
         name = next((l['attributes'].get('name') for l in locs['data'] if l['attributes'].get('name')), 'Parkrift')
         for locale, subtitle in SUBTITLES.items():
-            attrs = {'subtitle': subtitle, 'privacyPolicyUrl': 'https://parkpark.huseyinglc0-946.workers.dev/privacy'}
+            attrs = {'subtitle': subtitle, 'privacyPolicyUrl': 'https://parkrift.huseyinglc0-946.workers.dev/privacy'}
             if locale not in have:
                 attrs['name'] = name
             if locale in have:

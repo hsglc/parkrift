@@ -1,5 +1,5 @@
 // End-to-end check of the room server with two fake players (Node 22+ has a global WebSocket).
-const base = process.env.ROOM_URL || "wss://parkpark.huseyinglc0-946.workers.dev";
+const base = process.env.ROOM_URL || "wss://parkrift.huseyinglc0-946.workers.dev";
 const code = Array.from({ length: 4 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("");
 
 function open(path) {
