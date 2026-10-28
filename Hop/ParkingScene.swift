@@ -181,11 +181,19 @@ final class ParkingScene: SKScene {
     private var ghostCar: Car3D?
     private let ghostStep: TimeInterval = 0.1
 
+    /// Best-run ghost car on solo parking levels (turned off).
+    static let ghostEnabled = false
+
     private func setupGhost() {
         ghostCar?.node.removeFromParentNode()
         ghostCar = nil
         ghostRecording.removeAll()
         ghostReplay = []
+        // Off: the grey best-run copy confused players. Old recordings are cleared.
+        guard ParkingScene.ghostEnabled else {
+            UserDefaults.standard.removeObject(forKey: "pp.ghost.\(levelIndex)")
+            return
+        }
         guard !isCity, !online, !benchmark, let world = world else { return }
         ghostReplay = UserDefaults.standard.array(forKey: "pp.ghost.\(levelIndex)") as? [Float] ?? []
         guard ghostReplay.count >= 6 else { return }
@@ -201,7 +209,7 @@ final class ParkingScene: SKScene {
     /// Records this run every 0.1 s and moves the ghost along the best run at the same time.
     private func updateGhost() {
         let sample = Int(elapsed / ghostStep)
-        if !isCity && !online && ghostRecording.count / 3 <= sample && ghostRecording.count < 3 * 1800 {
+        if ParkingScene.ghostEnabled && !isCity && !online && ghostRecording.count / 3 <= sample && ghostRecording.count < 3 * 1800 {
             ghostRecording += [Float(carPosition.x), Float(carPosition.y), Float(heading)]
         }
         guard let car = ghostCar else { return }
@@ -221,7 +229,7 @@ final class ParkingScene: SKScene {
     }
 
     private func saveGhost() {
-        guard !isCity, !online, ghostRecording.count >= 6 else { return }
+        guard ParkingScene.ghostEnabled, !isCity, !online, ghostRecording.count >= 6 else { return }
         ghostRecording += [Float(carPosition.x), Float(carPosition.y), Float(heading)]
         UserDefaults.standard.set(ghostRecording, forKey: "pp.ghost.\(levelIndex)")
     }
