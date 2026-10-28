@@ -168,6 +168,13 @@ enum Strings {
     static var straightenHint: String { t("Düzelt!", "Straighten up!", "¡Endereza!") }
     static var lastHit: String { t("Son hakkın!", "Last chance!", "¡Última oportunidad!") }
     static func levelTier(_ name: String) -> String { t("Zorluk: \(name)", "Difficulty: \(name)", "Dificultad: \(name)") }
+    // Home screen
+    static var homeProgress: String { t("İLERLEME", "PROGRESS", "PROGRESO") }
+    static var homeYourCar: String { t("ARABAN", "YOUR CAR", "TU COCHE") }
+    static var homeCareerKicker: String { t("KARİYER", "CAREER", "CARRERA") }
+    static var homeCityKicker: String { t("TRAFİK · YARIŞ", "TRAFFIC · RACE", "TRÁFICO · CARRERA") }
+    static var homeOnlineKicker: String { t("2 OYUNCU", "2 PLAYERS", "2 JUGADORES") }
+    static var homeContinue: String { t("Devam et", "Continue", "Continuar") }
     static var splashTagline: String { t("Park et. Drift at. Kazan.", "Park it. Drift it. Win it.", "Aparca. Derrapa. Gana.") }
     static var loadingText: String { t("Harita hazırlanıyor…", "Preparing the map…", "Preparando el mapa…") }
     static var tips: [String] {

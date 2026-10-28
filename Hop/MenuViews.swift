@@ -9,12 +9,11 @@ struct MenuBackdrop: View {
     var body: some View {
         ZStack {
             SceneKitView(world: model.menuWorld)
-            LinearGradient(colors: [Calm.night.opacity(0.88), Calm.night.opacity(0.45), Calm.night.opacity(0.62)],
+            // Carbon wash: dark on the left where the brand sits, the lot glowing through on the right
+            LinearGradient(colors: [Neo.ink.opacity(0.94), Neo.ink.opacity(0.72), Neo.ink.opacity(0.55)],
                            startPoint: .leading, endPoint: .trailing)
-            LinearGradient(colors: [Calm.teal.opacity(0.10), .clear, Calm.lavender.opacity(0.12)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
             DriftingLights()
-            LinearGradient(colors: [.clear, Calm.night.opacity(0.6)], startPoint: .center, endPoint: .bottom)
+            LinearGradient(colors: [.clear, Neo.ink.opacity(0.75)], startPoint: .center, endPoint: .bottom)
         }
         .ignoresSafeArea()
     }
@@ -29,12 +28,12 @@ private struct DriftingLights: View {
                 let w = proxy.size.width, h = proxy.size.height
                 ZStack {
                     Circle()
-                        .fill(Calm.teal.opacity(0.22))
+                        .fill(Neo.cyan.opacity(0.14))
                         .frame(width: h * 0.9, height: h * 0.9)
                         .blur(radius: 70)
                         .position(x: w * (0.25 + 0.08 * sin(t / 17)), y: h * (0.35 + 0.1 * cos(t / 13)))
                     Circle()
-                        .fill(Calm.lavender.opacity(0.18))
+                        .fill(Neo.magenta.opacity(0.12))
                         .frame(width: h * 0.8, height: h * 0.8)
                         .blur(radius: 80)
                         .position(x: w * (0.78 + 0.07 * cos(t / 19)), y: h * (0.65 + 0.1 * sin(t / 15)))
@@ -199,16 +198,7 @@ struct MenuView: View {
         HStack(spacing: 12) {
             ZStack(alignment: .leading) {
                 if page == .home {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(Strings.greeting)
-                            .font(Calm.body(12))
-                            .foregroundStyle(Calm.teal.opacity(0.9))
-                        Text("Parkrift")
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(LinearGradient(colors: [Calm.peach, Calm.rose, Calm.lavender],
-                                                            startPoint: .leading, endPoint: .trailing))
-                    }
-                    .transition(.opacity)
+                    EmptyView()
                 } else {
                     HStack(spacing: 12) {
                         GlassIconButton(systemImage: "chevron.left") { go(.home) }
@@ -225,6 +215,7 @@ struct MenuView: View {
                 }
             }
             Spacer()
+            if page != .home {
             Button {
                 AudioManager.shared.play("click", volume: 0.6)
                 model.openGarage(.menu)
@@ -247,10 +238,11 @@ struct MenuView: View {
                 .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
             }
             .buttonStyle(PressScaleStyle())
+            }
             CoinPill(coins: model.coins)
-            GlassIconButton(systemImage: "gift", badge: Progression.pendingGiftDay != nil) { showDaily = true }
-            GlassIconButton(systemImage: "trophy") { GameCenter.showLeaderboards() }
-            GlassIconButton(systemImage: "info") { showAbout = true }
+            NeoIconButton(systemImage: "gift.fill", badge: Progression.pendingGiftDay != nil) { showDaily = true }
+            NeoIconButton(systemImage: "trophy.fill") { GameCenter.showLeaderboards() }
+            NeoIconButton(systemImage: "info") { showAbout = true }
             SoundToggle()
         }
         .frame(height: 46)
@@ -259,39 +251,7 @@ struct MenuView: View {
     // MARK: Home: three mode cards
 
     private var home: some View {
-        VStack(spacing: 6) {
-            if Progression.isWeekendEvent {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                    Text(Strings.weekendEvent)
-                }
-                .font(Calm.title(11))
-                .foregroundStyle(Calm.night)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(LinearGradient(colors: [Calm.peach, Calm.rose], startPoint: .leading, endPoint: .trailing)))
-            }
-            homeCards
-            Text(Strings.credits)
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.45))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-        }
-    }
-
-    private var homeCards: some View {
-        HStack(spacing: 12) {
-            ModeTile(index: 0, title: Strings.modeSoloTitle, subtitle: Strings.modeSoloSub, icon: "parkingsign",
-                     chips: [Strings.levelsCount(Levels.all.count), "★ \(totalStars)/\(Levels.all.count * 3)"],
-                     accent: Calm.peach) { go(.levels) }
-            ModeTile(index: 1, title: Strings.modeCityTitle, subtitle: Strings.modeCitySub, icon: "building.2",
-                     chips: [Strings.carRace, Strings.parkRace],
-                     accent: Calm.lavender) { go(.city) }
-            ModeTile(index: 2, title: Strings.modeOnlineTitle, subtitle: Strings.modeOnlineSub, icon: "person.2",
-                     chips: [Strings.twoPlayersOnline],
-                     accent: Calm.teal) { go(.online) }
-        }
+        HomeScreen(openLevels: { go(.levels) }, openCity: { go(.city) }, openOnline: { go(.online) })
     }
 
     // MARK: Detail pages
