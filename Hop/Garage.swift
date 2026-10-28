@@ -84,6 +84,8 @@ final class GarageStage {
             car.node.scale = SCNVector3(0.001, 0.001, 0.001)
             turntable.addChildNode(car.node)
             cars[id] = car
+            // Only the car on the platform holds its 4K textures
+            car.setTexturesLoaded(id == saved.model)
         }
 
         // Lights: soft key from the front left with shadows, cool and warm rims behind, fill
@@ -149,6 +151,7 @@ final class GarageStage {
         let accent = choice.color.lighter(by: 0.15)
         ringMaterial.emission.contents = accent
         floorGlow.multiply.contents = accent
+        car.setTexturesLoaded(true)
         car.setPaint(choice.color)
         car.setRim(choice.rimColor)
         guard previous?.model != choice.model else { return }
@@ -157,11 +160,17 @@ final class GarageStage {
         if let previous = previous, let old = cars[previous.model], animated {
             old.node.removeAllActions()
             old.node.runAction(.sequence([.group([.fadeOut(duration: 0.16), .scale(to: 0.9, duration: 0.16)]),
-                                          .run { $0.scale = tiny; $0.opacity = 1 }]))
+                                          .run { $0.scale = tiny; $0.opacity = 1 }])) {
+                DispatchQueue.main.async { [weak self] in
+                    // Unless it was picked again meanwhile, it lets its textures go
+                    if self?.shown?.model != previous.model { old.setTexturesLoaded(false) }
+                }
+            }
         } else {
             for (id, other) in cars where id != choice.model {
                 other.node.removeAllActions()
                 other.node.scale = tiny
+                other.setTexturesLoaded(false)
             }
         }
         car.node.removeAllActions()

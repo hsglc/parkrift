@@ -221,16 +221,6 @@ enum CarModels {
         defer { loadLock.unlock() }
         if let cached = wheels[id] { return cached }
         let node = load(CarSpec.of(id).file + "_wheel")
-        let spec = CarSpec.of(id)
-        if let node = node, spec.textureNormal != nil {
-            // Tyres and rims as Meshy made them: its own texture, normal, gloss and metal maps
-            let wheelMaterial = meshyMaterial(spec)
-            wheelMaterial.isDoubleSided = true
-            node.enumerateHierarchy { child, _ in
-                guard let name = child.name, name == "tire" || name == "rim", let geometry = child.geometry else { return }
-                geometry.materials = [name == "rim" ? wheelMaterial.copy() as! SCNMaterial : wheelMaterial]
-            }
-        }
         wheels[id] = node
         return node
     }
@@ -350,29 +340,20 @@ enum CarModels {
 
     private static let textureLock = NSLock()
     private static var images: [String: UIImage] = [:]
-    private static var recent: [String] = []
-    /// 4K car textures are big (a decoded 4096 px image is 64 MB): only the most recently used
-    /// ones stay cached; materials already made keep their own reference.
-    private static let cacheLimit = 6
 
-    /// The base and mask images of every textured car, decoded once (thread-safe).
+    /// A car texture. Only the small ones are decoded up front and kept: the 4K base texture
+    /// alone is 64 MB decoded, so big images stay in UIKit's purgeable cache and SceneKit holds
+    /// its own copy only while a material that uses it is alive (garage cars that are not shown
+    /// let theirs go).
     private static func image(_ name: String, keep: Bool = true) -> UIImage? {
         textureLock.lock()
         defer { textureLock.unlock() }
-        if let cached = images[name] {
-            recent.removeAll { $0 == name }
-            recent.append(name)
-            return cached
-        }
+        if let cached = images[name] { return cached }
         guard let loaded = UIImage(named: name) else { return nil }
-        // Decode now (UIImage decodes lazily, on first draw)
+        let small = loaded.size.width * loaded.scale <= 1024
+        guard keep, small else { return loaded }
         let decoded = loaded.preparingForDisplay() ?? loaded
-        guard keep else { return decoded }
         images[name] = decoded
-        recent.append(name)
-        while recent.count > cacheLimit {
-            images[recent.removeFirst()] = nil
-        }
         return decoded
     }
 
@@ -408,6 +389,24 @@ enum CarModels {
             material.metalness.mipFilter = .linear
         }
     }
+
+    /// Tyre or rim material with the car's own texture and maps (`loaded`), or plain rubber /
+    /// metal in `solid` with no textures at all.
+    static func setWheelMaps(_ spec: CarSpec, on material: SCNMaterial, loaded: Bool, solid: UIColor) {
+        if loaded, let base = spec.textureBase {
+            material.diffuse.contents = image(base)
+            material.diffuse.mipFilter = .linear
+            applyMeshyMaps(spec, to: material)
+        } else {
+            material.diffuse.contents = solid
+            material.normal.contents = nil
+            material.roughness.contents = NSNumber(value: solid == UIColor(white: 0.07, alpha: 1) ? 0.85 : 0.25)
+            material.metalness.contents = NSNumber(value: solid == UIColor(white: 0.07, alpha: 1) ? 0 : 0.95)
+        }
+    }
+
+    /// Stand-in for a hidden garage car's body (no textures held).
+    static let placeholder = Mat.pbr(UIColor(white: 0.5, alpha: 1), metal: 0, rough: 0.6)
 
     /// An unpainted Meshy material (tyres and rims): the car's own texture and maps.
     static func meshyMaterial(_ spec: CarSpec) -> SCNMaterial {

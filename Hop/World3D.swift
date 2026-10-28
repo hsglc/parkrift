@@ -711,37 +711,68 @@ final class Car3D {
         for system in sprays { system.birthRate = 160 * max(0, min(1, amount)) }
     }
 
-    /// Rim colour: the wheels get their own rim material (one per car).
+    /// Rim colour: the wheels get their own rim and tyre materials (one per car).
     private var rimMaterial: SCNMaterial?
+    private var tireMaterial: SCNMaterial?
+    private var rimTint = CarSpec.rims[0]
+    private var paintColor = UIColor.red
+    /// Meshy cars: whether the big textures are on (garage cars that are not shown drop them).
+    private var texturesLoaded = true
+
     func setRim(_ color: UIColor) {
-        if rimMaterial == nil {
-            // From the car's own rim material (it may carry the model's normal map)
-            var source: SCNMaterial?
-            for spinner in spinNodes where source == nil {
-                spinner.enumerateHierarchy { node, stop in
-                    if node.name == "rim", let found = node.geometry?.firstMaterial { source = found; stop.pointee = true }
-                }
-            }
-            let material = (source ?? CarModels.rim).copy() as! SCNMaterial
-            rimMaterial = material
-            for spinner in spinNodes {
-                spinner.enumerateHierarchy { node, _ in
-                    guard node.name == "rim", let geometry = node.geometry?.copy() as? SCNGeometry else { return }
-                    geometry.materials = [material]
-                    node.geometry = geometry
-                }
+        rimTint = color
+        ensureWheelMaterials()
+        applyRimTint()
+    }
+
+    private func ensureWheelMaterials() {
+        guard rimMaterial == nil else { return }
+        let rim = CarModels.rim.copy() as! SCNMaterial
+        let tire = CarModels.tire.copy() as! SCNMaterial
+        rimMaterial = rim
+        tireMaterial = tire
+        for spinner in spinNodes {
+            spinner.enumerateHierarchy { node, _ in
+                guard let name = node.name, name == "rim" || name == "tire",
+                      let geometry = node.geometry?.copy() as? SCNGeometry else { return }
+                geometry.materials = [name == "rim" ? rim : tire]
+                node.geometry = geometry
             }
         }
-        if let material = rimMaterial, material.diffuse.contents is UIImage {
+        if let spec = carSpec, spec.textureNormal != nil {
+            CarModels.setWheelMaps(spec, on: rim, loaded: texturesLoaded, solid: rimTint)
+            CarModels.setWheelMaps(spec, on: tire, loaded: texturesLoaded, solid: UIColor(white: 0.07, alpha: 1))
+        }
+    }
+
+    private func applyRimTint() {
+        guard let rim = rimMaterial else { return }
+        if texturesLoaded, carSpec?.textureNormal != nil {
             // Meshy rims keep their texture: the colour tints it (the standard silver leaves it as is)
-            material.multiply.contents = color == CarSpec.rims[0] ? UIColor.white : color.lighter(by: 0.15)
+            rim.multiply.contents = rimTint == CarSpec.rims[0] ? UIColor.white : rimTint.lighter(by: 0.15)
         } else {
-            rimMaterial?.diffuse.contents = color
+            rim.multiply.contents = UIColor.white
+            rim.diffuse.contents = rimTint
         }
+    }
+
+    /// Loads or drops the car's big textures (body and wheels). A garage car that is not on the
+    /// platform keeps none, so six 4K cars never sit in memory at once.
+    func setTexturesLoaded(_ loaded: Bool) {
+        guard let spec = carSpec, spec.textureNormal != nil, loaded != texturesLoaded else { return }
+        texturesLoaded = loaded
+        texturedNode?.geometry?.materials = [loaded ? CarModels.texturePaint(spec, paintColor) : CarModels.placeholder]
+        ensureWheelMaterials()
+        if let rim = rimMaterial, let tire = tireMaterial {
+            CarModels.setWheelMaps(spec, on: rim, loaded: loaded, solid: rimTint)
+            CarModels.setWheelMaps(spec, on: tire, loaded: loaded, solid: UIColor(white: 0.07, alpha: 1))
+        }
+        applyRimTint()
     }
 
     /// Swaps the paint material only (no new geometry, no new shader).
     func setPaint(_ color: UIColor) {
+        paintColor = color
         paintedNode?.geometry?.materials = [CarFactory.racerPaint(color)]
         if let material = texturedNode?.geometry?.firstMaterial, carSpec?.textureBase != nil {
             CarModels.setPaint(material, color)
@@ -760,6 +791,7 @@ final class Car3D {
         let model = style == .racer ? CarModels.body(carModel) : nil
         let spec = CarSpec.of(carModel)
         carSpec = spec
+        paintColor = color
 
         // Traffic and parked cars: Kenney vehicles
         if style != .racer, PerfSettings.optimized,
@@ -892,6 +924,8 @@ final class Car3D {
                 spinNodes.append(spinner)
                 if spot.3 { steerPivots.append(pivot) }
             }
+            // Meshy tyres and rims with the car's own texture and maps
+            if spec.textureNormal != nil { ensureWheelMaterials(); applyRimTint() }
             return
         }
         for spot in CarFactory.wheelSpots {
