@@ -12,10 +12,10 @@ connected pieces inside each tyre's box. Writes <id>_body.usdz (one mesh named "
 Refinement in Blender before export (the generated meshes are lumpy and one flat surface):
   - the body is ironed out (corrective smooth: small bumps go, the shape and panel lines stay)
     and shaded smooth, with hard edges kept at real creases,
-  - faces are split by what the texture shows under them: windows become a "glass" mesh (the
-    game's glossy dark glass), bright lamps at the front a "headlight" mesh (lit at night),
-    the rest stays "textured" (painted through the mask),
-  - the texture is sharpened a little and the paint shading evened out.
+  - bright lamp faces at the front become a "headlight" mesh (lit at night); everything else
+    stays "textured", painted through the mask,
+  - Meshy's texture is used pixel for pixel: only the lime paint becomes grey (its exact shading
+    kept) so the game can tint it.
 
 Usage: python convert_meshy_cars.py <folder with <id>/model.glb> <Hop/Models>
 """
@@ -36,7 +36,7 @@ CARS = [
 
 TEXTURE_SIZE = 1024
 TEXELS = {}
-MASK_SIZE = 512
+MASK_SIZE = 1024
 
 
 def reset():
@@ -157,25 +157,41 @@ def split(obj, faces, name):
 
 
 def texture(obj, car, out):
-    """Paint areas (lime green) -> neutral grey base + white mask."""
+    """Paint areas -> grey base + white mask, applied pixel for pixel to Meshy's own texture.
+
+    The cars were generated in one lime-green paint. A texel belongs to the paint when its hue is
+    green (green clearly above red and blue), however dark or light it is, so shaded paint and the
+    soft lime-to-black edges Meshy painted stay paint. Its grey level is its green level against
+    the lime itself, so shading and edge fades keep exactly their original strength; the game
+    multiplies it by the chosen colour. Every other texel is kept exactly as Meshy made it."""
+    from PIL import Image
     image = next(i for i in bpy.data.images if i.size[0] > 0)
     w, h = image.size
-    a = np.array(image.pixels[:], dtype=np.float64).reshape(h, w, 4)[::-1, :, :3]
+    a = np.array(image.pixels[:], dtype=np.float64).reshape(h, w, 4)[::-1, :, :3].copy()
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
-    mask = (g > 0.3) & (g > b * 1.7) & (g > r * 1.02)
-    # Even paint: keep only a little of the generated shading (it reads as blotches under gloss)
-    shade = np.clip(0.6 + 0.28 * (g / np.median(g[mask])), 0, 1)
-    a[mask] = shade[mask][:, None]
-    from PIL import Image, ImageFilter
-    base = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8)).resize((TEXTURE_SIZE, TEXTURE_SIZE), Image.LANCZOS)
-    base = base.filter(ImageFilter.UnsharpMask(radius=2, percent=70, threshold=2))
-    TEXELS[car['id']] = (a, mask)
-    base.save(os.path.join(out, car['id'] + '_basecolor.jpg'), quality=88)
-    m = Image.fromarray((mask * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3))
+    chroma = g - np.maximum(r, b)
+    # Green by ratio, not by amount: paint in deep shadow (dark lime) is still paint
+    painted = (g > 0.03) & (g > r * 1.12) & (g > b * 1.35)
+    strong = painted & (chroma > np.percentile(chroma[painted], 60))
+    lime_g = np.median(g[strong])
+    # Its shading kept, a little softened (a gloss coat shows baked shadows harder than matte)
+    level = np.clip(g / lime_g, 0, 1.1) ** 0.7 * 0.86
+    a[painted] = np.clip(level[painted], 0, 1)[:, None]
+
+    size = min(w, 2048)
+    base = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
+    if size != w:
+        base = base.resize((size, size), Image.LANCZOS)
+    TEXELS[car['id']] = (a, painted)
+    base.save(os.path.join(out, car['id'] + '_basecolor.jpg'), quality=92)
+    m = Image.fromarray((painted * 255).astype(np.uint8))
+    if size != w:
+        m = m.resize((size, size), Image.NEAREST)
     # RGB, not grayscale: SceneKit turns 8-bit gray images into an R8 sRGB texture, a format the
     # simulator and Macs do not have (the app crashed there)
-    m.resize((MASK_SIZE, MASK_SIZE), Image.LANCZOS).convert('RGB').save(os.path.join(out, car['id'] + '_mask.png'))
-    return mask.mean()
+    m.convert('RGB').save(os.path.join(out, car['id'] + '_mask.png'))
+    print(f"  {car['id']}: texture {w} px, paint {painted.mean():.2f}")
+    return painted.mean()
 
 
 def export(objects, path):
@@ -275,25 +291,37 @@ def taillights(obj):
 
 
 def iron(obj):
-    """Small lumps out, shape kept: corrective smooth, then smooth shading with creases kept."""
+    """Smooth reflections without moving the surface: the shape stays exactly Meshy's (moving
+    vertices dragged dark texture details over the paint), only its normals come from an
+    ironed-out copy, so the gloss slides cleanly over small lumps."""
+    bpy.ops.object.select_all(action='DESELECT')
+    smooth = obj.copy()
+    smooth.data = obj.data.copy()
+    bpy.context.scene.collection.objects.link(smooth)
+    smooth.select_set(True)
+    bpy.context.view_layer.objects.active = smooth
+    mod = smooth.modifiers.new('iron', 'CORRECTIVE_SMOOTH')
+    mod.factor = 0.7
+    mod.iterations = 10
+    mod.smooth_type = 'SIMPLE'
+    mod.use_only_smooth = True
+    mod.rest_source = 'ORCO'
+    bpy.ops.object.modifier_apply(modifier='iron')
+    bpy.ops.object.shade_smooth()
     bpy.ops.object.select_all(action='DESELECT')
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
-    smooth = obj.modifiers.new('iron', 'CORRECTIVE_SMOOTH')
-    smooth.factor = 0.6
-    smooth.iterations = 8
-    smooth.smooth_type = 'SIMPLE'
-    smooth.use_only_smooth = True
-    smooth.rest_source = 'ORCO'
-    bpy.ops.object.modifier_apply(modifier='iron')
-    bpy.ops.object.shade_smooth_by_angle(angle=math.radians(42), keep_sharp_edges=True)
+    bpy.ops.object.shade_smooth_by_angle(angle=math.radians(48), keep_sharp_edges=True)
     if 'Smooth by Angle' in obj.modifiers:
         bpy.ops.object.modifier_apply(modifier='Smooth by Angle')
-    # Normals weighted by face area: big panels stay flat and clean, no smeared reflections
-    weighted = obj.modifiers.new('weighted', 'WEIGHTED_NORMAL')
-    weighted.keep_sharp = True
-    weighted.weight = 70
-    bpy.ops.object.modifier_apply(modifier='weighted')
+    transfer = obj.modifiers.new('normals', 'DATA_TRANSFER')
+    transfer.object = smooth
+    transfer.use_loop_data = True
+    transfer.data_types_loops = {'CUSTOM_NORMAL'}
+    transfer.loop_mapping = 'POLYINTERP_NEAREST'
+    transfer.mix_factor = 0.85
+    bpy.ops.object.modifier_apply(modifier='normals')
+    bpy.data.objects.remove(smooth, do_unlink=True)
 
 
 def classify_faces(obj, car):
@@ -370,15 +398,14 @@ def convert(car, src, out):
     keep.name = 'rim'
     keep.data.name = 'rim'
     light = taillights(obj)
-    iron(obj)
+    if not os.environ.get("NOIRON"):
+        iron(obj)
     glass_faces, head_faces = classify_faces(obj, car)
     extra = []
     if head_faces:
         extra.append(split(obj, head_faces, 'headlight'))
-    glass_faces, _ = classify_faces(obj, car)
-    if glass_faces:
-        extra.append(split(obj, glass_faces, 'glass'))
-    print(f"  {car['id']}: glass {len(glass_faces)} faces, headlights {len(head_faces)} faces")
+    # Windows stay in Meshy's texture (pixel for pixel): splitting them by faces gave jagged edges
+    print(f"  {car['id']}: headlights {len(head_faces)} faces")
     if os.environ.get('PREVIEW_GLB'):
         # The four wheels put back for the preview
         shown = [obj] + extra + ([light] if light else [])
