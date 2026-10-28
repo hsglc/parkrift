@@ -1545,6 +1545,17 @@ final class ParkingScene: SKScene {
         return nil
     }
 
+    /// Automated test hook (-crashtest): holds a pedal as if a finger were on it.
+    func testHold(_ pedal: String) {
+        switch pedal {
+        case "reverse": autoControls = [.reverse]
+        case "forward": autoControls = [.forward]
+        case "left": autoControls = [.forward, .left]
+        default: autoControls = []
+        }
+        refreshPedals()
+    }
+
     private func isPressed(_ control: Control) -> Bool {
         autoControls.contains(control) || activeTouches.values.contains(control)
     }

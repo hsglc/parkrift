@@ -236,6 +236,62 @@ final class AppModel: ObservableObject {
         beginGame(level: start)
     }
 
+    /// Automated navigation test (-crashtest launch argument, simulator only): drives every
+    /// way in and out of the game, reversing, quitting mid-countdown and mid-race, garage back and
+    /// forth, several rounds. Each step is logged so a crash report can be matched to a step.
+    func runCrashTest() {
+        var steps: [(TimeInterval, String, () -> Void)] = []
+        var t: TimeInterval = 1.5
+        func add(_ wait: TimeInterval, _ name: String, _ action: @escaping () -> Void) {
+            t += wait
+            steps.append((t, name, action))
+        }
+        for round in 0..<3 {
+            let r = "round \(round)"
+            add(0, "\(r): garage from menu") { self.openGarage(.menu) }
+            add(2.5, "\(r): garage back") { self.leaveGarage(confirmed: false) }
+            add(1.5, "\(r): solo park") { self.selectedLevel = round; self.playSolo() }
+            add(2.0, "\(r): garage back without playing") { self.leaveGarage(confirmed: false) }
+            add(1.5, "\(r): solo park again") { self.playSolo() }
+            add(1.5, "\(r): start park") { self.leaveGarage(confirmed: true) }
+            add(1.0, "\(r): quit during loading") { self.leaveToMenu() }
+            add(1.5, "\(r): park again") { self.playSolo() }
+            add(1.5, "\(r): start park") { self.leaveGarage(confirmed: true) }
+            add(6.5, "\(r): hold reverse") { self.scene?.testHold("reverse") }
+            add(2.5, "\(r): hold forward") { self.scene?.testHold("forward") }
+            add(2.0, "\(r): hold reverse again") { self.scene?.testHold("reverse") }
+            add(1.0, "\(r): quit while reversing") { self.leaveToMenu() }
+            add(1.5, "\(r): race") { self.playRace() }
+            add(1.5, "\(r): start race") { self.leaveGarage(confirmed: true) }
+            add(7.0, "\(r): race reverse") { self.scene?.testHold("reverse") }
+            add(2.0, "\(r): race forward") { self.scene?.testHold("left") }
+            add(2.0, "\(r): quit race") { self.leaveToMenu() }
+            add(1.5, "\(r): city") { self.playCity() }
+            add(1.5, "\(r): start city") { self.leaveGarage(confirmed: true) }
+            add(3.0, "\(r): quit city in countdown") { self.leaveToMenu() }
+            add(1.5, "\(r): city again") { self.playCity() }
+            add(1.5, "\(r): start city") { self.leaveGarage(confirmed: true) }
+            add(7.0, "\(r): city reverse") { self.scene?.testHold("reverse") }
+            add(2.0, "\(r): city forward") { self.scene?.testHold("forward") }
+            add(2.0, "\(r): quit city") { self.leaveToMenu() }
+        }
+        add(2.0, "done") {}
+        let log = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("crashtest.txt")
+        try? "".write(to: log, atomically: true, encoding: .utf8)
+        for (time, name, action) in steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + time) {
+                print("CRASHTEST \(name)")
+                if let handle = try? FileHandle(forWritingTo: log) {
+                    handle.seekToEndOfFile()
+                    handle.write((name + "\n").data(using: .utf8)!)
+                    try? handle.close()
+                }
+                action()
+            }
+        }
+    }
+
     func leaveToMenu() {
         matchmaking = false
         matchTimeout?.cancel()
@@ -558,6 +614,11 @@ struct RootView: View {
                 }
             }
             AudioManager.shared.ensureRunning()
+            if ProcessInfo.processInfo.arguments.contains("-crashtest") {
+                splash = false
+                model.runCrashTest()
+                return
+            }
             // Store screenshots (simulator, taken from outside with simctl): stay on a screen
             let args = ProcessInfo.processInfo.arguments
             if PerfSettings.benchmark && args.contains("-staymenu") {
