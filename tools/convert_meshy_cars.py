@@ -385,9 +385,20 @@ def taillights(obj):
     headlights and no red, which made the cars look like they drove backwards. The bar is
     placed by casting rays at the tail; the game lights it with its brake material."""
     from mathutils.bvhtree import BVHTree
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    tree = BVHTree.FromObject(obj, depsgraph)
     lo, hi = bounds([v.co for v in obj.data.vertices])
+    # A spare wheel hung on the tailgate is left out of the rays, so the bar lies on the body
+    # behind it instead of across the tyre
+    skip = set()
+    for faces, plo, phi in pieces(obj):
+        size = phi - plo
+        if plo.x < lo.x + 0.15 and size.x < 0.5 and 0.4 < size.y < 0.95 and 0.4 < size.z < 0.95 and len(faces) > 40:
+            skip |= set(faces)
+    mesh = obj.data
+    verts = [v.co.copy() for v in mesh.vertices]
+    polys = [list(p.vertices) for p in mesh.polygons if p.index not in skip]
+    tree = BVHTree.FromPolygons(verts, polys)
+    if skip:
+        print(f"  {obj.name}: spare wheel left out of the tail light ({len(skip)} faces)")
     half = (hi.y - lo.y) / 2
     rear = lo.x
 
