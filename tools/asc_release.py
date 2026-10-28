@@ -28,7 +28,7 @@ def call(method, path, body=None, quiet=False):
                          data=json.dumps(body) if body is not None else None, timeout=90)
     if r.status_code >= 400:
         if not quiet:
-            print(f'::warning::{method} {path} -> {r.status_code}: {r.text[:900]}')
+            print(f'::warning::{method} {path} -> {r.status_code}: {r.text[:6000]}')
         return None
     return r.json() if r.text else {}
 
@@ -124,6 +124,9 @@ def main():
         left('App Store version could not be created'); return finish()
     vid = version['id']
     texts(vid)
+    # Copyright line is required before the version can go to review
+    call('PATCH', f'/v1/appStoreVersions/{vid}', {'data': {'type': 'appStoreVersions', 'id': vid,
+        'attributes': {'copyright': '2026 Hüseyin Gülcü'}}})
     age_rating(app_id)
     call('PATCH', f'/v1/apps/{app_id}', {'data': {'type': 'apps', 'id': app_id,
         'attributes': {'contentRightsDeclaration': 'USES_THIRD_PARTY_CONTENT'}}})
