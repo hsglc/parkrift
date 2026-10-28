@@ -48,7 +48,7 @@ jobs:
           mkdir -p out
           rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
           xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -crashtest -AppleLanguages "(tr)" > out/console.log 2>&1 &
-          sleep 8
+          sleep 25
           DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data 2>/dev/null)
           for i in $(seq 1 150); do
             PID=$(pgrep -x Hop | head -1)
