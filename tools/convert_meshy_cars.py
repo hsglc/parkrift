@@ -34,9 +34,12 @@ CARS = [
     dict(id='classico', length=4.4),
 ]
 
-TEXTURE_SIZE = 1024
+BASE_SIZE = 4096
+MASK_SIZE = 2048
+NORMAL_SIZE = 2048
+ROUGH_SIZE = 1024
 TEXELS = {}
-MASK_SIZE = 1024
+GLASS_TINT = {}
 
 
 def reset():
@@ -156,6 +159,30 @@ def split(obj, faces, name):
     return new
 
 
+def linked_image(socket_names):
+    """The texture image feeding one of the given material sockets (directly or through a
+    normal map / separate node), or None."""
+    for mat in bpy.data.materials:
+        if not mat.node_tree:
+            continue
+        for node in mat.node_tree.nodes:
+            if node.type != 'TEX_IMAGE' or not node.image:
+                continue
+            todo = [l.to_node for l in node.outputs[0].links] + [l.to_node for l in node.outputs[0].links]
+            names = {l.to_socket.name for l in node.outputs[0].links}
+            for n in todo:
+                for out in n.outputs:
+                    names |= {l.to_socket.name for l in out.links}
+            if names & set(socket_names):
+                return node.image
+    return None
+
+
+def pixels(image):
+    w, h = image.size
+    return np.array(image.pixels[:], dtype=np.float32).reshape(h, w, 4)[::-1, :, :3].copy()
+
+
 def texture(obj, car, out):
     """Paint areas -> grey base + white mask, applied pixel for pixel to Meshy's own texture.
 
@@ -163,11 +190,14 @@ def texture(obj, car, out):
     green (green clearly above red and blue), however dark or light it is, so shaded paint and the
     soft lime-to-black edges Meshy painted stay paint. Its grey level is its green level against
     the lime itself, so shading and edge fades keep exactly their original strength; the game
-    multiplies it by the chosen colour. Every other texel is kept exactly as Meshy made it."""
+    multiplies it by the chosen colour. Every other texel is kept exactly as Meshy made it.
+
+    The 4K retexture also brings a normal map (fine panel lines, tyre treads, grilles) and a
+    roughness map; both are written for the game at 2048 / 1024 px."""
     from PIL import Image
-    image = next(i for i in bpy.data.images if i.size[0] > 0)
+    image = linked_image(['Base Color']) or next(i for i in bpy.data.images if i.size[0] > 0)
     w, h = image.size
-    a = np.array(image.pixels[:], dtype=np.float64).reshape(h, w, 4)[::-1, :, :3].copy()
+    a = pixels(image).astype(np.float64)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     chroma = g - np.maximum(r, b)
     # Green by ratio, not by amount: paint in deep shadow (dark lime) is still paint
@@ -178,20 +208,139 @@ def texture(obj, car, out):
     level = np.clip(g / lime_g, 0, 1.1) ** 0.7 * 0.86
     a[painted] = np.clip(level[painted], 0, 1)[:, None]
 
-    size = min(w, 2048)
+    size = min(w, BASE_SIZE)
     base = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
     if size != w:
         base = base.resize((size, size), Image.LANCZOS)
     TEXELS[car['id']] = (a, painted)
-    base.save(os.path.join(out, car['id'] + '_basecolor.jpg'), quality=92)
+    base.save(os.path.join(out, car['id'] + '_basecolor.jpg'), quality=90)
+    # The mask at half size, box-filtered: soft paint edges (the shader samples it linearly)
     m = Image.fromarray((painted * 255).astype(np.uint8))
-    if size != w:
-        m = m.resize((size, size), Image.NEAREST)
+    m = m.resize((MASK_SIZE, MASK_SIZE), Image.BOX)
     # RGB, not grayscale: SceneKit turns 8-bit gray images into an R8 sRGB texture, a format the
     # simulator and Macs do not have (the app crashed there)
     m.convert('RGB').save(os.path.join(out, car['id'] + '_mask.png'))
-    print(f"  {car['id']}: texture {w} px, paint {painted.mean():.2f}")
+
+    normal = linked_image(['Normal'])
+    if normal is not None:
+        n = Image.fromarray((np.clip(pixels(normal), 0, 1) * 255).astype(np.uint8))
+        n.resize((NORMAL_SIZE, NORMAL_SIZE), Image.LANCZOS).save(os.path.join(out, car['id'] + '_normal.jpg'), quality=92)
+    rough_img = linked_image(['Roughness'])
+    if rough_img is not None:
+        rough = pixels(rough_img)[..., 1]   # glTF metallic-roughness: roughness in green
+        # Paint stays a glossy coat whatever Meshy guessed; trim, rubber and lamps keep theirs
+        pw = Image.fromarray((painted * 255).astype(np.uint8)).resize(rough.shape[::-1], Image.BOX)
+        paint_share = np.asarray(pw, dtype=np.float32) / 255
+        rough = rough * (1 - paint_share) + 0.3 * paint_share
+        out_r = Image.fromarray((np.clip(rough, 0, 1) * 255).astype(np.uint8)).convert('RGB')
+        out_r.resize((ROUGH_SIZE, ROUGH_SIZE), Image.LANCZOS).save(os.path.join(out, car['id'] + '_rough.jpg'), quality=90)
+    print(f"  {car['id']}: texture {w} px, paint {painted.mean():.2f}, normal {normal is not None}, rough {rough_img is not None}")
     return painted.mean()
+
+
+def refine(obj, levels=1, crease_angle=38, small_faces=0, small_size=0.0, fold_angle=100, hold=True):
+    """One Catmull-Clark subdivision: four times the triangles, smoother curves and round
+    silhouettes; edges sharper than `crease_angle` (panel lines, window frames, lips) are
+    creased so they stay crisp instead of melting.
+
+    Thin folded blades (splitter fins, cowl vents, wiper bases: edges folded past `fold_angle`)
+    and open borders turned into spikes when smoothed, so near them the subdivided mesh keeps
+    the original shape (a plain split of each face) and blends into the smooth surface over one
+    ring of faces. Small loose pieces are not subdivided at all."""
+    small = set()
+    if small_faces:
+        for faces, lo, hi in pieces(obj):
+            if len(faces) < small_faces or (hi - lo).length < small_size:
+                small |= set(faces)
+    keep = split(obj, small, obj.name + '_small') if small else None
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    layer = bm.edges.layers.float.get('crease_edge') or bm.edges.layers.float.new('crease_edge')
+    limit, fold = math.radians(crease_angle), math.radians(fold_angle)
+    sharp = 0
+    held_points = set()
+    for e in bm.edges:
+        if len(e.link_faces) != 2:
+            if hold:
+                held_points |= {v.index for v in e.verts}
+            continue
+        angle = e.calc_face_angle(0)
+        if angle > fold and hold:
+            held_points |= {v.index for v in e.verts}
+        elif angle > limit:
+            e[layer] = 1.0
+            sharp += 1
+    bm.verts.ensure_lookup_table()
+    ring = {n.index for i in held_points for e in bm.verts[i].link_edges for n in e.verts} - held_points
+    weight = {v.index: 0.0 if v.index in held_points else (0.5 if v.index in ring else 1.0) for v in bm.verts}
+    # Weight of every point the subdivision makes: corners, edge middles and face middles
+    key = lambda co: (round(co.x, 5), round(co.y, 5), round(co.z, 5))
+    at = {}
+    for v in bm.verts:
+        at[key(v.co)] = weight[v.index]
+    for e in bm.edges:
+        at[key((e.verts[0].co + e.verts[1].co) / 2)] = min(weight[v.index] for v in e.verts)
+    for f in bm.faces:
+        at[key(f.calc_center_median())] = min(weight[v.index] for v in f.verts)
+    bm.to_mesh(obj.data)
+    bm.free()
+
+    def subdivided(source, kind):
+        copy = source.copy()
+        copy.data = source.data.copy()
+        bpy.context.scene.collection.objects.link(copy)
+        bpy.ops.object.select_all(action='DESELECT')
+        copy.select_set(True)
+        bpy.context.view_layer.objects.active = copy
+        mod = copy.modifiers.new('refine', 'SUBSURF')
+        mod.levels = levels
+        mod.render_levels = levels
+        mod.subdivision_type = kind
+        mod.uv_smooth = 'PRESERVE_BOUNDARIES' if kind == 'CATMULL_CLARK' else 'NONE'
+        mod.boundary_smooth = 'PRESERVE_CORNERS'
+        mod.use_creases = True
+        mod.quality = 3
+        bpy.ops.object.modifier_apply(modifier='refine')
+        return copy
+
+    smooth = subdivided(obj, 'CATMULL_CLARK')
+    plain = subdivided(obj, 'SIMPLE')
+    sm, pm = smooth.data, plain.data
+    same = len(sm.vertices) == len(pm.vertices) and len(sm.loops) == len(pm.loops) and \
+        all(a.vertices[:] == b.vertices[:] for a, b in zip(sm.polygons, pm.polygons))
+    if not same:
+        print(f"  {obj.name}: subdivisions differ, plain smoothing used")
+        mesh = sm
+    else:
+        w = np.array([at.get(key(v.co), 1.0) for v in pm.vertices], dtype=np.float64)
+        sp = np.array([v.co[:] for v in sm.vertices])
+        pp = np.array([v.co[:] for v in pm.vertices])
+        moved = pp + (sp - pp) * w[:, None]
+        for v, co in zip(pm.vertices, moved):
+            v.co = co
+        # UVs follow the same blend, so the texture stays on the faces it belongs to
+        for layer_s, layer_p in zip(sm.uv_layers, pm.uv_layers):
+            for i, loop in enumerate(pm.loops):
+                k = w[loop.vertex_index]
+                if k > 0:
+                    a, b = layer_p.data[i].uv, layer_s.data[i].uv
+                    layer_p.data[i].uv = (a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k)
+        pm.update()
+        mesh = pm
+        print(f"  {obj.name}: {int((w < 1).sum())} of {len(w)} points held near folds and borders")
+    old = obj.data
+    obj.data = mesh.copy()
+    obj.data.name = old.name
+    for o in (smooth, plain):
+        bpy.data.objects.remove(o, do_unlink=True)
+    if keep is not None:
+        bpy.ops.object.select_all(action='DESELECT')
+        keep.select_set(True)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.join()
+    return sharp, len(small)
 
 
 def export(objects, path):
@@ -314,7 +463,23 @@ def iron(obj):
     bpy.ops.object.shade_smooth_by_angle(angle=math.radians(48), keep_sharp_edges=True)
     if 'Smooth by Angle' in obj.modifiers:
         bpy.ops.object.modifier_apply(modifier='Smooth by Angle')
+    # Not on thin folded blades and open borders (splitter fins, cowl vents, wiper bases): the
+    # ironed copy's normals flip there and showed as dark spikes
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    held = set()
+    for e in bm.edges:
+        if len(e.link_faces) != 2 or e.calc_face_angle(0) > math.radians(100):
+            held |= {v.index for v in e.verts}
+    for _ in range(2):
+        held |= {n.index for i in list(held) for e in bm.verts[i].link_edges for n in e.verts}
+    count = len(bm.verts)
+    bm.free()
+    group = obj.vertex_groups.new(name='iron')
+    group.add([i for i in range(count) if i not in held], 1.0, 'REPLACE')
     transfer = obj.modifiers.new('normals', 'DATA_TRANSFER')
+    transfer.vertex_group = 'iron'
     transfer.object = smooth
     transfer.use_loop_data = True
     transfer.data_types_loops = {'CUSTOM_NORMAL'}
@@ -322,6 +487,8 @@ def iron(obj):
     transfer.mix_factor = 0.85
     bpy.ops.object.modifier_apply(modifier='normals')
     bpy.data.objects.remove(smooth, do_unlink=True)
+    if 'iron' in obj.vertex_groups:
+        obj.vertex_groups.remove(obj.vertex_groups['iron'])
 
 
 def classify_faces(obj, car):
@@ -351,6 +518,126 @@ def classify_faces(obj, car):
         elif bright > 0.62 and spread < 0.2 and c.x > hi.x - 0.45 and poly.normal.x > 0.3 and height < 0.75:
             head.add(poly.index)
     return glass, head
+
+
+def clean_glass(obj, car, glass_faces, out):
+    """Windows keep no paint: lime fringes Meshy painted along window edges were taken as paint
+    and showed as coloured smears on the glass. Every texel under a window face (and a couple
+    of texels around it) becomes the window's own dark tint and leaves the paint mask."""
+    from PIL import Image, ImageDraw, ImageFilter
+    if not glass_faces:
+        return 0
+    texels, painted = TEXELS[car['id']]
+    h, w = texels.shape[:2]
+    # Grow the windows over neighbouring pale, colourless faces up high: Meshy painted
+    # reflections into some windows (grey and white streaks) that the dark test missed
+    mesh = obj.data
+    uvl = mesh.uv_layers[0].data
+    lo, hi = bounds([v.co for v in mesh.vertices])
+    def texel(poly):
+        u = sum(uvl[i].uv[0] for i in poly.loop_indices) / poly.loop_total
+        v = sum(uvl[i].uv[1] for i in poly.loop_indices) / poly.loop_total
+        y, x = min(h - 1, max(0, int((1 - v) * h))), min(w - 1, max(0, int(u * w)))
+        return y, x
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bm.faces.ensure_lookup_table()
+    grown = set(glass_faces)
+    # Side windows Meshy painted pale grey (baked sky reflections): upright, colourless, mid
+    # grey faces in the upper part of the body
+    for poly in mesh.polygons:
+        y, x = texel(poly)
+        r, g, b = texels[y, x]
+        height = (poly.center.z - lo.z) / (hi.z - lo.z)
+        if not painted[y, x] and max(r, g, b) - min(r, g, b) < 0.06 and (r + g + b) / 3 < 0.42 \
+                and height > 0.6 and abs(poly.normal.z) < 0.5:
+            grown.add(poly.index)
+    for _ in range(4):
+        edge = set()
+        for i in grown:
+            for e in bm.faces[i].edges:
+                for f in e.link_faces:
+                    if f.index in grown:
+                        continue
+                    poly = mesh.polygons[f.index]
+                    y, x = texel(poly)
+                    r, g, b = texels[y, x]
+                    height = (poly.center.z - lo.z) / (hi.z - lo.z)
+                    if not painted[y, x] and max(r, g, b) - min(r, g, b) < 0.08 and (r + g + b) / 3 < 0.6 \
+                            and height > 0.5 and abs(poly.normal.z) < 0.85:
+                        edge.add(f.index)
+        if not edge:
+            break
+        grown |= edge
+    bm.free()
+    # Not roof racks and rails: loose parts that sit wholly on top of the roof
+    for faces, plo, phi in pieces(obj):
+        if plo.z > lo.z + (hi.z - lo.z) * 0.85:
+            grown -= set(faces)
+    glass_faces = grown
+    area = Image.new('L', (w, h), 0)
+    draw = ImageDraw.Draw(area)
+    uv = obj.data.uv_layers[0].data
+    for poly in obj.data.polygons:
+        if poly.index in glass_faces:
+            draw.polygon([(uv[i].uv[0] * w, (1 - uv[i].uv[1]) * h) for i in poly.loop_indices], fill=255)
+    area = np.asarray(area.filter(ImageFilter.MaxFilter(5))) > 0
+    tinted = area & ~painted
+    tint = np.median(texels[tinted], axis=0) if tinted.any() else np.array([0.06, 0.07, 0.08])
+    tint = np.minimum(tint, 0.12)   # always a dark tint
+    GLASS_TINT[car['id']] = tint
+    # One even tint over the whole window (the game adds live reflections on top)
+    fixed = area & painted
+    texels[area] = tint
+    painted[area] = False
+    base = Image.fromarray((np.clip(texels, 0, 1) * 255).astype(np.uint8))
+    if w != min(w, BASE_SIZE):
+        base = base.resize((BASE_SIZE, BASE_SIZE), Image.LANCZOS)
+    base.save(os.path.join(out, car['id'] + '_basecolor.jpg'), quality=90)
+    m = Image.fromarray((painted * 255).astype(np.uint8)).resize((MASK_SIZE, MASK_SIZE), Image.BOX)
+    m.convert('RGB').save(os.path.join(out, car['id'] + '_mask.png'))
+    # Glass is flat and glossy: no bumps from the normal map, no matte patches from roughness
+    # (both showed as smudges on the windows)
+    for suffix, value in (('_normal.jpg', (128, 128, 255)), ('_rough.jpg', (20, 20, 20))):
+        path = os.path.join(out, car['id'] + suffix)
+        if not os.path.exists(path):
+            continue
+        img = Image.open(path).convert('RGB')
+        a = np.asarray(img).copy()
+        hole = np.asarray(Image.fromarray((area * 255).astype(np.uint8)).resize(img.size, Image.BOX)) / 255.0
+        a = (a * (1 - hole[..., None]) + np.array(value) * hole[..., None]).astype(np.uint8)
+        Image.fromarray(a).save(path, quality=92 if suffix == '_normal.jpg' else 90)
+    return int(fixed.sum())
+
+
+def flatten_glass(obj, car, tint_max=0.13):
+    """Irons the window panes themselves: Meshy's glass surfaces are wavy, and a glossy wave
+    reflects the sky as grey smudges. Points that only touch window faces (dark even tint, not
+    paint, upper body) are relaxed; the frames stay where they are."""
+    texels, painted = TEXELS[car['id']]
+    tint = GLASS_TINT.get(car['id'])
+    h, w = texels.shape[:2]
+    mesh = obj.data
+    uv = mesh.uv_layers[0].data
+    lo, hi = bounds([v.co for v in mesh.vertices])
+    glass = set()
+    for poly in mesh.polygons:
+        u = sum(uv[i].uv[0] for i in poly.loop_indices) / poly.loop_total
+        v = sum(uv[i].uv[1] for i in poly.loop_indices) / poly.loop_total
+        y, x = min(h - 1, max(0, int((1 - v) * h))), min(w - 1, max(0, int(u * w)))
+        r, g, b = texels[y, x]
+        if tint is not None and not painted[y, x] and np.abs(texels[y, x] - tint).max() < 0.004 \
+                and (poly.center.z - lo.z) / (hi.z - lo.z) > 0.45:
+            glass.add(poly.index)
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    inner = [v for v in bm.verts if v.link_faces and all(f.index in glass for f in v.link_faces)]
+    for _ in range(12):
+        bmesh.ops.smooth_vert(bm, verts=inner, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+    return len(glass), len(inner)
 
 
 def tris(o):
@@ -384,26 +671,55 @@ def convert(car, src, out):
 
     # Wheel: tyre piece -> "tire", the rest -> "rim"; centered on its axle
     keep.data.transform(Matrix.Translation(-fl_center))
+    # The tyre is the rubber ring: Meshy's smart topology keeps it a piece of its own, which
+    # never reaches in towards the hub. Taking faces by distance from the axle cut through the
+    # rubber and left a saw edge of tyre faces painted as metal on the rim.
     tyre_faces = set()
     bm = bmesh.new()
     bm.from_mesh(keep.data)
     bm.faces.ensure_lookup_table()
-    # The tyre is the outermost ring: faces far from the axle
-    for f in bm.faces:
-        c = f.calc_center_median()
-        if math.hypot(c.x, c.z) > fl_radius * 0.78:
-            tyre_faces.add(f.index)
+    for faces, lo, hi in pieces(keep):
+        inner = min(math.hypot(v.co.x, v.co.z) for i in faces for v in bm.faces[i].verts)
+        if inner > fl_radius * 0.55:
+            tyre_faces |= set(faces)
+    texels = TEXELS[car['id']][0]
+    th, tw = texels.shape[:2]
+    uv = keep.data.uv_layers[0].data
+    if not tyre_faces:
+        # Welded wheel: dark rubber faces out from the rim's edge
+        for f in bm.faces:
+            c = f.calc_center_median()
+            loops = keep.data.polygons[f.index].loop_indices
+            u = sum(uv[i].uv[0] for i in loops) / len(loops)
+            v = sum(uv[i].uv[1] for i in loops) / len(loops)
+            r, g, b = texels[min(th - 1, int((1 - v) * th)), min(tw - 1, int(u * tw))]
+            if math.hypot(c.x, c.z) > fl_radius * 0.7 and (r + g + b) / 3 < 0.2:
+                tyre_faces.add(f.index)
     bm.free()
+    print(f"  {car['id']}: tyre {len(tyre_faces)} faces")
     tire = split(keep, tyre_faces, 'tire')
     keep.name = 'rim'
     keep.data.name = 'rim'
-    light = taillights(obj)
-    if not os.environ.get("NOIRON"):
-        iron(obj)
+    # Lamps are picked on the original faces (picked after subdividing they came out jagged)
     glass_faces, head_faces = classify_faces(obj, car)
+    cleaned = clean_glass(obj, car, glass_faces, out)
+    print(f"  {car['id']}: {len(glass_faces)} window faces, {cleaned} paint texels removed from glass")
     extra = []
     if head_faces:
         extra.append(split(obj, head_faces, 'headlight'))
+    if not os.environ.get('NOREFINE'):
+        sharp, kept = refine(obj, crease_angle=float(os.environ.get('CREASE', 38)), small_faces=60, small_size=0.35)
+        for part in extra:
+            refine(part)
+        # Tyres: tread blocks held at their corners became a saw edge; the whole tyre is smoothed
+        refine(tire, crease_angle=50, hold=False)
+        refine(keep, crease_angle=50)
+        print(f"  {car['id']}: refined, {sharp} creased edges, {kept} small faces kept as they were")
+    panes, points = flatten_glass(obj, car)
+    print(f"  {car['id']}: {panes} window faces ironed flat ({points} points)")
+    light = taillights(obj)
+    if not os.environ.get("NOIRON"):
+        iron(obj)
     # Windows stay in Meshy's texture (pixel for pixel): splitting them by faces gave jagged edges
     print(f"  {car['id']}: headlights {len(head_faces)} faces")
     if os.environ.get('PREVIEW_GLB'):
@@ -438,6 +754,8 @@ def convert(car, src, out):
     print(f"SPEC {car['id']}: body {tris(obj)} tris, wheel {tris(tire) + tris(keep)} tris, radius {radius:.3f}, "
           f"rear {lo.x:.3f}, height {hi.z:.3f}, width {hi.y - lo.y:.3f}, paint {paint_share:.2f}")
     print(f"SPOTS {car['id']}: [{', '.join(spots)}]")
+    # 4K texels as float arrays are big: drop each car's before the next (six ran out of memory)
+    TEXELS.pop(car['id'], None)
 
 
 if __name__ == '__main__':

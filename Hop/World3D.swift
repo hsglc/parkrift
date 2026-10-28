@@ -715,7 +715,14 @@ final class Car3D {
     private var rimMaterial: SCNMaterial?
     func setRim(_ color: UIColor) {
         if rimMaterial == nil {
-            let material = CarModels.rim.copy() as! SCNMaterial
+            // From the car's own rim material (it may carry the model's normal map)
+            var source: SCNMaterial?
+            for spinner in spinNodes where source == nil {
+                spinner.enumerateHierarchy { node, stop in
+                    if node.name == "rim", let found = node.geometry?.firstMaterial { source = found; stop.pointee = true }
+                }
+            }
+            let material = (source ?? CarModels.rim).copy() as! SCNMaterial
             rimMaterial = material
             for spinner in spinNodes {
                 spinner.enumerateHierarchy { node, _ in

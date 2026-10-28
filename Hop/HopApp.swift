@@ -84,7 +84,7 @@ final class AppModel: ObservableObject {
 
     init() {
         World3D.prewarmCars()
-        CarModels.prewarmRetroTextures()
+        CarModels.prewarmRetroTextures(CarChoice.saved.model)
         PedestrianModels.preload()
         // Car models load in the background; then the garage studio is built while the menu is idle
         CarModels.preload { [weak self] in

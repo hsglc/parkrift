@@ -96,6 +96,10 @@ struct CarSpec {
     /// Texture painted by tinting: grey base with the paint areas and their mask.
     var textureBase: String? = nil
     var textureMask: String? = nil
+    /// Fine surface detail (panel lines, grilles, tyre treads) and gloss per texel, from the
+    /// 4K Meshy retexture.
+    var textureNormal: String? = nil
+    var textureRough: String? = nil
     /// Keeps its own colors (police, taxi): no paint choice.
     var fixedLivery = false
     /// Body height, for the garage camera and lights.
@@ -169,7 +173,8 @@ struct CarSpec {
                        wheelSpots: wheels, wheelRadius: radius, wheelModelSide: -1,
                        exhausts: [SCNVector3(rear - 0.02, 0.32, 0.34), SCNVector3(rear - 0.02, 0.32, -0.34)],
                        topSpeed: tuning.0, acceleration: tuning.1, steering: tuning.2, nitroPower: tuning.3, nitroFill: tuning.4,
-                       textured: true, textureBase: file + "_basecolor.jpg", textureMask: file + "_mask.png", height: height)
+                       textured: true, textureBase: file + "_basecolor.jpg", textureMask: file + "_mask.png",
+                       textureNormal: file + "_normal.jpg", textureRough: file + "_rough.jpg", height: height)
     }
 
     /// A free low poly car from Polyfork, converted with tools/convert_polyfork_cars.py: one body
@@ -210,6 +215,19 @@ enum CarModels {
         defer { loadLock.unlock() }
         if let cached = wheels[id] { return cached }
         let node = load(CarSpec.of(id).file + "_wheel")
+        if let node = node, let normalName = CarSpec.of(id).textureNormal {
+            // Clean solid rubber and metal (no texture colours that could bleed), with the
+            // retexture's normal map for tread blocks, sidewall lettering and spoke edges
+            let detailed: [String: SCNMaterial] = ["tire": tire.copy() as! SCNMaterial, "rim": rim.copy() as! SCNMaterial]
+            for material in detailed.values {
+                material.normal.contents = image(normalName, keep: false)
+                material.normal.mipFilter = .linear
+            }
+            node.enumerateHierarchy { child, _ in
+                guard let name = child.name, let material = detailed[name], let geometry = child.geometry else { return }
+                geometry.materials = [material]
+            }
+        }
         wheels[id] = node
         return node
     }
@@ -315,40 +333,42 @@ enum CarModels {
 
     private static let textureLock = NSLock()
     private static var images: [String: UIImage] = [:]
-
-    /// Paint for the textured cars is applied on the GPU: the base texture is multiplied by the
-    /// paint color where the mask is white. Changing the paint only changes a shader value, so no
-    /// image is drawn and nothing new is uploaded (each first paint or car used to draw a
-    /// 1024 px image on the main thread and upload it, which made the garage stutter).
-    private static let paintShader = """
-    #pragma arguments
-    texture2d<float> paintMask;
-    float3 paintColor;
-    #pragma body
-    constexpr sampler maskSampler(filter::linear, mip_filter::none, address::repeat);
-    float paintAmount = paintMask.sample(maskSampler, _surface.diffuseTexcoord).r;
-    _surface.diffuse.rgb = mix(_surface.diffuse.rgb, _surface.diffuse.rgb * paintColor, paintAmount);
-    """
+    private static var recent: [String] = []
+    /// 4K car textures are big (a decoded 4096 px image is 64 MB): only the most recently used
+    /// ones stay cached; materials already made keep their own reference.
+    private static let cacheLimit = 6
 
     /// The base and mask images of every textured car, decoded once (thread-safe).
-    private static func image(_ name: String) -> UIImage? {
+    private static func image(_ name: String, keep: Bool = true) -> UIImage? {
         textureLock.lock()
         defer { textureLock.unlock() }
-        if let cached = images[name] { return cached }
+        if let cached = images[name] {
+            recent.removeAll { $0 == name }
+            recent.append(name)
+            return cached
+        }
         guard let loaded = UIImage(named: name) else { return nil }
         // Decode now (UIImage decodes lazily, on first draw)
         let decoded = loaded.preparingForDisplay() ?? loaded
+        guard keep else { return decoded }
         images[name] = decoded
+        recent.append(name)
+        while recent.count > cacheLimit {
+            images[recent.removeFirst()] = nil
+        }
         return decoded
     }
 
-    /// Decodes the textured cars' images on a background thread at launch.
-    static func prewarmRetroTextures() {
-        let specs = CarSpec.all.filter { $0.textureBase != nil }
+    /// Decodes the player's car images on a background thread at launch (the others load when
+    /// they are first shown).
+    static func prewarmRetroTextures(_ id: CarModelID? = nil) {
+        let specs = CarSpec.all.filter { $0.textureBase != nil && $0.id == (id ?? CarChoice.saved.model) }
         DispatchQueue.global(qos: .utility).async {
             for spec in specs {
                 if let base = spec.textureBase { _ = image(base) }
                 if let mask = spec.textureMask { _ = image(mask) }
+                if let normal = spec.textureNormal { _ = image(normal) }
+                if let rough = spec.textureRough { _ = image(rough) }
             }
         }
     }
@@ -368,6 +388,16 @@ enum CarModels {
         // Glossy car paint with a clear coat (glass, chrome and trim are their own meshes now)
         material.metalness.contents = NSNumber(value: 0.2)
         material.roughness.contents = NSNumber(value: 0.3)
+        // 4K retexture: per-texel gloss (rubber, trim and lamps stay matte, paint glossy) and a
+        // normal map for the small details the mesh does not model
+        if let roughName = spec.textureRough, let rough = image(roughName) {
+            material.roughness.contents = rough
+            material.roughness.mipFilter = .linear
+        }
+        if let normalName = spec.textureNormal, let normal = image(normalName) {
+            material.normal.contents = normal
+            material.normal.mipFilter = .linear
+        }
         material.clearCoat.contents = NSNumber(value: 1.0)
         material.clearCoatRoughness.contents = NSNumber(value: 0.05)
         material.shaderModifiers = [.surface: paintShader]
