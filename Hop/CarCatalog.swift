@@ -358,10 +358,11 @@ enum CarModels {
         material.diffuse.contents = image(base)
         // Palette cells: no mipmaps, so far-away faces do not blend with the next colour
         material.diffuse.mipFilter = .none
-        material.metalness.contents = NSNumber(value: 0.15)
-        material.roughness.contents = NSNumber(value: 0.38)
-        material.clearCoat.contents = NSNumber(value: 0.6)
-        material.clearCoatRoughness.contents = NSNumber(value: 0.12)
+        // Glossy car paint with a clear coat (glass, chrome and trim are their own meshes now)
+        material.metalness.contents = NSNumber(value: 0.2)
+        material.roughness.contents = NSNumber(value: 0.3)
+        material.clearCoat.contents = NSNumber(value: 1.0)
+        material.clearCoatRoughness.contents = NSNumber(value: 0.05)
         material.shaderModifiers = [.surface: paintShader]
         // Generated bodies have a few open shells (mirrors, spoilers): draw both sides
         material.isDoubleSided = true

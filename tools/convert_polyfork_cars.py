@@ -13,7 +13,7 @@ and prints the Swift spec numbers (wheel spots, radius, rear, height).
 The car's own colour knobs (from its params.json) say which colours are the bodywork: those are
 painted (the upper tone fully, a lower tone as a darker shade of the paint).
 
-Usage: python3 convert_polyfork_cars.py <folder with <asset>.glb and <asset>-params.json> <Hop/Models>
+Usage: python3 convert_polyfork_cars.py <folder with <asset>.glb and <asset>-params.json> <Hop/Models> [<refined GLB folder>]
 """
 import sys, os, json
 import numpy as np
@@ -22,6 +22,7 @@ from pxr import Usd, UsdGeom, UsdShade, Sdf, Gf, Vt, UsdUtils
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from convert_polyfork_people import Character
+from polyfork_car_classes import classify, snap
 
 CELL = 16
 COLUMNS = 16
@@ -73,13 +74,24 @@ def load_car(path):
         for prim in car.g.meshes[node.mesh].primitives:
             pos = car.acc(prim.attributes.POSITION)
             col = car.acc(prim.attributes.COLOR_0)[:, :3]
+            nor = car.acc(prim.attributes.NORMAL) if prim.attributes.NORMAL is not None else None
             p4 = np.c_[pos, np.ones(len(pos))]
-            out = (world(ni) @ p4.T).T[:, :3]
+            m = world(ni)
+            out = (m @ p4.T).T[:, :3]
             idx = car.acc(prim.indices).astype(int).reshape(-1) if prim.indices is not None else np.arange(len(pos))
             tris = out[idx].reshape(-1, 3, 3)
+            if nor is not None:
+                rot = np.linalg.inv(m[:3, :3]).T
+                nw = (rot @ nor.T).T
+                nw /= np.maximum(np.linalg.norm(nw, axis=1, keepdims=True), 1e-12)
+                norms = nw[idx].reshape(-1, 3, 3)
+            else:
+                f = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+                f /= np.maximum(np.linalg.norm(f, axis=1, keepdims=True), 1e-12)
+                norms = np.repeat(f[:, None, :], 3, axis=1)
             cols = col[idx].reshape(-1, 3, 3).mean(axis=1)
-            t0, c0 = parts.get(name, (np.zeros((0, 3, 3)), np.zeros((0, 3))))
-            parts[name] = (np.concatenate([t0, tris]), np.concatenate([c0, cols]))
+            t0, n0, c0 = parts.get(name, (np.zeros((0, 3, 3)), np.zeros((0, 3, 3)), np.zeros((0, 3))))
+            parts[name] = (np.concatenate([t0, tris]), np.concatenate([n0, norms]), np.concatenate([c0, cols]))
     return parts
 
 
@@ -98,15 +110,17 @@ def stage_for(path, root_name):
     return stage, usdc, mat
 
 
-def add_mesh(stage, root_name, name, tris, mat, uvs=None):
-    n = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
-    n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+def add_mesh(stage, root_name, name, tris, mat, uvs=None, normals=None):
+    if normals is None:
+        n = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+        n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+        normals = np.repeat(n[:, None, :], 3, axis=1)
     pts = tris.reshape(-1, 3)
     mesh = UsdGeom.Mesh.Define(stage, f'/{root_name}/{name}')
     mesh.CreatePointsAttr(Vt.Vec3fArray([Gf.Vec3f(*map(float, p)) for p in pts]))
     mesh.CreateFaceVertexCountsAttr(Vt.IntArray([3] * len(tris)))
     mesh.CreateFaceVertexIndicesAttr(Vt.IntArray(list(range(len(pts)))))
-    mesh.CreateNormalsAttr(Vt.Vec3fArray([Gf.Vec3f(*map(float, v)) for v in np.repeat(n, 3, axis=0)]))
+    mesh.CreateNormalsAttr(Vt.Vec3fArray([Gf.Vec3f(*map(float, v)) for v in normals.reshape(-1, 3)]))
     mesh.SetNormalsInterpolation(UsdGeom.Tokens.vertex)
     mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
     if uvs is not None:
@@ -121,43 +135,52 @@ def finish(stage, usdc, path):
     os.remove(usdc)
 
 
-def convert(spec, src, out):
-    parts = load_car(os.path.join(src, spec['asset'] + '.glb'))
+def convert(spec, src, out, refined=None):
+    """`refined`: folder with the Blender-refined GLBs (bevelled, smooth normals); colours are
+    snapped back to the original model's colours."""
+    original = load_car(os.path.join(src, spec['asset'] + '.glb'))
+    parts = load_car(os.path.join(refined or src, spec['asset'] + '.glb'))
+    palette255 = np.unique(np.round(srgb255(np.concatenate([c for _, _, c in original.values()]))), axis=0)
     params = json.load(open(os.path.join(src, spec['asset'] + '-params.json')))['params']
     knobs = {k: v['default'] for k, v in params.items() if v['type'] == 'color'}
 
     # Asset frame (+Z forward) -> game frame (+X forward, Z to the right): x' = z, z' = -x
     def turn(t):
         return np.stack([t[..., 2], t[..., 1], -t[..., 0]], axis=-1)
-    parts = {k: (turn(t), c) for k, (t, c) in parts.items()}
-    every = np.concatenate([t.reshape(-1, 3) for t, _ in parts.values()])
+    parts = {k: (turn(t), turn(n), c) for k, (t, n, c) in parts.items()}
+    every = np.concatenate([t.reshape(-1, 3) for t, _, _ in parts.values()])
     lo, hi = every.min(axis=0), every.max(axis=0)
     scale = spec['length'] / (hi[0] - lo[0])
     shift = np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
-    parts = {k: ((t - shift) * scale, c) for k, (t, c) in parts.items()}
+    parts = {k: ((t - shift) * scale, n, c) for k, (t, n, c) in parts.items()}
     length = spec['length']
 
-    # Body colours: paint, recolour, lamps
-    tris, cols = parts['body']
-    c255 = srgb255(cols)
+    # Body surfaces: paint (palette + mask), glass, chrome, dark trim, lamps, the rest (palette)
+    tris, norms, cols = parts['body']
+    c255 = snap(srgb255(cols), palette255)
     centre_x = tris.mean(axis=1)[:, 0]
-    base = c255.copy()
-    painted = np.zeros(len(tris), dtype=bool)
-    for knob, grey in spec['paint'].items():
-        hit = near(c255, knobs[knob])
-        base[hit] = grey * 255
-        painted |= hit
-    for knob, colour in spec['recolor'].items():
-        base[near(c255, knobs[knob])] = hex255(colour)
-    head = np.zeros(len(tris), dtype=bool)
-    for h in HEADLIGHT:
-        head |= near(c255, h, 6)
-    head &= centre_x > length * 0.25
-    tail = np.zeros(len(tris), dtype=bool)
-    for h in TAILLIGHT:
-        tail |= near(c255, h, 6)
-    tail &= centre_x < -length * 0.3
-    body = ~(head | tail)
+    classes, base = classify(c255, centre_x, length, knobs, spec['paint'], spec['recolor'])
+    painted = classes == 'paint'
+    head = classes == 'headlight'
+    tail = classes == 'taillight'
+    if not refined:
+        # The plain conversion: one palette mesh for everything but the lamps
+        classes = np.where(np.isin(classes, ['headlight', 'taillight']), classes, 'other').astype(object)
+        classes[painted] = 'paint'
+    separate = np.isin(classes, ['glass', 'chrome', 'dark', 'headlight', 'taillight'])
+    body = ~separate
+    if os.environ.get('PREVIEW_DIR'):
+        # Data for the before/after renders: triangles, normals, surface and colour (red paint)
+        shown = base.copy()
+        shown[painted] = base[painted] / 255 * np.array([209, 10, 15])
+        wt = np.concatenate([parts[w][0] for w in ['wheel-fl', 'wheel-fr', 'wheel-rl', 'wheel-rr']])
+        wn = np.concatenate([parts[w][1] for w in ['wheel-fl', 'wheel-fr', 'wheel-rl', 'wheel-rr']])
+        wc = snap(srgb255(np.concatenate([parts[w][2] for w in ['wheel-fl', 'wheel-fr', 'wheel-rl', 'wheel-rr']])), palette255)
+        wcls = np.where(wc.mean(axis=1) < 70, 'tire', 'rim')
+        np.savez_compressed(os.path.join(os.environ['PREVIEW_DIR'], spec['id'] + ('_after' if refined else '_before')),
+                            tris=np.concatenate([tris, wt]), normals=np.concatenate([norms, wn]),
+                            classes=np.concatenate([classes.astype(str), wcls]),
+                            colors=np.concatenate([shown, wc]) / 255)
 
     keys = sorted({(tuple(np.round(b).astype(int)), bool(p)) for b, p in zip(base[body], painted[body])})
     slot = {k: i for i, k in enumerate(keys)}
@@ -178,18 +201,19 @@ def convert(spec, src, out):
 
     path = os.path.join(out, spec['id'] + '_body.usdz')
     stage, usdc, mat = stage_for(path, 'car')
-    add_mesh(stage, 'car', 'textured', tris[body], mat, uvs)
-    if head.any():
-        add_mesh(stage, 'car', 'headlight', tris[head], mat)
-    if tail.any():
-        add_mesh(stage, 'car', 'taillight', tris[tail], mat)
+    add_mesh(stage, 'car', 'textured', tris[body], mat, uvs, norms[body])
+    for cls, mesh_name in [('glass', 'glass'), ('chrome', 'chrome'), ('dark', 'darkplastic'),
+                           ('headlight', 'headlight'), ('taillight', 'taillight')]:
+        pick = classes == cls
+        if pick.any():
+            add_mesh(stage, 'car', mesh_name, tris[pick], mat, None, norms[pick])
     finish(stage, usdc, path)
 
     # Wheels: centres and radius; the front-left one (z < 0) is the model
     spots = []
     names = ['wheel-fl', 'wheel-fr', 'wheel-rl', 'wheel-rr']
     for name in names:
-        t, _ = parts[name]
+        t, _, _ = parts[name]
         p = t.reshape(-1, 3)
         centre = (p.min(axis=0) + p.max(axis=0)) / 2
         radius = (p[:, 1].max() - p[:, 1].min()) / 2
@@ -197,26 +221,27 @@ def convert(spec, src, out):
     index = min((i for i, s in enumerate(spots) if s[2]), key=lambda i: spots[i][0][2])
     front_left = spots[index]
     name = names[index]
-    t, c = parts[name]
+    t, wn, c = parts[name]
     t = t - front_left[0]
     lum = srgb255(c).mean(axis=1)
     dark = lum < 70
     path = os.path.join(out, spec['id'] + '_wheel.usdz')
     stage, usdc, mat = stage_for(path, 'wheel')
-    add_mesh(stage, 'wheel', 'tire', t[dark], mat)
+    add_mesh(stage, 'wheel', 'tire', t[dark], mat, None, wn[dark])
     if (~dark).any():
-        add_mesh(stage, 'wheel', 'rim', t[~dark], mat)
+        add_mesh(stage, 'wheel', 'rim', t[~dark], mat, None, wn[~dark])
     finish(stage, usdc, path)
 
     radius = float(np.mean([s[1] for s in spots]))
     spots.sort(key=lambda s: (-s[0][0], s[0][2]))
     wheel_text = ', '.join(f'({s[0][0]:.3f}, {s[0][1]:.3f}, {s[0][2]:.3f}, {"true" if s[2] else "false"})' for s in spots)
-    every = np.concatenate([t.reshape(-1, 3) for t, _ in parts.values()])
-    print(f"{spec['id']}: tris {len(tris)} head {head.sum()} tail {tail.sum()} painted {painted.sum()} colours {len(keys)}")
+    every = np.concatenate([t.reshape(-1, 3) for t, _, _ in parts.values()])
+    counts = {k: int((classes == k).sum()) for k in ['paint', 'glass', 'chrome', 'dark', 'headlight', 'taillight', 'other']}
+    print(f"{spec['id']}: tris {len(tris)} {counts} colours {len(keys)}")
     print(f"    wheels: [{wheel_text}],")
     print(f"    radius: {radius:.3f}, rear: {every[:, 0].min():.3f}, height: {every[:, 1].max():.3f}")
 
 
 if __name__ == '__main__':
     for spec in CARS:
-        convert(spec, sys.argv[1], sys.argv[2])
+        convert(spec, sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
