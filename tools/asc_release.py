@@ -274,8 +274,16 @@ def age_rating(app_id):
 
 def screenshots(vid):
     folder = os.environ.get('SHOTS', '')
-    files = sorted(f for f in os.listdir(folder) if f.endswith('.png')) if folder and os.path.isdir(folder) else []
-    if not files:
+
+    def shots_for(locale):
+        # One set per language (SHOTS/<locale>/), else the shared folder
+        for place in (os.path.join(folder, locale), folder):
+            if place and os.path.isdir(place):
+                found = sorted(os.path.join(place, f) for f in os.listdir(place) if f.endswith('.png'))
+                if found:
+                    return found
+        return []
+    if not shots_for('en-US'):
         left('no screenshots were made'); return
     locs = call('GET', f'/v1/appStoreVersions/{vid}/appStoreVersionLocalizations') or {'data': []}
     for loc in locs['data']:
@@ -297,8 +305,9 @@ def screenshots(vid):
         if not target:
             left(f"screenshot set for {loc['attributes']['locale']} failed"); continue
         uploaded = 0
-        for name in files[:10]:
-            path = os.path.join(folder, name)
+        files = shots_for(loc['attributes']['locale'])
+        for path in files[:10]:
+            name = os.path.basename(path)
             data = open(path, 'rb').read()
             res = call('POST', '/v1/appScreenshots', {'data': {'type': 'appScreenshots',
                 'attributes': {'fileName': name, 'fileSize': len(data)},

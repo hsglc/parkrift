@@ -63,18 +63,22 @@ jobs:
           xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 || true
           xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
           mkdir -p raw shots
+          # Each store language gets the game in that language
+          for LANG in en tr es; do
+          mkdir -p "raw/$LANG"
+          ARGS="-AppleLanguages ($LANG) -AppleLocale $LANG"
           shoot() {
             local label=$1; shift
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
             DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data 2>/dev/null || echo "")
             [ -n "$DATA" ] && rm -f "$DATA/Documents/bench.json"
-            xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark "$@" > "raw/$label.log" 2>&1 &
+            xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark "$@" $ARGS > "raw/$LANG/$label.log" 2>&1 &
             local pid=$!
             DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
             for i in $(seq 1 90); do [ -f "$DATA/Documents/bench.json" ] && break; sleep 1; done
-            for f in menu garage garage3d shot-hud shot-mid shot-finish; do
-              cp "$DATA/Documents/$f.png" "raw/$label-$f.png" 2>/dev/null || true
+            for f in shot-hud shot-finish; do
+              cp "$DATA/Documents/$f.png" "raw/$LANG/$label-$f.png" 2>/dev/null || true
             done
             kill $pid 2>/dev/null || true
           }
@@ -84,39 +88,20 @@ jobs:
             local label=$1 wait=$2; shift 2
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
-            xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" > /dev/null 2>&1
+            xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" $ARGS > /dev/null 2>&1
             sleep "$wait"
-            xcrun simctl io "$UDID" screenshot --mask=ignored "raw/$label.png" || true
+            xcrun simctl io "$UDID" screenshot --mask=ignored "raw/$LANG/$label.png" || true
           }
           shoot city
           shoot finish -finishtest
           still home 9 -staymenu
           still garage 12 -staygarage
           still levels 9 -staylevels
+          done
           pip3 install --break-system-packages pillow pyjwt cryptography requests >/dev/null 2>&1 || pip3 install pillow pyjwt cryptography requests
-          python3 - <<'PY'
-          import os
-          from PIL import Image
-          order = ['home', 'city-shot-hud', 'garage', 'finish-shot-finish', 'levels']
-          n = 0
-          for name in order:
-              path = f'raw/{name}.png'
-              if not os.path.exists(path):
-                  print('missing', name); continue
-              im = Image.open(path).convert('RGB')
-              if im.height > im.width:
-                  im = im.rotate(90, expand=True)
-              # 6.9-inch landscape: 2868 x 1320, filled edge to edge
-              target = (2868, 1320)
-              scale = max(target[0] / im.width, target[1] / im.height)
-              im = im.resize((round(im.width * scale), round(im.height * scale)), Image.LANCZOS)
-              left = (im.width - target[0]) // 2
-              top = (im.height - target[1]) // 2
-              im = im.crop((left, top, left + target[0], top + target[1]))
-              n += 1
-              im.save(f'shots/{n:02d}-{name}.png')
-              print('shot', n, name)
-          PY
+          # Real game screens framed with a short caption per language (tools/store_shots.py)
+          python3 tools/store_shots.py raw shots 2868 1320
+          ls -R shots | head -30
 
       - uses: actions/upload-artifact@v4
         with:
