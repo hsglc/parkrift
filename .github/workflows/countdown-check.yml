@@ -47,10 +47,9 @@ jobs:
           mkdir -p shots
           rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
           xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playpark -slowcountdown -AppleLanguages "(tr)" > shots/console.log 2>&1 &
-          sleep 2
-          for i in $(seq -w 1 30); do
-            xcrun simctl io "$UDID" screenshot --mask=ignored "shots/t$i.png" > /dev/null 2>&1 || true
-          done
+          sleep 45
+          DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
+          cp "$DATA"/Documents/countdown-*.png shots/ 2>/dev/null || true
           sleep 5
           cp ~/Library/Logs/DiagnosticReports/Hop* shots/ 2>/dev/null || true
           ls shots | wc -l

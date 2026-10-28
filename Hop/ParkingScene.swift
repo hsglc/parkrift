@@ -1045,6 +1045,13 @@ final class ParkingScene: SKScene {
     /// shrinks away; the band wipes across, a shock ring spreads and the lamp that just lit flares.
     /// GO lights every lamp green, flashes, throws speed streaks and lifts away.
     private func popCountdown(go: Bool) {
+        if benchmark {
+            // Test runs: save the countdown layer as an image at a few moments of each stage
+            let name = go ? "go" : (countdownLabel.text ?? "n")
+            for delay in [0.08, 0.3, 0.7] {
+                run(.wait(forDuration: delay)) { [weak self] in self?.saveCountdownImage("countdown-\(name)-\(Int(delay * 100))") }
+            }
+        }
         countdownNode.isHidden = false
         if countdownNode.alpha < 0.99 || countdownNode.action(forKey: "leave") != nil {
             countdownNode.removeAllActions()
@@ -1130,6 +1137,19 @@ final class ParkingScene: SKScene {
             leave.timingMode = .easeIn
             countdownNode.run(.sequence([pulse, .wait(forDuration: 0.45), leave, .hide()]), withKey: "leave")
         }
+    }
+
+    private func saveCountdownImage(_ name: String) {
+        guard let view = view, let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let backdrop = SKSpriteNode(color: UIColor(red: 0.2, green: 0.3, blue: 0.25, alpha: 1), size: size)
+        backdrop.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        let holder = SKNode()
+        holder.addChild(backdrop)
+        let copy = countdownNode.copy() as! SKNode
+        holder.addChild(copy)
+        guard let texture = view.texture(from: holder) else { return }
+        let image = UIImage(cgImage: texture.cgImage())
+        try? image.pngData()?.write(to: folder.appendingPathComponent(name + ".png"))
     }
 
     /// The bar fills smoothly over the whole countdown.
