@@ -12,6 +12,9 @@ on:
       phone:
         description: App Review contact phone (when the REVIEW_PHONE secret is not set)
         default: ""
+      shots:
+        description: Take new screenshots (0 = keep the ones already uploaded)
+        default: "1"
   push:
     branches: [release]
 
@@ -34,6 +37,7 @@ jobs:
           sudo xcode-select -s "$XCODE"
 
       - name: Build for simulator
+        if: inputs.shots != '0'
         run: |
           brew install xcodegen
           xcodegen generate
@@ -45,6 +49,7 @@ jobs:
             }
 
       - name: Screenshots (6.9-inch iPhone)
+        if: inputs.shots != '0'
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
@@ -104,6 +109,7 @@ jobs:
           ls -R shots | head -30
 
       - uses: actions/upload-artifact@v4
+        if: inputs.shots != '0'
         with:
           name: screenshots
           path: shots
