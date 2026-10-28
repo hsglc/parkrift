@@ -25,10 +25,6 @@ SHOTS = [
         'en-US': ('GARAGE', '6 original cars', 'Paint, rims and upgrades'),
         'tr': ('GARAJ', '6 özgün araba', 'Boya, jant ve geliştirmeler'),
         'es-ES': ('GARAJE', '6 coches originales', 'Pintura, llantas y mejoras')}),
-    ('finish-shot-finish', {
-        'en-US': ('CITY RACES', 'Race through traffic', 'Weave through the city to the finish'),
-        'tr': ('ŞEHİR YARIŞLARI', 'Trafikte yarış', 'Şehrin içinden bitiş çizgisine'),
-        'es-ES': ('CARRERAS URBANAS', 'Corre entre el tráfico', 'Cruza la ciudad hasta la meta')}),
     ('levels', {
         'en-US': ('PARKING CAREER', '50 levels, each one harder', 'Time limits, tight bays and patrol cars'),
         'tr': ('PARK KARİYERİ', 'Her biri daha zor 50 bölüm', 'Süre sınırı, dar park yerleri, devriye araçlar'),
