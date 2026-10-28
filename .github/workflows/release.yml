@@ -123,7 +123,9 @@ jobs:
           echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/key.p8" >> "$GITHUB_ENV"
 
       - name: App Store Connect
-        run: SHOTS=shots python3 tools/asc_release.py
+        run: |
+          python3 -c 'import jwt, requests, cryptography' 2>/dev/null || pip3 install --break-system-packages pyjwt cryptography requests >/dev/null 2>&1 || pip3 install pyjwt cryptography requests
+          SHOTS=shots python3 tools/asc_release.py
 
       - name: Remove key
         if: always()
