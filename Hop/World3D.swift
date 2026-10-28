@@ -1712,6 +1712,9 @@ final class World3D {
     }()
 
     /// The police car of a chase, added to the level (its materials are copied per chase).
+    /// A node that lives as long as the level (patrol cars of a parking challenge).
+    func addLevelNode(_ node: SCNNode) { levelRoot.addChildNode(node) }
+
     func makePoliceNode() -> SCNNode {
         let node: SCNNode
         if let template = World3D.policeTemplate {
@@ -1744,7 +1747,8 @@ final class World3D {
             buildCity(city, world: level.world)
             levelRoot.addChildNode(CityDecor.build(level: level, city: city))
         }
-        setWeather(level.city != nil ? level.weather : .day)
+        // City rounds have their weather; a parking lot can be wet (a harder level)
+        setWeather(level.city != nil || level.weather == .rain ? level.weather : .day)
 
         if level.race {
             buildFinish(level.spots[0])

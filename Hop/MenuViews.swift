@@ -1027,6 +1027,16 @@ struct LoadingView: View {
                 }
                 .font(.system(size: 14, weight: .black, design: .rounded))
                 .foregroundStyle(Palette.gold)
+                if !Levels.isCity(level) {
+                    // How hard this parking level is (Challenge.swift)
+                    Text(Strings.levelTier(Strings.tierNames[min(4, max(0, level) / 10)]))
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .tracking(1)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)

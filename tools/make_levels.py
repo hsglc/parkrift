@@ -1,5 +1,6 @@
 """Generates parking levels 11-50 (Hop/LevelsMore.swift) from six layouts with a rising
-difficulty, and checks each one before writing it:
+difficulty (bays get tighter, more cars and cones, more maze walls; the time and crash limits,
+reverse parking, wet ground and patrol cars come from Hop/Challenge.swift), and checks each one before writing it:
   - both bays fit the car with room to spare and touch nothing,
   - both starts are free,
   - a car-sized disc can drive from each start to its bay (grid search over the free space).
@@ -175,7 +176,7 @@ def row_bays(lv, rng, d):
     y = 430 if top else 70
     angle = 90
     pitch = 60 - 6 * d
-    width = 44 - 6 * d
+    width = 44 - 10 * d
     xs = [260 + i * pitch for i in range(int((900 - 260) / pitch))]
     free_idx = sorted(rng.sample(range(2, len(xs) - 2), 2))
     if free_idx[1] - free_idx[0] < 2:
@@ -185,7 +186,7 @@ def row_bays(lv, rng, d):
             continue
         if rng.random() < 0.85 + 0.15 * d:
             lv.car(x, y + (-2 if top else 2), angle, rng.randint(1, 5))
-    lv.spots = [(xs[i], y, 72 - 6 * d, width, angle) for i in free_idx]
+    lv.spots = [(xs[i], y, 72 - 10 * d, width, angle) for i in free_idx]
     lv.starts = [(100, 250 + (60 if not top else -60), 0), (100, 250 + (120 if not top else -120), 0)]
     scatter_cones(lv, rng, int(2 + 6 * d), 300, 900, 200, 300)
     # A second parked row across the lane when harder
@@ -202,7 +203,7 @@ def parallel(lv, rng, d):
     curb = 15 if bottom else H - 15
     y = 52 if bottom else H - 52
     lv.wall(500, curb, 1000, 30)
-    gap = 76 - 14 * d
+    gap = 76 - 17 * d
     x = 120
     spots = []
     while x < 940:
@@ -235,7 +236,7 @@ def angled(lv, rng, d):
     for i, x in enumerate(xs):
         if i not in free_idx:
             lv.car(x, y, deg, rng.randint(1, 5))
-    lv.spots = [(xs[i], y, 78 - 8 * d, 42 - 4 * d, deg) for i in free_idx]
+    lv.spots = [(xs[i], y, 78 - 12 * d, 42 - 8 * d, deg) for i in free_idx]
     lv.starts = [(100, 250 + (-40 if top else 40), 0), (100, 250 + (-110 if top else 110), 0)]
     scatter_cones(lv, rng, int(2 + 5 * d), 300, 880, 220, 280)
 
@@ -249,7 +250,7 @@ def middle_slot(lv, rng, d):
     for i, x in enumerate(xs):
         if i not in free_idx:
             lv.car(x, y, 0, rng.randint(1, 5))
-    lv.spots = [(xs[i], y, min(72 - 10 * d, 2 * pitch - 44 - 6), 40 - 6 * d, 0) for i in free_idx]
+    lv.spots = [(xs[i], y, min(72 - 12 * d, 2 * pitch - 44 - 6), 40 - 8 * d, 0) for i in free_idx]
     lv.starts = [(100, 420, 0), (100, 80, 0)]
     for x in range(200, 900, 140):
         if rng.random() < 0.3 + 0.4 * d:
@@ -261,7 +262,7 @@ def middle_slot(lv, rng, d):
 
 def maze(lv, rng, d):
     """Walls with alternating gaps; the bays at the far end."""
-    walls = 2 + int(2 * d)
+    walls = 2 + int(3 * d)
     xs = [220 + i * (560 / walls) for i in range(walls)]
     for i, x in enumerate(xs):
         gap = 150 - 50 * d
@@ -269,7 +270,7 @@ def maze(lv, rng, d):
             lv.wall(x, (H - gap) / 2, 20, H - gap)
         else:
             lv.wall(x, H - (H - gap) / 2, 20, H - gap)
-    lv.spots = [(890, 140, 76 - 8 * d, 44 - 4 * d, 90), (890, 360, 76 - 8 * d, 44 - 4 * d, 90)]
+    lv.spots = [(890, 140, 76 - 14 * d, 44 - 10 * d, 90), (890, 360, 76 - 14 * d, 44 - 10 * d, 90)]
     lv.car(890, 250, 90, 2)
     lv.car(890, 30, 90, 3) if d > 0.5 else None
     lv.starts = [(90, 120, 0), (90, 380, 0)]
@@ -282,7 +283,7 @@ def pillars(lv, rng, d):
         for y in (150, 350):
             lv.wall(x + rng.uniform(-10, 10), y, 24, 24)
     deg = 60 + 20 * d
-    lv.spots = [(560, 455, 70 - 6 * d, 38 - 4 * d, 90), (820, 455, 70 - 6 * d, 38 - 4 * d, 90)]
+    lv.spots = [(560, 455, 70 - 10 * d, 38 - 6 * d, 90), (820, 455, 70 - 10 * d, 38 - 6 * d, 90)]
     for x in (480, 640, 740, 900):
         lv.car(x, 458, 90, rng.randint(1, 5))
     for x in (420, 700):

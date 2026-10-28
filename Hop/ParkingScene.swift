@@ -259,6 +259,14 @@ final class ParkingScene: SKScene {
     private var skidClock: CGFloat = 0
     private var smokeClock: CGFloat = 0
     private var obstacleBoxes: [OBB] = []
+    /// What makes this parking level harder than the last one (Challenge.swift).
+    private var challenge = ParkChallenge.easy
+    private var patrolCars: [PatrolCar] = []
+    private var patrolBoxStart = 0
+    private var patrolHornAt: TimeInterval = -10
+    private var failReason: String?
+    private var lastHitWarned = false
+    private let challengeCard = SKNode()
 
     // Remote car
     private var remotePosition = CGPoint.zero
@@ -792,6 +800,10 @@ final class ParkingScene: SKScene {
         defer { levelLoadMilliseconds = (CACurrentMediaTime() - loadStarted) * 1000 }
         levelIndex = Levels.clamp(index)
         level = Levels.level(levelIndex)
+        challenge = ParkChallenge.make(index: levelIndex, level: level, slot: slot)
+        if challenge.wetGround { level.weather = .rain }
+        failReason = nil
+        lastHitWarned = false
         model?.results = nil
         worldFrozen = false
         guard builtSize != .zero, let world = world else { return }
@@ -800,6 +812,7 @@ final class ParkingScene: SKScene {
         obstacleBoxes = level.obstacles.map { $0.box }
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
+        setupPatrols(world)
         setupBonuses()
         // Only under the loading screen (later rounds load in view)
         if level.city != nil && !ready { world.beginWarmupSweep() }
@@ -888,7 +901,7 @@ final class ParkingScene: SKScene {
         airTime = 0
         shownDriftPoints = -1
         driftLabel.alpha = 0.002
-        localCar?.setHeadlights(level.city != nil && (level.weather == .night || level.weather == .rain))
+        localCar?.setHeadlights((level.city != nil && level.weather == .night) || level.weather == .rain)
         audio.setLoop("rain", volume: isRaining ? 0.42 : 0)
         // Spray particles exist from the start (no first-use hitch), idle until the car moves
         localCar?.setSpray(isRaining ? 0.001 : 0)
@@ -1675,6 +1688,7 @@ final class ParkingScene: SKScene {
             let after = Int(ceil(countdown))
             if countdown <= 0 {
                 phase = .driving
+                challengeCard.run(.sequence([.wait(forDuration: 2.2), .fadeAlpha(to: 0, duration: 0.4)]))
                 setCountdown(Strings.go)
                 popCountdown(go: true)
                 tickHaptic.impactOccurred(intensity: 1.0)
@@ -1796,7 +1810,15 @@ final class ParkingScene: SKScene {
         updateBonuses()
         updateSpeedometer(dt)
 
-        setTimerText(String(format: "%.1f", localParked ? localTime : elapsed))
+        updateChallenge(dt)
+        if let limit = challenge.timeLimit, !localParked {
+            let left = max(0, Double(limit) - elapsed)
+            setTimerText(String(format: "%.1f", left))
+            let urgent = left < 5
+            timerLabel.fontColor = urgent ? UIColor(red: 1, green: 0.35, blue: 0.3, alpha: 1) : UIColor(red: 1, green: 0.86, blue: 0.45, alpha: 1)
+        } else {
+            setTimerText(String(format: "%.1f", localParked ? localTime : elapsed))
+        }
         // While drifting the camera looks between where the car points and where it goes
         let cameraHeading = drifting ? travelHeading + CGFloat.angleDelta(travelHeading, heading) * 0.35 : heading
         world?.follow(position: carPosition, heading: cameraHeading, dt: dt)
@@ -1805,9 +1827,111 @@ final class ParkingScene: SKScene {
         updateRain(dt)
     }
 
+    // MARK: - Challenge
+
+    /// Patrol cars of the level: 3D cars on their lanes, with boxes after the level's obstacles.
+    private func setupPatrols(_ world: World3D) {
+        patrolCars.removeAll()
+        patrolBoxStart = obstacleBoxes.count
+        for (index, lane) in challenge.patrols.enumerated() {
+            let car = Car3D(color: CarArt.parkedColors[(index * 3 + 2) % CarArt.parkedColors.count], style: .sedan, parked: false,
+                            variety: 17 + index)
+            world.addLevelNode(car.node)
+            let patrol = PatrolCar(lane: lane, car: car, topSpeed: challenge.patrolSpeed, phase: index == 0 ? 0.5 : 0.15)
+            patrolCars.append(patrol)
+            obstacleBoxes.append(patrol.box)
+        }
+        showChallengeCard()
+    }
+
+    /// Time limit, crash limit and the patrol cars, every frame.
+    private func updateChallenge(_ dt: CGFloat) {
+        let hitsText = challenge.maxHits.map { "\(hits)/\($0)" } ?? "\(hits)"
+        if hitsLabel.text != hitsText { hitsLabel.text = hitsText }
+        if phase == .driving {
+            let mine = OBB(center: carPosition, size: Levels.carSize, angle: heading)
+            for (index, patrol) in patrolCars.enumerated() {
+                let stopped = patrol.step(dt) { [unowned self] box in
+                    box.intersects(mine) || (self.friendPresent && self.remoteTarget != nil && box.intersects(self.remoteBox))
+                }
+                obstacleBoxes[patrolBoxStart + index] = patrol.box
+                if stopped && lastUpdate - patrolHornAt > 3 {
+                    patrolHornAt = lastUpdate
+                    audio.play("horn", volume: 0.45)
+                }
+            }
+        }
+        guard phase == .driving, !localParked, !benchmark, !level.race else { return }
+        if let maxHits = challenge.maxHits {
+            if hits > maxHits {
+                fail(Strings.tooManyHits)
+                return
+            }
+            if maxHits > 0 && hits == maxHits && !lastHitWarned {
+                lastHitWarned = true
+                flashBonus(Strings.lastHit)
+            }
+        }
+        if let limit = challenge.timeLimit, elapsed > Double(limit) {
+            fail(Strings.timeUp)
+        }
+    }
+
+    private func fail(_ reason: String) {
+        failReason = reason
+        flashBonus(reason)
+        gaveUp()
+    }
+
+    /// The level's rules, shown over the countdown: difficulty and what is asked.
+    private func showChallengeCard() {
+        challengeCard.removeAllActions()
+        challengeCard.removeAllChildren()
+        challengeCard.removeFromParent()
+        guard challenge.number > 0 else { return }
+        let colors = [UIColor(red: 0.35, green: 0.9, blue: 0.55, alpha: 1), UIColor(red: 1, green: 0.84, blue: 0.3, alpha: 1),
+                      UIColor(red: 1, green: 0.55, blue: 0.25, alpha: 1), UIColor(red: 1, green: 0.32, blue: 0.35, alpha: 1),
+                      UIColor(red: 0.78, green: 0.45, blue: 1, alpha: 1)]
+        let color = colors[min(challenge.tier, colors.count - 1)]
+        let rules = challenge.rules
+        let rowHeight: CGFloat = 26
+        let width: CGFloat = 300
+        let height = 46 + CGFloat(rules.count) * rowHeight
+        let glass = makeGlass(width: width, height: height, corner: 18)
+        challengeCard.addChild(glass)
+        let tier = makeLabel(Strings.levelTier(challenge.tierName), size: 15, color: color, font: "AvenirNext-Heavy")
+        tier.position = CGPoint(x: 0, y: height / 2 - 26)
+        challengeCard.addChild(tier)
+        // Five bars: how hard this level is
+        for bar in 0..<5 {
+            let filled = Double(bar) <= Double(challenge.number - 1) / 10
+            let node = SKShapeNode(rectOf: CGSize(width: 18, height: 4), cornerRadius: 2)
+            node.fillColor = filled ? color : UIColor.white.withAlphaComponent(0.18)
+            node.strokeColor = .clear
+            node.position = CGPoint(x: CGFloat(bar - 2) * 22, y: height / 2 - 40)
+            challengeCard.addChild(node)
+        }
+        for (index, rule) in rules.enumerated() {
+            let y = height / 2 - 62 - CGFloat(index) * rowHeight
+            let icon = makeIcon(rule.icon, size: 13, color: color)
+            icon.position = CGPoint(x: -width / 2 + 28, y: y)
+            challengeCard.addChild(icon)
+            let label = makeLabel(rule.text, size: 14, color: .white, font: "AvenirNext-DemiBold")
+            label.horizontalAlignmentMode = .left
+            label.position = CGPoint(x: -width / 2 + 46, y: y)
+            challengeCard.addChild(label)
+        }
+        challengeCard.position = CGPoint(x: size.width - max(insets.right, 10) - width / 2 - 8, y: size.height / 2 + 10)
+        challengeCard.zPosition = 120
+        challengeCard.alpha = 0
+        challengeCard.setScale(0.92)
+        addChild(challengeCard)
+        challengeCard.run(.group([.fadeIn(withDuration: 0.3), .scale(to: 1, duration: 0.3)]))
+    }
+
     // MARK: - Rain
 
-    private var isRaining: Bool { level.city != nil && level.weather == .rain }
+    private var isRaining: Bool { level.weather == .rain }
     private var lightningClock: CGFloat = 6
     private var lensClock: CGFloat = 0
     private let lensLayer = SKNode()
@@ -2421,7 +2545,7 @@ final class ParkingScene: SKScene {
         var steerYaw = velocity / wheelBase * tan(steer)
         // The tyres can only hold so much sideways force: past it the car runs wide (understeer)
         // and the tyres squeal
-        let maxLateral = lateralGrip
+        let maxLateral = lateralGrip * (challenge.wetGround ? 0.55 : 1)
         understeer = 0
         if !drifting && abs(velocity * steerYaw) > maxLateral {
             understeer = min(1, (abs(velocity * steerYaw) - maxLateral) / 300)
@@ -2431,7 +2555,7 @@ final class ParkingScene: SKScene {
         if drifting && airTime <= 0 {
             var slip = CGFloat.angleDelta(travelHeading, heading)
             let speedShare = min(1, abs(velocity) / 90)
-            let rearGrip: CGFloat = handbrake ? 0.25 : (gasDown ? 0.6 : 2.2)
+            let rearGrip: CGFloat = (handbrake ? 0.25 : (gasDown ? 0.6 : 2.2)) * (challenge.wetGround ? 0.6 : 1)
             var target = 0.8 * steerYaw - slip * rearGrip * 3
             if gasDown && !handbrake {
                 // Power oversteer: wheelspin pushes the tail further out
@@ -3276,20 +3400,34 @@ final class ParkingScene: SKScene {
         let carBox = OBB(center: carPosition, size: Levels.carSize, angle: heading)
         let inside = carBox.corners.allSatisfy { spotBox.contains($0) }
         let misalignment = abs((heading - spot.angle).remainder(dividingBy: CGFloat.pi))
-        let aligned = misalignment < 0.21
+        let aligned = misalignment < challenge.alignTolerance
         let slowEnough = abs(velocity) < 14 && !isPressed(.forward) && !isPressed(.reverse)
+        // Backing in: the nose must point toward the lane (where the car came from)
+        var facingOut = true
+        if challenge.reverseIn {
+            let axis = CGVector(dx: cos(spot.angle), dy: sin(spot.angle))
+            let start = level.starts[min(slot, level.starts.count - 1)].position
+            let outward = (start.x - spot.center.x) * axis.dx + (start.y - spot.center.y) * axis.dy >= 0 ? 1.0 : -1.0
+            facingOut = (cos(heading) * axis.dx + sin(heading) * axis.dy) * outward > 0
+        }
 
-        if inside && aligned && slowEnough {
+        if inside && aligned && slowEnough && !facingOut {
+            parkHold = 0
+            statusLabel.text = Strings.reverseHint
+        } else if inside && !aligned && slowEnough && challenge.number >= 25 {
+            parkHold = max(0, parkHold - dt * 2)
+            statusLabel.text = Strings.straightenHint
+        } else if inside && aligned && slowEnough {
             parkHold += dt
             velocity = approach(velocity, 0, 60 * dt)
             statusLabel.text = Strings.hold
         } else {
             parkHold = max(0, parkHold - dt * 2)
-            if statusLabel.text == Strings.hold { statusLabel.text = "" }
+            if [Strings.hold, Strings.reverseHint, Strings.straightenHint].contains(statusLabel.text ?? "") { statusLabel.text = "" }
         }
 
         if parkHold > 0.01, let world = world {
-            let progress = min(parkHold, 1)
+            let progress = min(parkHold / challenge.holdTime, 1)
             let radius: CGFloat = 58
             let path = CGMutablePath()
             path.addArc(center: world.project(carPosition, height: 0.1), radius: radius, startAngle: CGFloat.pi / 2,
@@ -3299,7 +3437,7 @@ final class ParkingScene: SKScene {
             holdRing.path = nil
         }
 
-        if parkHold >= 1.0 {
+        if parkHold >= challenge.holdTime {
             parked()
         }
     }
@@ -3663,6 +3801,7 @@ final class ParkingScene: SKScene {
         } else if case .final = footer, isCity {
             headline = Strings.allRounds
         }
+        if let reason = failReason, headline == nil { headline = reason }
         if level.race && entries.count == 1 {
             entries[0].score = myTime.map { Levels.raceScore(time: $0, crashes: hits) } ?? -1
             if headline == nil { headline = Strings.finished }

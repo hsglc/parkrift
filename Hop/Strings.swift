@@ -147,6 +147,27 @@ enum Strings {
     static var parkedBig: String { t("PARK EDİLDİ!", "PARKED!", "¡APARCADO!") }
     static var levelComplete: String { t("BÖLÜM TAMAMLANDI", "LEVEL COMPLETE", "NIVEL COMPLETADO") }
     static func place(_ n: Int) -> String { t("\(n). sırada", "Place \(n)", "Puesto \(n)") }
+    // Parking challenge
+    static var tierNames: [String] {
+        [t("KOLAY", "EASY", "FÁCIL"), t("ORTA", "MEDIUM", "MEDIO"), t("ZOR", "HARD", "DIFÍCIL"),
+         t("UZMAN", "EXPERT", "EXPERTO"), t("USTA", "MASTER", "MAESTRO")]
+    }
+    static func ruleTime(_ seconds: Int) -> String { t("\(seconds) sn", "\(seconds) s", "\(seconds) s") }
+    static func ruleHits(_ count: Int) -> String { t("En fazla \(count) çarpma", "Max \(count) hits", "Máx. \(count) golpes") }
+    static var ruleNoHits: String { t("Sıfır çarpma", "Zero hits", "Cero golpes") }
+    static var ruleReverse: String { t("Geri geri park et", "Back it in", "Aparca marcha atrás") }
+    static var ruleWet: String { t("Kaygan zemin", "Slippery ground", "Suelo resbaladizo") }
+    static func rulePatrol(_ count: Int) -> String {
+        count > 1 ? t("\(count) devriye araç", "\(count) patrol cars", "\(count) coches patrulla")
+                  : t("Devriye araç", "Patrol car", "Coche patrulla")
+    }
+    static var rulePrecise: String { t("Tam hizalama", "Precise alignment", "Alineación exacta") }
+    static var timeUp: String { t("Süre doldu!", "Time's up!", "¡Se acabó el tiempo!") }
+    static var tooManyHits: String { t("Çok fazla çarpma!", "Too many hits!", "¡Demasiados golpes!") }
+    static var reverseHint: String { t("Geri geri gir!", "Back in!", "¡Entra marcha atrás!") }
+    static var straightenHint: String { t("Düzelt!", "Straighten up!", "¡Endereza!") }
+    static var lastHit: String { t("Son hakkın!", "Last chance!", "¡Última oportunidad!") }
+    static func levelTier(_ name: String) -> String { t("Zorluk: \(name)", "Difficulty: \(name)", "Dificultad: \(name)") }
     static var splashTagline: String { t("Park et. Drift at. Kazan.", "Park it. Drift it. Win it.", "Aparca. Derrapa. Gana.") }
     static var loadingText: String { t("Harita hazırlanıyor…", "Preparing the map…", "Preparando el mapa…") }
     static var tips: [String] {
