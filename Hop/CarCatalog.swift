@@ -100,6 +100,7 @@ struct CarSpec {
     /// 4K Meshy retexture.
     var textureNormal: String? = nil
     var textureRough: String? = nil
+    var textureMetal: String? = nil
     /// Keeps its own colors (police, taxi): no paint choice.
     var fixedLivery = false
     /// Body height, for the garage camera and lights.
@@ -174,7 +175,8 @@ struct CarSpec {
                        exhausts: [SCNVector3(rear - 0.02, 0.32, 0.34), SCNVector3(rear - 0.02, 0.32, -0.34)],
                        topSpeed: tuning.0, acceleration: tuning.1, steering: tuning.2, nitroPower: tuning.3, nitroFill: tuning.4,
                        textured: true, textureBase: file + "_basecolor.jpg", textureMask: file + "_mask.png",
-                       textureNormal: file + "_normal.jpg", textureRough: file + "_rough.jpg", height: height)
+                       textureNormal: file + "_normal.jpg", textureRough: file + "_rough.jpg",
+                       textureMetal: file + "_metal.jpg", height: height)
     }
 
     /// A free low poly car from Polyfork, converted with tools/convert_polyfork_cars.py: one body
@@ -215,17 +217,14 @@ enum CarModels {
         defer { loadLock.unlock() }
         if let cached = wheels[id] { return cached }
         let node = load(CarSpec.of(id).file + "_wheel")
-        if let node = node, let normalName = CarSpec.of(id).textureNormal {
-            // Clean solid rubber and metal (no texture colours that could bleed), with the
-            // retexture's normal map for tread blocks, sidewall lettering and spoke edges
-            let detailed: [String: SCNMaterial] = ["tire": tire.copy() as! SCNMaterial, "rim": rim.copy() as! SCNMaterial]
-            for material in detailed.values {
-                material.normal.contents = image(normalName, keep: false)
-                material.normal.mipFilter = .linear
-            }
+        let spec = CarSpec.of(id)
+        if let node = node, spec.textureNormal != nil {
+            // Tyres and rims as Meshy made them: its own texture, normal, gloss and metal maps
+            let wheelMaterial = meshyMaterial(spec)
+            wheelMaterial.isDoubleSided = true
             node.enumerateHierarchy { child, _ in
-                guard let name = child.name, let material = detailed[name], let geometry = child.geometry else { return }
-                geometry.materials = [material]
+                guard let name = child.name, name == "tire" || name == "rim", let geometry = child.geometry else { return }
+                geometry.materials = [name == "rim" ? wheelMaterial.copy() as! SCNMaterial : wheelMaterial]
             }
         }
         wheels[id] = node
@@ -383,11 +382,40 @@ enum CarModels {
                 if let mask = spec.textureMask { _ = image(mask) }
                 if let normal = spec.textureNormal { _ = image(normal) }
                 if let rough = spec.textureRough { _ = image(rough) }
+                if let metal = spec.textureMetal { _ = image(metal) }
             }
         }
     }
 
     /// The retro car in a paint (kept for callers that only know the color).
+
+    /// Normal, gloss and metal maps of a Meshy car, used texel for texel.
+    private static func applyMeshyMaps(_ spec: CarSpec, to material: SCNMaterial) {
+        if let name = spec.textureNormal, let normal = image(name) {
+            material.normal.contents = normal
+            material.normal.mipFilter = .linear
+        }
+        if let name = spec.textureRough, let rough = image(name) {
+            material.roughness.contents = rough
+            material.roughness.mipFilter = .linear
+        }
+        if let name = spec.textureMetal, let metal = image(name) {
+            material.metalness.contents = metal
+            material.metalness.mipFilter = .linear
+        }
+    }
+
+    /// An unpainted Meshy material (tyres and rims): the car's own texture and maps.
+    static func meshyMaterial(_ spec: CarSpec) -> SCNMaterial {
+        let material = SCNMaterial()
+        material.lightingModel = .physicallyBased
+        if let base = spec.textureBase {
+            material.diffuse.contents = image(base)
+            material.diffuse.mipFilter = .linear
+        }
+        applyMeshyMaps(spec, to: material)
+        return material
+    }
 
     /// Material for a textured car (its own copy, so each car keeps its own paint), or the plain
     /// Kenney palette for cars with a fixed livery.
@@ -402,18 +430,16 @@ enum CarModels {
         // Glossy car paint with a clear coat (glass, chrome and trim are their own meshes now)
         material.metalness.contents = NSNumber(value: 0.2)
         material.roughness.contents = NSNumber(value: 0.3)
-        // 4K retexture: per-texel gloss (rubber, trim and lamps stay matte, paint glossy) and a
-        // normal map for the small details the mesh does not model
-        if let roughName = spec.textureRough, let rough = image(roughName) {
-            material.roughness.contents = rough
-            material.roughness.mipFilter = .linear
-        }
-        if let normalName = spec.textureNormal, let normal = image(normalName) {
-            material.normal.contents = normal
-            material.normal.mipFilter = .linear
-        }
         material.clearCoat.contents = NSNumber(value: 1.0)
         material.clearCoatRoughness.contents = NSNumber(value: 0.05)
+        if spec.textureNormal != nil {
+            // Meshy's own maps as they are; the clear coat only where the paint is
+            applyMeshyMaps(spec, to: material)
+            if let mask = image(maskName) {
+                material.clearCoat.contents = mask
+                material.clearCoat.intensity = 0.9
+            }
+        }
         material.shaderModifiers = [.surface: paintShader]
         // Generated bodies have a few open shells (mirrors, spoilers): draw both sides
         material.isDoubleSided = true

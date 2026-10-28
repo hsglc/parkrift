@@ -732,7 +732,12 @@ final class Car3D {
                 }
             }
         }
-        rimMaterial?.diffuse.contents = color
+        if let material = rimMaterial, material.diffuse.contents is UIImage {
+            // Meshy rims keep their texture: the colour tints it (the standard silver leaves it as is)
+            material.multiply.contents = color == CarSpec.rims[0] ? UIColor.white : color.lighter(by: 0.15)
+        } else {
+            rimMaterial?.diffuse.contents = color
+        }
     }
 
     /// Swaps the paint material only (no new geometry, no new shader).

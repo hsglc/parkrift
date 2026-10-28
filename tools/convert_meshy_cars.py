@@ -39,6 +39,11 @@ MASK_SIZE = 2048
 NORMAL_SIZE = 2048
 ROUGH_SIZE = 1024
 TEXELS = {}
+# Off by default: the model is used exactly as Meshy made it (its geometry, normals and UVs, so its
+# normal map lines up) and only the paint mask, wheels and lamps are split out. REWORK=1 turns on
+# the older reshaping (subdivision, ironed normals, flattened and re-tinted glass), which fought
+# Meshy's normal map in the game and made the bodies look crumpled.
+REWORK = bool(os.environ.get('REWORK'))
 GLASS_TINT = {}
 
 
@@ -60,12 +65,28 @@ def load(path):
     if len(meshes) > 1:
         bpy.ops.object.join()
     obj = bpy.context.view_layer.objects.active
-    # Weld the UV-seam duplicates so each piece is one connected part
+    # Weld the UV-seam duplicates so each piece is one connected part, then give the welded
+    # mesh Meshy's own normals back (its normal map was made against them)
+    original = obj.copy()
+    original.data = obj.data.copy()
+    bpy.context.scene.collection.objects.link(original)
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
     bm.to_mesh(obj.data)
     bm.free()
+    for poly in obj.data.polygons:
+        poly.use_smooth = True
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    transfer = obj.modifiers.new('meshy_normals', 'DATA_TRANSFER')
+    transfer.object = original
+    transfer.use_loop_data = True
+    transfer.data_types_loops = {'CUSTOM_NORMAL'}
+    transfer.loop_mapping = 'POLYINTERP_NEAREST'
+    bpy.ops.object.modifier_apply(modifier='meshy_normals')
+    bpy.data.objects.remove(original, do_unlink=True)
     return obj
 
 
@@ -227,13 +248,11 @@ def texture(obj, car, out):
         n.resize((NORMAL_SIZE, NORMAL_SIZE), Image.LANCZOS).save(os.path.join(out, car['id'] + '_normal.jpg'), quality=92)
     rough_img = linked_image(['Roughness'])
     if rough_img is not None:
-        rough = pixels(rough_img)[..., 1]   # glTF metallic-roughness: roughness in green
-        # Paint stays a glossy coat whatever Meshy guessed; trim, rubber and lamps keep theirs
-        pw = Image.fromarray((painted * 255).astype(np.uint8)).resize(rough.shape[::-1], Image.BOX)
-        paint_share = np.asarray(pw, dtype=np.float32) / 255
-        rough = rough * (1 - paint_share) + 0.3 * paint_share
-        out_r = Image.fromarray((np.clip(rough, 0, 1) * 255).astype(np.uint8)).convert('RGB')
-        out_r.resize((ROUGH_SIZE, ROUGH_SIZE), Image.LANCZOS).save(os.path.join(out, car['id'] + '_rough.jpg'), quality=90)
+        # Meshy's own gloss and metal, texel for texel (glTF: roughness in green, metal in blue)
+        mr = pixels(rough_img)
+        for channel, suffix in ((1, '_rough.jpg'), (2, '_metal.jpg')):
+            Image.fromarray((np.clip(mr[..., channel], 0, 1) * 255).astype(np.uint8)).convert('RGB') \
+                .resize((ROUGH_SIZE, ROUGH_SIZE), Image.LANCZOS).save(os.path.join(out, car['id'] + suffix), quality=92)
     print(f"  {car['id']}: texture {w} px, paint {painted.mean():.2f}, normal {normal is not None}, rough {rough_img is not None}")
     return painted.mean()
 
@@ -702,12 +721,13 @@ def convert(car, src, out):
     keep.data.name = 'rim'
     # Lamps are picked on the original faces (picked after subdividing they came out jagged)
     glass_faces, head_faces = classify_faces(obj, car)
-    cleaned = clean_glass(obj, car, glass_faces, out)
-    print(f"  {car['id']}: {len(glass_faces)} window faces, {cleaned} paint texels removed from glass")
+    if REWORK:
+        cleaned = clean_glass(obj, car, glass_faces, out)
+        print(f"  {car['id']}: {len(glass_faces)} window faces, {cleaned} paint texels removed from glass")
     extra = []
     if head_faces:
         extra.append(split(obj, head_faces, 'headlight'))
-    if not os.environ.get('NOREFINE'):
+    if REWORK and not os.environ.get('NOREFINE'):
         sharp, kept = refine(obj, crease_angle=float(os.environ.get('CREASE', 38)), small_faces=60, small_size=0.35)
         for part in extra:
             refine(part)
@@ -715,10 +735,11 @@ def convert(car, src, out):
         refine(tire, crease_angle=50, hold=False)
         refine(keep, crease_angle=50)
         print(f"  {car['id']}: refined, {sharp} creased edges, {kept} small faces kept as they were")
-    panes, points = flatten_glass(obj, car)
-    print(f"  {car['id']}: {panes} window faces ironed flat ({points} points)")
+    if REWORK:
+        panes, points = flatten_glass(obj, car)
+        print(f"  {car['id']}: {panes} window faces ironed flat ({points} points)")
     light = taillights(obj)
-    if not os.environ.get("NOIRON"):
+    if REWORK and not os.environ.get("NOIRON"):
         iron(obj)
     # Windows stay in Meshy's texture (pixel for pixel): splitting them by faces gave jagged edges
     print(f"  {car['id']}: headlights {len(head_faces)} faces")
