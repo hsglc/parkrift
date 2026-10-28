@@ -1,0 +1,17 @@
+name: Probe Xcode 27 runner
+
+# Lists the Xcode versions and simulators of the xcode-27 runner image (for iPhone Duo support).
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: xcode-27
+    steps:
+      - run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_27.1*.app | sort -V | tail -n 1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          xcrun simctl list devicetypes | grep -i -E "duo|iphone"
+          xcrun simctl list runtimes
