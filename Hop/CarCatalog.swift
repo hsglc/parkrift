@@ -25,7 +25,8 @@ struct CarChoice: Equatable {
 
     var rimColor: UIColor { CarSpec.rims[max(0, min(CarSpec.rims.count - 1, rim))] }
 
-    var color: UIColor { CarSpec.paints[max(0, min(CarSpec.paints.count - 1, paint))].color }
+    /// While `CarSpec.paintChoice` is off every car wears the first paint.
+    var color: UIColor { CarSpec.paints[CarSpec.paintChoice ? max(0, min(CarSpec.paints.count - 1, paint)) : 0].color }
     var spec: CarSpec { CarSpec.of(model) }
 
     static let defaultChoice = CarChoice(model: .italia, paint: 0)
@@ -123,6 +124,9 @@ struct CarSpec {
     ]
 
     /// Rim colours: silver, black, gold, bronze, white, red, blue.
+    /// Paint choice in the garage; off for now: every car is the same racing red.
+    static let paintChoice = false
+
     static let rims: [UIColor] = [
         UIColor(white: 0.72, alpha: 1), UIColor(white: 0.08, alpha: 1),
         UIColor(red: 0.85, green: 0.66, blue: 0.22, alpha: 1), UIColor(red: 0.55, green: 0.36, blue: 0.2, alpha: 1),

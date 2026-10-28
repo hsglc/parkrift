@@ -648,14 +648,18 @@ struct GarageView: View {
             .padding(.top, 2)
 
             HStack {
-                Text(Strings.paint.uppercased())
-                    .font(.kicker(10))
-                    .tracking(1.5)
-                    .foregroundStyle(.white.opacity(0.55))
+                if CarSpec.paintChoice {
+                    Text(Strings.paint.uppercased())
+                        .font(.kicker(10))
+                        .tracking(1.5)
+                        .foregroundStyle(.white.opacity(0.55))
+                }
                 Spacer()
-                Text(spec.fixedLivery ? Strings.factoryLivery.uppercased() : CarSpec.paints[choice.paint].name.uppercased())
-                    .font(.race(13, weight: .heavy))
-                    .foregroundStyle(.white.opacity(0.85))
+                if CarSpec.paintChoice {
+                    Text(spec.fixedLivery ? Strings.factoryLivery.uppercased() : CarSpec.paints[choice.paint].name.uppercased())
+                        .font(.race(13, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
                 if Progression.owns(choice.model) {
                     Button {
                         AudioManager.shared.play("click", volume: 0.6)
@@ -675,6 +679,7 @@ struct GarageView: View {
                 }
             }
             .padding(.top, 4)
+            if CarSpec.paintChoice {
             HStack(spacing: 4) {
                 ForEach(CarSpec.paints.indices, id: \.self) { index in
                     let selected = index == choice.paint
@@ -697,6 +702,7 @@ struct GarageView: View {
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: choice.paint)
             .opacity(spec.fixedLivery ? 0.3 : 1)
             .allowsHitTesting(!spec.fixedLivery)
+            }
 
             Spacer(minLength: 6)
             if Progression.owns(choice.model) {
