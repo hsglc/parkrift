@@ -147,6 +147,7 @@ enum Strings {
     static var parkedBig: String { t("PARK EDİLDİ!", "PARKED!", "¡APARCADO!") }
     static var levelComplete: String { t("BÖLÜM TAMAMLANDI", "LEVEL COMPLETE", "NIVEL COMPLETADO") }
     static func place(_ n: Int) -> String { t("\(n). sırada", "Place \(n)", "Puesto \(n)") }
+    static var splashTagline: String { t("Park et. Drift at. Kazan.", "Park it. Drift it. Win it.", "Aparca. Derrapa. Gana.") }
     static var loadingText: String { t("Harita hazırlanıyor…", "Preparing the map…", "Preparando el mapa…") }
     static var tips: [String] {
         switch current {

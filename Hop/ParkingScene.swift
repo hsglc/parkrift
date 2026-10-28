@@ -888,8 +888,11 @@ final class ParkingScene: SKScene {
         airTime = 0
         shownDriftPoints = -1
         driftLabel.alpha = 0.002
-        localCar?.setHeadlights(level.city != nil && level.weather == .night)
-        audio.setLoop("rain", volume: level.city != nil && level.weather == .rain ? 0.35 : 0)
+        localCar?.setHeadlights(level.city != nil && (level.weather == .night || level.weather == .rain))
+        audio.setLoop("rain", volume: isRaining ? 0.42 : 0)
+        // Spray particles exist from the start (no first-use hitch), idle until the car moves
+        localCar?.setSpray(isRaining ? 0.001 : 0)
+        setupRainLayers()
         audio.setLoop("siren", volume: 0)
         audio.setLoop("skid", volume: 0)
         route = []
@@ -1799,6 +1802,97 @@ final class ParkingScene: SKScene {
         world?.follow(position: carPosition, heading: cameraHeading, dt: dt)
         updateCarNodes()
         updateSteerGauge()
+        updateRain(dt)
+    }
+
+    // MARK: - Rain
+
+    private var isRaining: Bool { level.city != nil && level.weather == .rain }
+    private var lightningClock: CGFloat = 6
+    private var lensClock: CGFloat = 0
+    private let lensLayer = SKNode()
+    private let flashOverlay = SKSpriteNode(color: UIColor(red: 0.85, green: 0.9, blue: 1, alpha: 1), size: .zero)
+
+    /// Splashes follow the camera, the rear wheels throw water, drops land on the "lens", and
+    /// now and then lightning lights the city.
+    private func updateRain(_ dt: CGFloat) {
+        guard isRaining else { return }
+        world?.updateRain()
+        localCar?.setSpray(abs(velocity) / maxForward)
+        lightningClock -= dt
+        if lightningClock <= 0 {
+            lightningClock = CGFloat.random(in: 9...20)
+            world?.lightning()
+            flashOverlay.removeAllActions()
+            flashOverlay.alpha = 0.002
+            flashOverlay.run(.sequence([.fadeAlpha(to: 0.22, duration: 0.04), .fadeAlpha(to: 0.03, duration: 0.07),
+                                        .fadeAlpha(to: 0.16, duration: 0.05), .fadeAlpha(to: 0.002, duration: 0.35)]))
+            haptic(0.35)
+        }
+        lensClock -= dt
+        if lensClock <= 0 && lensLayer.children.count < 14 {
+            lensClock = CGFloat.random(in: 0.12...0.4)
+            addLensDrop()
+        }
+    }
+
+    private func haptic(_ intensity: CGFloat) {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: intensity)
+    }
+
+    /// A water drop on the screen: lands, sits a moment, and runs down.
+    private func addLensDrop() {
+        let drop = SKSpriteNode(texture: ParkingScene.dropTexture)
+        let radius = CGFloat.random(in: 5...13)
+        drop.size = CGSize(width: radius * 2, height: radius * 2.2)
+        drop.position = CGPoint(x: CGFloat.random(in: 0...size.width), y: CGFloat.random(in: size.height * 0.25...size.height))
+        drop.alpha = 0
+        drop.setScale(0.6)
+        lensLayer.addChild(drop)
+        let sit = TimeInterval.random(in: 0.4...1.6)
+        let run = TimeInterval.random(in: 0.9...1.8)
+        drop.run(.sequence([
+            .group([.fadeAlpha(to: CGFloat.random(in: 0.45...0.8), duration: 0.08), .scale(to: 1, duration: 0.08)]),
+            .wait(forDuration: sit),
+            .group([.moveBy(x: CGFloat.random(in: -8...8), y: -CGFloat.random(in: 60...160), duration: run),
+                    .scaleX(to: 0.7, y: 1.25, duration: run),
+                    .sequence([.wait(forDuration: run * 0.5), .fadeOut(withDuration: run * 0.5)])]),
+            .removeFromParent()]))
+    }
+
+    private static let dropTexture: SKTexture = SKTexture(image: CarArt.image(CGSize(width: 40, height: 44), scale: 2) { context, s in
+        let rect = CGRect(x: 2, y: 2, width: s.width - 4, height: s.height - 4)
+        // Body: a lens that darkens toward the bottom edge, a bright rim and a highlight
+        let body = [UIColor(white: 1, alpha: 0.10).cgColor, UIColor(white: 0.1, alpha: 0.28).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: body, locations: [0, 1]) {
+            context.saveGState()
+            context.addEllipse(in: rect)
+            context.clip()
+            context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: s.height), options: [])
+            context.restoreGState()
+        }
+        context.setStrokeColor(UIColor(white: 1, alpha: 0.45).cgColor)
+        context.setLineWidth(1.2)
+        context.strokeEllipse(in: rect.insetBy(dx: 0.6, dy: 0.6))
+        context.setFillColor(UIColor(white: 1, alpha: 0.85).cgColor)
+        context.fillEllipse(in: CGRect(x: s.width * 0.28, y: s.height * 0.2, width: s.width * 0.2, height: s.height * 0.14))
+    })
+
+    /// Puts the rain HUD layers in place for the level (empty and hidden when it is dry).
+    private func setupRainLayers() {
+        lensLayer.removeAllChildren()
+        lensLayer.removeFromParent()
+        flashOverlay.removeFromParent()
+        guard isRaining else { return }
+        lensLayer.zPosition = 40
+        addChild(lensLayer)
+        flashOverlay.size = CGSize(width: size.width * 2, height: size.height * 2)
+        flashOverlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        flashOverlay.zPosition = 45
+        flashOverlay.blendMode = .add
+        flashOverlay.alpha = 0.002
+        addChild(flashOverlay)
+        lightningClock = CGFloat.random(in: 4...9)
     }
 
     /// The timer label only redraws when its text changes (ten times a second, not every frame).

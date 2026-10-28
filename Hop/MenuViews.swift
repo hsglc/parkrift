@@ -164,7 +164,7 @@ struct MenuView: View {
         .onAppear {
             if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch && !PerfSettings.benchmark {
                 MenuView.giftShownThisLaunch = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showDaily = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration + 0.9) { showDaily = true }
             }
         }
         .onChange(of: model.errorText) { _, error in

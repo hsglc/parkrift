@@ -496,6 +496,7 @@ final class AppModel: ObservableObject {
 
 struct RootView: View {
     @EnvironmentObject var model: AppModel
+    @State private var splash = !PerfSettings.benchmark
 
     var body: some View {
         ZStack {
@@ -533,11 +534,21 @@ struct RootView: View {
                 }
                 .transition(.opacity)
             }
+            if splash {
+                SplashView()
+                    .transition(.opacity.combined(with: .scale(scale: 1.03)))
+                    .zIndex(10)
+            }
         }
         .animation(.easeInOut(duration: 0.35), value: model.screen)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .onAppear {
+            if splash {
+                DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration) {
+                    withAnimation(.easeInOut(duration: 0.45)) { splash = false }
+                }
+            }
             AudioManager.shared.ensureRunning()
             if PerfSettings.benchmark && model.screen == .menu {
                 AudioManager.shared.isMuted = true

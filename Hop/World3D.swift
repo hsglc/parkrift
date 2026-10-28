@@ -694,6 +694,23 @@ final class Car3D {
         headlight?.isHidden = !on
     }
 
+    /// Water spray behind the rear wheels in the rain; `amount` 0...1 follows the speed.
+    private var sprays: [SCNParticleSystem] = []
+    func setSpray(_ amount: CGFloat) {
+        if sprays.isEmpty {
+            guard amount > 0 else { return }
+            for side: Float in [-0.82, 0.82] {
+                let emitter = SCNNode()
+                emitter.position = SCNVector3(-1.55, 0.12, side)
+                let system = World3D.makeSpray()
+                emitter.addParticleSystem(system)
+                node.addChildNode(emitter)
+                sprays.append(system)
+            }
+        }
+        for system in sprays { system.birthRate = 160 * max(0, min(1, amount)) }
+    }
+
     /// Rim colour: the wheels get their own rim material (one per car).
     private var rimMaterial: SCNMaterial?
     func setRim(_ color: UIColor) {
@@ -1491,53 +1508,186 @@ final class World3D {
             ambientLight.intensity = 210
             ambientLight.color = UIColor(red: 0.45, green: 0.52, blue: 0.80, alpha: 1)
         case .rain:
+            // Storm light: dark, cold, misty; the wet street catches every light
             scene.background.contents = CityArt.rainSky
             scene.lightingEnvironment.contents = CityArt.rainSky
-            scene.lightingEnvironment.intensity = 1.0
-            scene.fogColor = UIColor(red: 0.55, green: 0.58, blue: 0.62, alpha: 1)
-            scene.fogStartDistance = 35
-            scene.fogEndDistance = 150
-            sunLight.intensity = 520
-            sunLight.color = UIColor(red: 0.85, green: 0.88, blue: 0.95, alpha: 1)
-            ambientLight.intensity = 380
-            ambientLight.color = UIColor(red: 0.75, green: 0.80, blue: 0.88, alpha: 1)
+            scene.lightingEnvironment.intensity = 1.15
+            scene.fogColor = UIColor(red: 0.30, green: 0.34, blue: 0.40, alpha: 1)
+            scene.fogStartDistance = 18
+            scene.fogEndDistance = 120
+            sunLight.intensity = 380
+            sunLight.color = UIColor(red: 0.78, green: 0.84, blue: 0.95, alpha: 1)
+            ambientLight.intensity = 300
+            ambientLight.color = UIColor(red: 0.62, green: 0.69, blue: 0.82, alpha: 1)
         }
         lampPools?.isHidden = !night
-        // Wet asphalt: darker and glossy, so it mirrors the sky and the lights
+        // Wet asphalt: darker and glossy, with puddles and rain rings (World3D.wetRoadShader)
         for material in roadMaterials {
-            material.roughness.intensity = wet ? 0.35 : 1
-            material.diffuse.intensity = wet ? 0.7 : 1
+            material.roughness.intensity = wet ? 0.45 : 1
+            material.diffuse.intensity = wet ? 0.72 : 1
+            material.shaderModifiers = wet ? [.surface: World3D.wetRoadShader] : nil
         }
         if wet {
             if rain == nil { rain = World3D.makeRain() }
             if let rain = rain, rain.parent == nil { cameraNode.addChildNode(rain) }
+            if rainGround.parent == nil {
+                rainGround.addParticleSystem(World3D.makeSplashes())
+                scene.rootNode.addChildNode(rainGround)
+            }
         } else {
             rain?.removeFromParentNode()
+            rainGround.removeFromParentNode()
         }
     }
 
-    /// Rain streaks falling in a box around the camera.
+    /// Ground splashes follow the point in front of the camera.
+    private let rainGround = SCNNode()
+    func updateRain() {
+        guard rainGround.parent != nil else { return }
+        let eye = cameraNode.simdWorldPosition
+        let front = cameraNode.simdWorldFront
+        let ahead = SIMD2<Float>(front.x, front.z)
+        let flat = simd_length(ahead) > 0.01 ? simd_normalize(ahead) : SIMD2<Float>(0, -1)
+        rainGround.simdPosition = SIMD3<Float>(eye.x + flat.x * 11, 0.04, eye.z + flat.y * 11)
+    }
+
+    /// A lightning flash: the sky and the street light up twice, quickly.
+    func lightning() {
+        guard weather == .rain else { return }
+        let sun = sunLight.intensity
+        let ambient = ambientLight.intensity
+        let sky = scene.lightingEnvironment.intensity
+        let peaks: [(TimeInterval, CGFloat)] = [(0, 1), (0.07, 0.25), (0.13, 0.85), (0.22, 0.1), (0.32, 0)]
+        for (delay, amount) in peaks {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self, self.weather == .rain else { return }
+                SCNTransaction.begin()
+                SCNTransaction.animationDuration = 0.05
+                self.sunLight.intensity = sun + 2400 * amount
+                self.ambientLight.intensity = ambient + 900 * amount
+                self.scene.lightingEnvironment.intensity = sky + 1.6 * amount
+                SCNTransaction.commit()
+            }
+        }
+    }
+
+    /// Wet street: puddles (glossy, darker, a noise mask in world space) and the rings of the
+    /// drops landing on them (cells of 0.7 m, each with its own random timing).
+    static let wetRoadShader = """
+    #pragma body
+    float3 wp = (scn_frame.inverseViewTransform * float4(_surface.position, 1.0)).xyz;
+    float2 p = wp.xz;
+    float2 q = p * 0.16;
+    float puddle = sin(q.x * 1.7 + sin(q.y * 1.3) * 1.2) * sin(q.y * 1.9 + sin(q.x * 0.9) * 1.4);
+    puddle = smoothstep(0.1, 0.5, puddle);
+    float2 ripple = float2(0.0);
+    float2 g = p / 0.7;
+    float2 cell = floor(g);
+    float h = fract(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
+    float2 d = fract(g) - 0.5 - (float2(fract(h * 13.1), fract(h * 71.7)) - 0.5) * 0.5;
+    float t = fract(scn_frame.time * 1.25 + h);
+    float r = length(d);
+    ripple += d / max(r, 0.001) * exp(-pow((r - t * 0.42) * 26.0, 2.0)) * (1.0 - t);
+    g = p / 0.53 + 0.37;
+    cell = floor(g);
+    h = fract(sin(dot(cell, float2(269.5, 183.3))) * 43758.5453);
+    d = fract(g) - 0.5 - (float2(fract(h * 17.3), fract(h * 53.9)) - 0.5) * 0.5;
+    t = fract(scn_frame.time * 1.6 + h);
+    r = length(d);
+    ripple += d / max(r, 0.001) * exp(-pow((r - t * 0.42) * 26.0, 2.0)) * (1.0 - t);
+    float3 bend = (scn_frame.viewTransform * float4(ripple.x, 0.0, ripple.y, 0.0)).xyz;
+    _surface.normal = normalize(_surface.normal + bend * (0.25 + puddle * 0.45));
+    _surface.roughness = mix(_surface.roughness, 0.04, puddle * 0.9);
+    _surface.diffuse.rgb *= mix(1.0, 0.62, puddle);
+    """
+
+    /// Rain around the camera: a near layer of fast, thin streaks and a far, denser curtain.
     private static func makeRain() -> SCNNode {
+        func layer(birthRate: CGFloat, box: CGFloat, size: CGFloat, alpha: CGFloat, speed: CGFloat) -> SCNParticleSystem {
+            let system = SCNParticleSystem()
+            system.birthRate = birthRate
+            system.emitterShape = SCNBox(width: box, height: 0.1, length: box, chamferRadius: 0)
+            system.particleLifeSpan = 0.85
+            system.particleVelocity = speed
+            system.particleVelocityVariation = speed * 0.12
+            // Slanted by the wind
+            system.emittingDirection = SCNVector3(0.16, -1, 0.06)
+            system.spreadingAngle = 2
+            system.particleSize = size
+            system.particleSizeVariation = size * 0.3
+            system.stretchFactor = 0.022
+            system.particleColor = UIColor(red: 0.74, green: 0.80, blue: 0.90, alpha: alpha)
+            system.particleColorVariation = SCNVector4(0, 0, 0.08, 0.25)
+            system.particleImage = CarArt.rainStreak()
+            system.blendMode = .additive
+            system.isLightingEnabled = false
+            system.isAffectedByGravity = false
+            system.loops = true
+            return system
+        }
+        let node = SCNNode()
+        node.position = SCNVector3(0, 13, -9)
+        node.addParticleSystem(layer(birthRate: 1500, box: 22, size: 0.05, alpha: 0.42, speed: 30))
+        let far = SCNNode()
+        far.position = SCNVector3(0, 4, -26)
+        far.addParticleSystem(layer(birthRate: 1700, box: 60, size: 0.09, alpha: 0.2, speed: 24))
+        node.addChildNode(far)
+        return node
+    }
+
+    /// Small drops bouncing up where the rain lands, in front of the camera.
+    private static func makeSplashes() -> SCNParticleSystem {
         let system = SCNParticleSystem()
-        system.birthRate = 1600
-        system.emitterShape = SCNBox(width: 34, height: 0.1, length: 34, chamferRadius: 0)
-        system.particleLifeSpan = 0.75
-        system.particleVelocity = 26
-        system.particleVelocityVariation = 4
-        system.emittingDirection = SCNVector3(0.08, -1, 0)
-        system.spreadingAngle = 3
-        system.particleSize = 0.018
-        system.stretchFactor = 0.07
-        system.particleColor = UIColor(red: 0.82, green: 0.86, blue: 0.95, alpha: 0.5)
+        system.birthRate = 700
+        system.emitterShape = SCNPlane(width: 26, height: 26)
+        system.particleLifeSpan = 0.22
+        system.particleLifeSpanVariation = 0.08
+        system.particleVelocity = 1.8
+        system.particleVelocityVariation = 0.8
+        system.emittingDirection = SCNVector3(0, 1, 0)
+        system.spreadingAngle = 35
+        system.particleSize = 0.035
+        system.particleSizeVariation = 0.015
+        system.particleColor = UIColor(red: 0.85, green: 0.9, blue: 1.0, alpha: 0.5)
+        system.particleImage = CarArt.glowParticle()
+        system.blendMode = .additive
+        system.isLightingEnabled = false
+        system.isAffectedByGravity = true
+        system.loops = true
+        system.particleColorVariation = SCNVector4(0, 0, 0, 0.3)
+        return system
+    }
+
+    /// Water thrown up behind the rear wheels on a wet street.
+    static func makeSpray() -> SCNParticleSystem {
+        let system = SCNParticleSystem()
+        system.birthRate = 0
+        system.particleLifeSpan = 0.55
+        system.particleLifeSpanVariation = 0.15
+        system.particleVelocity = 3.5
+        system.particleVelocityVariation = 1.5
+        system.emittingDirection = SCNVector3(-1, 0.55, 0)
+        system.spreadingAngle = 22
+        system.particleSize = 0.22
+        system.particleSizeVariation = 0.1
+        system.particleColor = UIColor(red: 0.82, green: 0.86, blue: 0.92, alpha: 0.22)
         system.particleImage = CarArt.glowParticle()
         system.blendMode = .alpha
         system.isLightingEnabled = false
-        system.isAffectedByGravity = false
+        system.isAffectedByGravity = true
+        system.dampingFactor = 1.5
         system.loops = true
-        let node = SCNNode()
-        node.position = SCNVector3(0, 12, -8)
-        node.addParticleSystem(system)
-        return node
+        let grow = CABasicAnimation(keyPath: "size")
+        grow.fromValue = 0.6
+        grow.toValue = 2.4
+        grow.duration = 1
+        system.propertyControllers = [.size: SCNParticlePropertyController(animation: grow)]
+        let fade = CAKeyframeAnimation()
+        fade.values = [0.0, 1.0, 0.0]
+        fade.keyTimes = [0, 0.2, 1]
+        fade.duration = 1
+        system.propertyControllers?[.opacity] = SCNParticlePropertyController(animation: fade)
+        return system
     }
 
     /// Polyfork's police cruiser (front along +z in the file), turned to face +x like every car.

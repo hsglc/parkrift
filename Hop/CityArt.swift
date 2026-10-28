@@ -415,10 +415,11 @@ enum CityArt {
 
     /// Overcast rain sky: flat grey with darker cloud bands.
     static let rainSky: UIImage = CarArt.image(CGSize(width: 1024, height: 512), scale: 1) { context, s in
-        let colors = [UIColor(red: 0.30, green: 0.33, blue: 0.37, alpha: 1).cgColor,
-                      UIColor(red: 0.47, green: 0.50, blue: 0.54, alpha: 1).cgColor,
-                      UIColor(red: 0.62, green: 0.64, blue: 0.67, alpha: 1).cgColor,
-                      UIColor(red: 0.40, green: 0.42, blue: 0.43, alpha: 1).cgColor] as CFArray
+        // Storm: heavy blue-grey clouds, a pale band of mist on the horizon
+        let colors = [UIColor(red: 0.13, green: 0.15, blue: 0.19, alpha: 1).cgColor,
+                      UIColor(red: 0.27, green: 0.30, blue: 0.36, alpha: 1).cgColor,
+                      UIColor(red: 0.46, green: 0.50, blue: 0.56, alpha: 1).cgColor,
+                      UIColor(red: 0.22, green: 0.24, blue: 0.27, alpha: 1).cgColor] as CFArray
         if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.3, 0.5, 0.56]) {
             context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: s.height), options: [.drawsAfterEndLocation])
         }
@@ -427,7 +428,7 @@ enum CityArt {
             let cx = noise.next() * s.width
             let cy = s.height * (0.08 + noise.next() * 0.36)
             let w = 120 + noise.next() * 220
-            let puff = [UIColor(white: 0.2, alpha: 0.22).cgColor, UIColor(white: 0.2, alpha: 0).cgColor] as CFArray
+            let puff = [UIColor(red: 0.08, green: 0.09, blue: 0.12, alpha: 0.35).cgColor, UIColor(white: 0.1, alpha: 0).cgColor] as CFArray
             if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: puff, locations: [0, 1]) {
                 context.saveGState()
                 context.translateBy(x: cx, y: cy)

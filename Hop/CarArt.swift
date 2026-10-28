@@ -106,6 +106,21 @@ enum CarArt {
 
     private static let glowParticleImage: UIImage = makeGlowParticle()
     static func glowParticle() -> UIImage { glowParticleImage }
+
+    /// A rain streak: a thin vertical line, bright in the middle, fading at both ends and sides.
+    private static let rainStreakImage: UIImage = image(CGSize(width: 32, height: 64), scale: 1) { context, s in
+        let colors = [UIColor.white.withAlphaComponent(0).cgColor, UIColor.white.cgColor,
+                      UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+        guard let along = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.6, 1]) else { return }
+        for (width, alpha) in [(CGFloat(5), CGFloat(0.25)), (2.2, 0.6), (1.0, 1.0)] {
+            context.saveGState()
+            context.setAlpha(alpha)
+            context.clip(to: CGRect(x: (s.width - width) / 2, y: 2, width: width, height: s.height - 4))
+            context.drawLinearGradient(along, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: s.height), options: [])
+            context.restoreGState()
+        }
+    }
+    static func rainStreak() -> UIImage { rainStreakImage }
     private static func makeGlowParticle() -> UIImage {
         image(CGSize(width: 32, height: 32), scale: 1) { context, s in
             let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
