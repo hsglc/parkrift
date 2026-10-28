@@ -2,14 +2,15 @@ import CoreGraphics
 
 /// The rules that make each parking level harder than the one before. Built from the level's
 /// number (1-50) and its layout, the same on both phones:
-///   - alignment: the car must sit straighter in the bay (17° at level 1, 4° at level 50),
-///   - hold: it must stay still in the bay longer (0.8 s up to 2 s),
-///   - time limit (from level 6): from the real driving distance to the bay, shrinking,
-///   - crash limit (from level 10): 5, then 3, 2, 1, and none from level 45 ("zero margin"),
-///   - back it in (straight bays, every other level from 15, all of them from 35): nose out,
-///   - wet ground (every seventh level from 14): rain and much less grip,
-///   - patrol cars (from level 18; two from level 36): a car drives up and down the lot and
+///   - alignment: the car must sit straighter in the bay (about 14° at level 1, 3.5° at the end),
+///   - hold: it must stay still in the bay longer (about 1 s up to 2.1 s),
+///   - time limit (from level 3): from the real driving distance to the bay, shrinking,
+///   - crash limit (from level 5): 4, then 3, 2, 1, and none from level 42 ("zero margin"),
+///   - back it in (straight bays, every other level from 9, all of them from 30): nose out,
+///   - wet ground (every fifth level from 10): rain and much less grip,
+///   - patrol cars (from level 12; two from level 30): a car drives up and down the lot and
 ///     stops for nobody but you, faster in every level.
+/// Every level plays about six levels' worth harder than its number.
 struct ParkChallenge {
     let number: Int
     let tier: Int
@@ -43,32 +44,35 @@ struct ParkChallenge {
     static func make(index: Int, level: LevelDef, slot: Int) -> ParkChallenge {
         guard !Levels.isCity(index), index >= 0, index < 50 else { return .easy }
         let n = index + 1
-        let t = CGFloat(n - 1) / 49
+        // Every level plays one step harder than its number: the rules of a level about six
+        // further on, and each rule starts earlier
+        let e = n + 6
+        let t = min(1, CGFloat(e - 1) / 49)
         let tier = min(4, (n - 1) / 10)
-        let align = 0.30 - 0.23 * t
-        let hold = 0.8 + 1.2 * t
-        let maxHits: Int? = n < 10 ? nil : (n < 20 ? 5 : (n < 30 ? 3 : (n < 40 ? 2 : (n < 45 ? 1 : 0))))
+        let align = 0.27 - 0.21 * t
+        let hold = 0.9 + 1.2 * t
+        let maxHits: Int? = n < 5 ? nil : (n < 14 ? 4 : (n < 24 ? 3 : (n < 34 ? 2 : (n < 42 ? 1 : 0))))
         // Straight (90°) bays can be backed into: nose toward the lane
         let straight = level.spots.allSatisfy { abs(abs($0.angle) - CGFloat.pi / 2) < 0.05 }
-        let reverse = straight && n >= 15 && (n % 2 == 0 || n >= 35)
-        let wet = n >= 14 && n % 7 == 0
+        let reverse = straight && n >= 9 && (n % 2 == 0 || n >= 30)
+        let wet = n >= 8 && n % 5 == 0
         var lanes: [PatrolLane] = []
-        if n >= 18 {
-            lanes = patrolLanes(level: level, count: n >= 36 ? 2 : 1)
+        if n >= 12 {
+            lanes = patrolLanes(level: level, count: n >= 30 ? 2 : 1)
         }
         var limit: CGFloat?
-        if n >= 6 {
+        if n >= 3 {
             // Driving distance to the bay (around everything), at an average speed that rises,
             // plus time to manoeuvre that shrinks
             let meters = (0..<min(level.starts.count, level.spots.count)).map {
                 pathLength(level: level, from: level.starts[$0].position, to: level.spots[$0].center) / 10
             }.max() ?? 60
-            let maneuver = 26 - 14 * t + (reverse ? 6 : 0) + (wet ? 4 : 0) + CGFloat(lanes.count) * 3
-            let speed = 4 + 3 * t
+            let maneuver = 24 - 14 * t + (reverse ? 6 : 0) + (wet ? 4 : 0) + CGFloat(lanes.count) * 3
+            let speed = 4.5 + 3.5 * t
             limit = (maneuver + meters / speed).rounded(.up)
         }
         return ParkChallenge(number: n, tier: tier, alignTolerance: align, holdTime: hold, timeLimit: limit, maxHits: maxHits,
-                             reverseIn: reverse, wetGround: wet, patrols: lanes, patrolSpeed: 35 + 60 * t)
+                             reverseIn: reverse, wetGround: wet, patrols: lanes, patrolSpeed: 40 + 65 * t)
     }
 
     /// The rules shown before the start: (SF Symbol, text).

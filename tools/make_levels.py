@@ -451,7 +451,8 @@ def layout_for(index):
 
 
 def build(index):
-    d = index / 39
+    # One step harder from the start: tighter bays and more traffic earlier
+    d = min(1.0, (index + 5) / 39)
     layout = layout_for(index)
     for attempt in range(600):
         rng = random.Random(index * 7919 + attempt)
