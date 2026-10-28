@@ -102,7 +102,7 @@ class Level:
     def quads(self):
         return [corners(x, y, w, h, d) for _, x, y, w, h, d, _ in self.obs]
 
-    def check(self):
+    def check(self, radius=13):
         quads = self.quads()
         for sx, sy, sw, sh, sd in self.spots:
             if sw < CAR[0] + 14 or sh < CAR[1] + 8:
@@ -124,7 +124,6 @@ class Level:
         # Reachability for a disc a little smaller than the car's width
         cell = 6
         gw, gh = W // cell, H // cell
-        radius = 13
         free = [[True] * gh for _ in range(gw)]
         for kind, x, y, w, h, d, _ in self.obs:
             r = math.hypot(w, h) / 2 + radius
@@ -415,6 +414,56 @@ def slalom(lv, rng, d):
                 lv.cone(x, y)
 
 
+def clutter(lv, rng, d, cars, cones, radius=17):
+    """More parked cars and cones round the bays and along the way, so the last metres are a
+    squeeze. Each one is kept only if the level still checks out with a wider car disc than
+    usual (gaps stay drivable for a 4.4 m car, not just passable for a point), and none lands
+    in a bay's entry box."""
+    keep_out = []
+    for sx, sy, sw, sh, sd in lv.spots:
+        keep_out.append(corners(sx, sy, sw + 70, sh + 16, sd))
+    for x, y, deg in lv.starts:
+        keep_out.append(corners(x, y, 110, 60, deg))
+
+    def try_add(kind, x, y, deg):
+        if not (30 < x < W - 30 and 30 < y < H - 30):
+            return False
+        w, h = (CAR if kind == 'car' else (14, 14))
+        q = corners(x, y, w + 6, h + 6, deg)
+        if any(overlap(q, k) for k in keep_out):
+            return False
+        # Never inside or touching another obstacle (cars pushed into each other looked wrong)
+        if any(overlap(q, o) for o in lv.quads()):
+            return False
+        lv.obs.append((kind, x, y, w, h, deg, rng.randint(1, 5) if kind == 'car' else 0))
+        if lv.check(radius=radius) is None:
+            return True
+        lv.obs.pop()
+        return False
+
+    placed_cars = placed_cones = 0
+    for _ in range(cars * 12):
+        if placed_cars >= cars:
+            break
+        sx, sy, sw, sh, sd = rng.choice(lv.spots)
+        r = rng.uniform(70, 190)
+        t = rng.uniform(0, 2 * math.pi)
+        deg = rng.choice([0, 90, sd, sd + 90, rng.uniform(0, 180)])
+        if try_add('car', sx + math.cos(t) * r, sy + math.sin(t) * r, deg):
+            placed_cars += 1
+    for _ in range(cones * 10):
+        if placed_cones >= cones:
+            break
+        if rng.random() < 0.6:
+            sx, sy, *_ = rng.choice(lv.spots)
+            x, y = sx + rng.uniform(-150, 150), sy + rng.uniform(-120, 120)
+        else:
+            x, y = rng.uniform(150, 850), rng.uniform(40, 460)
+        if try_add('cone', x, y, 0):
+            placed_cones += 1
+    return placed_cars, placed_cones
+
+
 def mirror(lv, horizontal, vertical):
     """Mirrors a finished layout so starts, bays and turns differ between levels."""
     def mx(x):
@@ -462,6 +511,7 @@ def build(index):
         mirror(lv, horizontal=index % 2 == 1, vertical=index % 3 == 2)
         problem = lv.check()
         if problem is None:
+            clutter(lv, rng, d, cars=int(3 + 6 * d), cones=int(4 + 8 * d))
             return lv, attempt
     raise SystemExit(f'level {index + 11}: could not build ({problem})')
 
