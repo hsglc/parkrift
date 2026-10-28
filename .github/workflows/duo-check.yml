@@ -41,7 +41,7 @@ jobs:
             sleep 2
             xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" > /dev/null 2>&1
             sleep "$wait"
-            xcrun simctl io "$UDID" screenshot "duo/$label.png" || true
+            xcrun simctl io "$UDID" screenshot --mask=ignored "duo/$label.png" || true
           }
           still home 9 -staymenu
           still levels 9 -staylevels

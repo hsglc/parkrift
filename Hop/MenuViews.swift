@@ -167,7 +167,7 @@ struct MenuView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showLevelsPage)) { _ in
-            model.selectedLevel = 17
+            model.selectedLevel = 0
             go(.levels)
         }
         .onChange(of: model.errorText) { _, error in
