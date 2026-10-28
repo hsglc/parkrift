@@ -218,6 +218,14 @@ final class AppModel: ObservableObject {
             online = false
             errorText = error
             screen = .menu
+            // Nobody to play with: a solo race against the traffic instead of an empty wait
+            if error == Strings.noOpponent {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+                    guard let self = self, self.screen == .menu, !self.connecting else { return }
+                    self.errorText = nil
+                    self.playRace()
+                }
+            }
         }
     }
 

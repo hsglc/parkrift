@@ -46,12 +46,12 @@ TEXTS = {
             "Park, drift and race through a living city!\n\n"
             "Parkrift is a fast arcade car game for one or two players. Squeeze into tight bays, slide "
             "into your spot with a drift, outrun the police and race a friend across town.\n\n"
-            "• 50 parking levels, from first park to pro manoeuvres\n"
+            "• 50 parking levels that get harder every level: time limits, crash limits, back-in bays, wet ground and patrol cars\n"
             "• City park races and car races with traffic, pedestrians, ramps and shortcuts\n"
             "• Real drift: handbrake, throttle and counter-steer\n"
             "• Police chases: crash, speed or hit someone and the sirens come for you\n"
             "• Day, night and rain\n"
-            "• 8 low poly cars to unlock, with paint, rims and upgrades\n"
+            "• 6 original cars to unlock, with paint, rims and upgrades\n"
             "• Daily tasks, a daily gift streak and weekend double coins\n"
             "• Play online with a friend by room code, or quick match a random driver\n"
             "• Beat your own ghost on every level\n"
@@ -65,12 +65,12 @@ TEXTS = {
             "Canlı bir şehirde park et, drift at, yarış!\n\n"
             "Parkrift tek ya da iki kişilik hızlı bir arcade araba oyunu. Dar yerlere sığ, park yerine "
             "drift atarak gir, polisten kaç ve şehirde arkadaşınla yarış.\n\n"
-            "• İlk parktan usta manevralara 50 park bölümü\n"
+            "• Her bölümde zorlaşan 50 park bölümü: süre ve çarpma sınırı, geri geri park, kaygan zemin, devriye araçlar\n"
             "• Trafik, yaya, rampa ve kestirme yollarla şehirde park ve araba yarışları\n"
             "• Gerçek drift: el freni, gaz ve ters direksiyon\n"
             "• Polis kovalamacası: kaza yap, hız yap ya da yayaya çarp, siren peşine düşsün\n"
             "• Gündüz, gece ve yağmur\n"
-            "• Boya, jant ve geliştirmeleriyle açılacak 8 low poly araba\n"
+            "• Boya, jant ve geliştirmeleriyle açılacak 6 özgün araba\n"
             "• Günlük görevler, günlük hediye serisi ve hafta sonu 2x para\n"
             "• Oda koduyla arkadaşınla ya da hızlı eşleşmeyle rastgele bir rakiple online oyna\n"
             "• Her bölümde kendi hayaletini geç\n"
@@ -84,12 +84,12 @@ TEXTS = {
             "¡Aparca, derrapa y compite en una ciudad viva!\n\n"
             "Parkrift es un juego de coches arcade para uno o dos jugadores. Mete el coche en plazas "
             "estrechas, entra derrapando, escapa de la policía y corre contra un amigo por la ciudad.\n\n"
-            "• 50 niveles de aparcamiento\n"
+            "• 50 niveles de aparcamiento cada vez más difíciles\n"
             "• Carreras de aparcamiento y de coches con tráfico, peatones, rampas y atajos\n"
             "• Derrape real: freno de mano, acelerador y contravolante\n"
             "• Persecuciones policiales\n"
             "• Día, noche y lluvia\n"
-            "• 8 coches low poly para desbloquear, con pintura, llantas y mejoras\n"
+            "• 6 coches originales para desbloquear, con pintura, llantas y mejoras\n"
             "• Tareas diarias, regalo diario y monedas dobles el fin de semana\n"
             "• Juega online con un amigo o en partida rápida\n"
             "• Supera a tu fantasma en cada nivel\n\n"
@@ -336,8 +336,14 @@ def review_details(vid):
     existing = call('GET', f'/v1/appStoreVersions/{vid}/appStoreReviewDetail', quiet=True)
     attrs = {'contactFirstName': 'Hüseyin', 'contactLastName': 'Gülcü', 'contactEmail': 'huseyinglc0@gmail.com',
              'demoAccountRequired': False,
-             'notes': 'No login needed. Online play: tap Online > Create Room on one device and Join Room with the '
-                      'code on another, or Quick Match on two devices at the same time. Solo and city modes work offline.'}
+             'notes': ('No account or login exists in this app; everything works right away. '
+                       'Solo: Park Master (50 levels) and City (car race, park race) need no network. '
+                       'Online (Play with a friend): tap Create Room on one device and Join Room with the 4-letter code '
+                       'on a second device, or Quick Match on two devices at about the same time. If no opponent is '
+                       'found within a minute, Quick Match starts a solo race against the city traffic instead. '
+                       'Online play only relays car positions between the two players; there is no chat, no text '
+                       'entry other than the room code, and no user-generated content. Game Center (leaderboards) is '
+                       'optional. Coins are earned in play only; there are no in-app purchases or ads.')}
     if phone:
         attrs['contactPhone'] = phone
     if existing and existing.get('data'):

@@ -319,7 +319,7 @@ enum Strings {
     static var quickMatch: String { t("Hızlı eşleşme", "Quick match", "Partida rápida") }
     static var quickMatchSub: String { t("Rastgele bir rakiple hemen yarış", "Race a random opponent right away", "Compite ya contra un rival al azar") }
     static var searching: String { t("Rakip aranıyor…", "Finding an opponent…", "Buscando rival…") }
-    static var noOpponent: String { t("Şu an rakip bulunamadı, biraz sonra tekrar dene.", "No opponent found right now, try again soon.", "No hay rivales ahora, inténtalo pronto.") }
+    static var noOpponent: String { t("Şu an rakip bulunamadı: trafiğe karşı yarışa başlıyorsun.", "No opponent found right now: racing the city traffic instead.", "No hay rivales ahora: corres contra el tráfico.") }
     /// A quiet greeting on the home screen, by the time of day.
     static var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())

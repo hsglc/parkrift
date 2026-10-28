@@ -618,8 +618,9 @@ struct AboutView: View {
     }
 
     private var credits: [Credit] { [
-        Credit(what: Strings.pick("Garaj arabaları", "Garage cars", "Coches del garaje"),
-               author: "Polyfork", license: Strings.pick("Ticari kullanım", "Commercial use", "Uso comercial"), link: "https://polyfork.dev"),
+        Credit(what: Strings.pick("Garaj arabaları ve menü görselleri", "Garage cars and menu art", "Coches del garaje e imágenes del menú"),
+               author: Strings.pick("Özgün, Meshy AI ile üretildi", "Original, made with Meshy AI", "Originales, hechos con Meshy AI"),
+               license: Strings.pick("Özgün tasarım", "Original design", "Diseño original"), link: "https://www.meshy.ai"),
         Credit(what: Strings.pick("Trafik araçları", "Traffic vehicles", "Vehículos del tráfico"), author: "Kenney (Car Kit)", license: "CC0", link: "https://kenney.nl/assets/car-kit"),
         Credit(what: Strings.pick("Yayalar ve animasyonları, koniler, variller, bariyer, polis arabası",
                                   "Pedestrians and their animations, cones, drums, barricade, police car",
