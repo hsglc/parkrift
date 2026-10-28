@@ -16,6 +16,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_27.1.app
           xcodebuild -version
           xcrun simctl help 2>&1 | grep -i -E "fold|posture|display|hinge" || true
+          xcrun simctl io help 2>&1 | head -60 || true
       - name: Build for simulator
         run: |
           brew install xcodegen
@@ -36,13 +37,22 @@ jobs:
             xcrun simctl boot "$UDID"
             xcrun simctl bootstatus "$UDID" -b
             xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
+            # The Duo has two displays: try the plain call, then each display by name
+            shot() {
+              local out=$1
+              xcrun simctl io "$UDID" screenshot --mask=ignored "$out" 2>/dev/null && return
+              for d in internal external main inner outer 0 1; do
+                xcrun simctl io "$UDID" screenshot --display="$d" --mask=ignored "${out%.png}-$d.png" 2>/dev/null && echo "display $d ok"
+              done
+              true
+            }
             still() {
               local label=$1 wait=$2; shift 2
               xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
               sleep 2
               xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" > /dev/null 2>&1
               sleep "$wait"
-              xcrun simctl io "$UDID" screenshot --mask=ignored "duo/$DEV-$label.png" || true
+              shot "duo/$DEV-$label.png"
             }
             still home 9 -staymenu
             still levels 9 -staylevels
@@ -52,8 +62,8 @@ jobs:
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
             xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark > /dev/null 2>&1
-            sleep 22; xcrun simctl io "$UDID" screenshot --mask=ignored "duo/$DEV-race1.png" || true
-            sleep 10; xcrun simctl io "$UDID" screenshot --mask=ignored "duo/$DEV-race2.png" || true
+            sleep 22; shot "duo/$DEV-race1.png"
+            sleep 10; shot "duo/$DEV-race2.png"
             xcrun simctl shutdown "$UDID" || true
           done
           ls -la duo
