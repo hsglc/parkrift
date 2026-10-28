@@ -45,12 +45,15 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
           mkdir -p shots
-          xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -playpark -AppleLanguages "(tr)" > /dev/null 2>&1
+          rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
+          xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playpark -AppleLanguages "(tr)" > shots/console.log 2>&1 &
           sleep 3
           for i in $(seq -w 1 40); do
             xcrun simctl io "$UDID" screenshot --mask=ignored "shots/t$i.png" > /dev/null 2>&1 || true
             sleep 0.25
           done
+          sleep 5
+          cp ~/Library/Logs/DiagnosticReports/Hop* shots/ 2>/dev/null || true
           ls shots | wc -l
 
       - uses: actions/upload-artifact@v4
