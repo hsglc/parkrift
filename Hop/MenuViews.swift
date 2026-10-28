@@ -916,9 +916,35 @@ private struct ModeChip: View {
 /// mode's key art, the level and its difficulty in the racing style, a filling neon line and a tip.
 struct LoadingView: View {
     let level: Int
+    /// When the screen appeared and how long it should take; `endsAt` is the exact close time
+    /// once the level is ready.
+    var shownAt = Date()
+    var expected: TimeInterval = 2.35
+    var endsAt: Date? = nil
     @State private var tip = Strings.tips.randomElement() ?? ""
-    @State private var progress: CGFloat = 0
     @State private var shown = false
+    /// Where the bar was when the close time became known, so it carries on from there.
+    @State private var handoff: (time: Date, value: Double)?
+
+    /// Fill in proportion to the elapsed time: steady towards 90 % over the expected time (and
+    /// creeping on if the level takes longer), then on to 100 % exactly at the close time. It
+    /// follows the clock, so a busy frame never makes it stall and then jump.
+    private func progress(at now: Date) -> Double {
+        let elapsed = now.timeIntervalSince(shownAt)
+        let linear = min(1, elapsed / max(0.5, expected))
+        var value = linear * 0.92
+        if elapsed > expected {
+            let over = elapsed - expected
+            value = 0.92 + 0.06 * (1 - exp(-over / 2))
+        }
+        if let end = endsAt, let handoff = handoff {
+            let span = max(0.05, end.timeIntervalSince(handoff.time))
+            let t = min(1, max(0, now.timeIntervalSince(handoff.time) / span))
+            value = handoff.value + (1 - handoff.value) * t
+        }
+        // A light ease at the very start so it does not leap off zero
+        return min(1, max(0, value))
+    }
 
     private var modeTitle: String {
         if Levels.isRace(level) { return Strings.carRace }
@@ -979,8 +1005,11 @@ struct LoadingView: View {
                         .shadow(color: .black.opacity(0.5), radius: 10)
                         .padding(.top, 2)
                     HStack(spacing: 10) {
-                        SlantedBar(value: Double(progress), color: accent)
-                            .frame(width: 260, height: 6)
+                        TimelineView(.animation) { context in
+                            SlantedBar(value: progress(at: context.date), color: accent)
+                                .frame(width: 260, height: 6)
+                        }
+                        .frame(width: 260, height: 6)
                         Text(Strings.loadingText.uppercased())
                             .font(.kicker(9)).tracking(1.2)
                             .foregroundStyle(.white.opacity(0.55))
@@ -1014,7 +1043,13 @@ struct LoadingView: View {
         .ignoresSafeArea()
         .onAppear {
             shown = true
-            withAnimation(.easeInOut(duration: AppModel.minimumLoading)) { progress = 1 }
+            if endsAt != nil { handoff = (Date(), progress(at: Date())) }
+        }
+        .onChange(of: endsAt) { _, end in
+            guard end != nil else { handoff = nil; return }
+            let now = Date()
+            handoff = nil
+            handoff = (now, progress(at: now))
         }
     }
 }

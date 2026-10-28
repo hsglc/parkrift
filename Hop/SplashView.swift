@@ -90,7 +90,9 @@ struct SplashView: View {
     }
 
     private func progress(t: Double, width: CGFloat) -> some View {
-        let fill = CGFloat(1 - pow(1 - min(1, t / 0.92), 2))
+        // In proportion to the time (full just before the fade), only softened at both ends
+        let x = min(1, t / 0.96)
+        let fill = CGFloat(0.8 * x + 0.2 * x * x * (3 - 2 * x))
         let lineWidth = min(320, width * 0.4)
         return VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .leading) {

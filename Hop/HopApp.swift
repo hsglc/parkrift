@@ -258,6 +258,8 @@ final class AppModel: ObservableObject {
         // (building it blocks the main thread, which used to leave a black screen).
         loadingLevel = level
         loadingStartedAt = Date()
+        loadingExpected = AppModel.minimumLoading + 0.35
+        loadingEndsAt = nil
         loading = true
         scene = nil
         world = nil
@@ -282,6 +284,9 @@ final class AppModel: ObservableObject {
         loadingLevel = level
         // Between rounds the curtain needs less time than at the first start
         loadingStartedAt = Date().addingTimeInterval(-(AppModel.minimumLoading - 1.0))
+        loadingExpected = 1.0 + 0.35
+        loadingShownAt = Date()
+        loadingEndsAt = nil
         withAnimation(.easeIn(duration: 0.25)) {
             results = nil
             loading = true
@@ -295,13 +300,22 @@ final class AppModel: ObservableObject {
 
     /// The loading screen always stays at least this long, whatever the mode.
     static let minimumLoading: TimeInterval = 2.0
-    private var loadingStartedAt = Date()
+    private var loadingStartedAt = Date() {
+        didSet { loadingShownAt = loadingStartedAt }
+    }
+    /// For the loading bar: when the screen appeared, how long it is expected to stay, and the
+    /// exact moment it closes once the level is ready (the bar fills in proportion to the time).
+    private(set) var loadingShownAt = Date()
+    private(set) var loadingExpected: TimeInterval = 2.35
+    @Published private(set) var loadingEndsAt: Date?
 
     /// Called when the world is built; hides the loading screen once it has been up for
     /// `minimumLoading`, then `start` begins the countdown.
     func sceneReady(then start: @escaping () -> Void) {
         // At least a few frames with the chase camera in place before the loading screen fades
         let remaining = max(0.25, AppModel.minimumLoading - Date().timeIntervalSince(loadingStartedAt))
+        // The bar reaches the end as the screen starts to fade
+        loadingEndsAt = Date().addingTimeInterval(remaining + 0.15)
         DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
             guard let self = self, self.screen == .game else { return }
             withAnimation(.easeOut(duration: 0.35)) { self.loading = false }
@@ -536,7 +550,8 @@ struct RootView: View {
                     .animation(.easeOut(duration: 0.3), value: model.results?.id)
                 }
                 if model.loading {
-                    LoadingView(level: model.loadingLevel)
+                    LoadingView(level: model.loadingLevel, shownAt: model.loadingShownAt,
+                                expected: model.loadingExpected, endsAt: model.loadingEndsAt)
                         .transition(.opacity)
                 }
                 }
