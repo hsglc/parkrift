@@ -31,6 +31,15 @@ struct ParkChallenge {
     static let easy = ParkChallenge(number: 0, tier: 0, alignTolerance: 0.21, holdTime: 1, timeLimit: nil, maxHits: nil,
                                     reverseIn: false, wetGround: false, patrols: [], patrolSpeed: 0)
 
+    /// Challenges for the level list (computed once per level).
+    private static var cache: [Int: ParkChallenge] = [:]
+    static func forMenu(index: Int) -> ParkChallenge {
+        if let known = cache[index] { return known }
+        let made = make(index: index, level: Levels.all[min(index, Levels.all.count - 1)], slot: 0)
+        cache[index] = made
+        return made
+    }
+
     static func make(index: Int, level: LevelDef, slot: Int) -> ParkChallenge {
         guard !Levels.isCity(index), index >= 0, index < 50 else { return .easy }
         let n = index + 1

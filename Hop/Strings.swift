@@ -174,6 +174,10 @@ enum Strings {
     static var homeCareerKicker: String { t("KARİYER", "CAREER", "CARRERA") }
     static var homeCityKicker: String { t("TRAFİK · YARIŞ", "TRAFFIC · RACE", "TRÁFICO · CARRERA") }
     static var homeOnlineKicker: String { t("2 OYUNCU", "2 PLAYERS", "2 JUGADORES") }
+    static var homeTrafficKicker: String { t("TRAFİK · PARK", "TRAFFIC · PARK", "TRÁFICO · APARCAR") }
+    static var homePrivateKicker: String { t("ÖZEL ODA", "PRIVATE ROOM", "SALA PRIVADA") }
+    static var dailyKicker: String { t("HER GÜN YENİLENİR", "RESETS EVERY DAY", "SE RENUEVA CADA DÍA") }
+    static func streakDays(_ days: Int) -> String { t("Seri: \(days) gün", "Streak: \(days) days", "Racha: \(days) días") }
     static var homeContinue: String { t("Devam et", "Continue", "Continuar") }
     static var splashTagline: String { t("Park et. Drift at. Kazan.", "Park it. Drift it. Win it.", "Aparca. Derrapa. Gana.") }
     static var loadingText: String { t("Harita hazırlanıyor…", "Preparing the map…", "Preparando el mapa…") }

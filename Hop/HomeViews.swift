@@ -228,7 +228,7 @@ private struct ModeArtTile: View {
 }
 
 /// Key art filling a tile, darkened toward the bottom-left where the text sits.
-private struct ArtBackground: View {
+struct ArtBackground: View {
     let image: String
     let accent: Color
 
@@ -252,7 +252,7 @@ private struct ArtBackground: View {
 }
 
 /// A short bright bar along the top edge of a tile.
-private struct AccentStripe: View {
+struct AccentStripe: View {
     let color: Color
     var body: some View {
         SlantedShape(skew: 4)
@@ -346,11 +346,199 @@ enum Neo {
     static let magenta = Color(red: 1.0, green: 0.3, blue: 0.72)
 }
 
-private extension View {
+extension View {
     /// Rises into place after `delay` once `shown` turns on.
     func rise(_ shown: Bool, delay: Double) -> some View {
         self.opacity(shown ? 1 : 0)
             .offset(y: shown ? 0 : 20)
             .animation(.spring(response: 0.6, dampingFraction: 0.86).delay(delay), value: shown)
+    }
+}
+
+/// A mode option as a big picture tile: art, kicker, title, a short line and a slanted
+/// call-to-action in the tile's accent (city and online pages).
+struct ArtActionTile: View {
+    let image: String
+    let kicker: String
+    let title: String
+    let detail: String
+    let accent: Color
+    let icon: String
+    let buttonTitle: String
+    var skew: CGFloat = 20
+    let action: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            ArtBackground(image: image, accent: accent)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: icon).font(.system(size: 11, weight: .black))
+                    Text(kicker).font(.kicker(9)).tracking(1.2)
+                }
+                .foregroundStyle(accent)
+                Text(title.uppercased())
+                    .font(.race(30))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .shadow(color: .black.opacity(0.5), radius: 8)
+                Text(detail)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    AudioManager.shared.play("click", volume: 0.6)
+                    action()
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(buttonTitle.uppercased())
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .black))
+                    }
+                }
+                .buttonStyle(RaceButtonStyle(color: accent, textColor: Neo.ink, height: 44, fontSize: 18))
+                .padding(.top, 4)
+            }
+            .padding(.leading, skew + 8)
+            .padding(.trailing, 18)
+            .padding(.bottom, 16)
+        }
+        .clipShape(SlantedShape(skew: skew))
+        .overlay(SlantedShape(skew: skew).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1))
+        .overlay(alignment: .topLeading) { AccentStripe(color: accent).offset(x: skew + 12, y: 0) }
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 10)
+    }
+}
+
+/// Top bar title of a menu page: slanted back button, kicker and the page name.
+struct NeoPageTitle: View {
+    let kicker: String
+    let title: String
+    let back: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            NeoIconButton(systemImage: "chevron.left", action: back)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(kicker.uppercased()).font(.kicker(9)).tracking(1.5).foregroundStyle(Neo.cyan)
+                Text(title.uppercased()).font(.race(28)).foregroundStyle(.white)
+            }
+        }
+    }
+}
+
+/// Garage shortcut in the page top bar: the car's colour, name and class.
+struct NeoGarageChip: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        Button {
+            AudioManager.shared.play("click", volume: 0.6)
+            model.openGarage(.menu)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "car.side.fill")
+                    .foregroundStyle(Color(model.carChoice.color.lighter(by: 0.25)))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(Strings.garage.uppercased()).font(.kicker(8)).foregroundStyle(.white.opacity(0.5))
+                    Text(model.carChoice.spec.name.uppercased()).font(.race(14)).foregroundStyle(.white)
+                }
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 12)
+            .frame(height: 38)
+            .background(SlantedShape(skew: 8).fill(Neo.ink.opacity(0.75)))
+            .overlay(SlantedShape(skew: 8).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1))
+        }
+        .buttonStyle(PressScaleStyle())
+    }
+}
+
+/// Colour of a parking level's difficulty tier (easy ... master).
+enum TierColor {
+    static let all: [Color] = [Color(red: 0.35, green: 0.9, blue: 0.55), Color(red: 1, green: 0.84, blue: 0.3),
+                               Color(red: 1, green: 0.55, blue: 0.25), Color(red: 1, green: 0.32, blue: 0.35),
+                               Color(red: 0.78, green: 0.45, blue: 1)]
+    static func of(level index: Int) -> Color { all[min(4, max(0, index) / 10)] }
+}
+
+/// The selected parking level: art, number, name, difficulty, its rules, stars, best time, play.
+struct LevelDetailPanel: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        let index = min(model.selectedLevel, Levels.all.count - 1)
+        let level = Levels.all[index]
+        let challenge = ParkChallenge.forMenu(index: index)
+        let tier = TierColor.of(level: index)
+        return ZStack(alignment: .bottomLeading) {
+            ArtBackground(image: "menu_park.jpg", accent: tier)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text(Strings.level(index + 1, of: Levels.all.count).uppercased())
+                        .font(.kicker(10)).tracking(1.2).foregroundStyle(.white.opacity(0.75))
+                    Text(Strings.tierNames[min(4, index / 10)])
+                        .font(.race(11)).foregroundStyle(Neo.ink)
+                        .padding(.horizontal, 8).padding(.vertical, 1)
+                        .background(SlantedShape(skew: 5).fill(tier))
+                }
+                Text(level.name.uppercased())
+                    .font(.race(34))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .shadow(color: .black.opacity(0.5), radius: 8)
+                    .id(index)
+                    .transition(.opacity)
+                HStack(spacing: 12) {
+                    StarsRow(filled: model.stars(for: index), size: 16, spacing: 3)
+                    HStack(spacing: 4) {
+                        Image(systemName: "stopwatch.fill").foregroundStyle(Palette.gold)
+                        Text(model.bestTime(for: index).map { String(format: "%.1f s", $0) } ?? "–")
+                            .monospacedDigit()
+                    }
+                    .font(.race(14, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.85))
+                }
+                // The level's rules (Challenge.swift)
+                let rules = challenge.rules
+                if !rules.isEmpty {
+                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                              alignment: .leading, spacing: 5) {
+                        ForEach(Array(rules.enumerated()), id: \.offset) { _, rule in
+                            HStack(spacing: 6) {
+                                Image(systemName: rule.icon).font(.system(size: 10, weight: .black)).foregroundStyle(tier)
+                                    .frame(width: 14)
+                                Text(rule.text).font(.system(size: 11, weight: .bold)).foregroundStyle(.white.opacity(0.85))
+                                    .lineLimit(1).minimumScaleFactor(0.7)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    AudioManager.shared.play("click", volume: 0.6)
+                    model.playSolo()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.fill").font(.system(size: 14, weight: .black))
+                        Text(Strings.play.uppercased())
+                    }
+                }
+                .buttonStyle(RaceButtonStyle(color: Palette.gold, textColor: Neo.ink, height: 50, fontSize: 22))
+            }
+            .padding(.leading, 30)
+            .padding(.trailing, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 16)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .clipShape(SlantedShape(skew: 22))
+        .overlay(SlantedShape(skew: 22).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1))
+        .overlay(alignment: .topLeading) { AccentStripe(color: tier).offset(x: 34, y: 0) }
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 10)
+        .animation(.easeOut(duration: 0.2), value: model.selectedLevel)
     }
 }

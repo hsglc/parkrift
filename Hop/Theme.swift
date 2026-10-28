@@ -158,10 +158,9 @@ struct SoundToggle: View {
     @State private var muted = AudioManager.shared.isMuted
 
     var body: some View {
-        RoundIconButton(systemImage: muted ? "speaker.slash.fill" : "speaker.wave.2.fill") {
+        NeoIconButton(systemImage: muted ? "speaker.slash.fill" : "speaker.wave.2.fill") {
             muted.toggle()
             AudioManager.shared.isMuted = muted
-            AudioManager.shared.play("click")
         }
     }
 }
@@ -273,12 +272,13 @@ struct CoinPill: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
         }
-        .font(.system(size: 15, weight: .black, design: .rounded))
+        .font(.race(17))
         .foregroundStyle(.white)
-        .padding(.horizontal, 12)
-        .frame(height: 42)
-        .background(Capsule().fill(Palette.ink.opacity(0.75)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
+        .frame(height: 34)
+        .background(SlantedShape(skew: 7).fill(Neo.ink.opacity(0.75)))
+        .overlay(SlantedShape(skew: 7).strokeBorderCompat(Palette.gold.opacity(0.45), lineWidth: 1))
         .animation(.easeOut(duration: 0.3), value: coins)
     }
 }

@@ -200,44 +200,13 @@ struct MenuView: View {
                 if page == .home {
                     EmptyView()
                 } else {
-                    HStack(spacing: 12) {
-                        GlassIconButton(systemImage: "chevron.left") { go(.home) }
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(Strings.chooseMode)
-                                .font(Calm.body(11))
-                                .foregroundStyle(Calm.teal.opacity(0.9))
-                            Text(pageTitle)
-                                .font(Calm.title(26))
-                                .foregroundStyle(.white)
-                        }
-                    }
+                    NeoPageTitle(kicker: Strings.chooseMode, title: pageTitle) { go(.home) }
                     .transition(.opacity)
                 }
             }
             Spacer()
             if page != .home {
-            Button {
-                AudioManager.shared.play("click", volume: 0.6)
-                model.openGarage(.menu)
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "car.side.fill")
-                        .foregroundStyle(Color(model.carChoice.color.lighter(by: 0.25)))
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(Strings.garage)
-                            .font(Calm.body(10))
-                            .foregroundStyle(.white.opacity(0.6))
-                        Text(model.carChoice.spec.name)
-                            .font(Calm.title(14))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .frame(height: 40)
-                .background(Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
-            }
-            .buttonStyle(PressScaleStyle())
+                NeoGarageChip()
             }
             CoinPill(coins: model.coins)
             NeoIconButton(systemImage: "gift.fill", badge: Progression.pendingGiftDay != nil) { showDaily = true }
@@ -264,27 +233,36 @@ struct MenuView: View {
         case .levels:
             levelsPage
         case .city:
-            HStack(spacing: 12) {
-                OptionTile(title: Strings.carRace, subtitle: Strings.carRaceInfo, icon: "flag.checkered",
-                           accent: Calm.rose, buttonTitle: Strings.play) { model.playRace() }
-                OptionTile(title: Strings.parkRace, subtitle: Strings.cityRaceInfo, icon: "parkingsign",
-                           accent: Calm.lavender, buttonTitle: Strings.play) { model.playCity() }
+            HStack(spacing: 14) {
+                ArtActionTile(image: "menu_city.jpg", kicker: Strings.homeCityKicker, title: Strings.carRace,
+                              detail: Strings.carRaceInfo, accent: Neo.magenta, icon: "flag.checkered",
+                              buttonTitle: Strings.play) { model.playRace() }
+                ArtActionTile(image: "menu_parkrace.jpg", kicker: Strings.homeTrafficKicker, title: Strings.parkRace,
+                              detail: Strings.cityRaceInfo, accent: Palette.gold, icon: "parkingsign",
+                              buttonTitle: Strings.play) { model.playCity() }
             }
         case .online:
             HStack(spacing: 12) {
-                OptionTile(title: Strings.quickMatch, subtitle: Strings.quickMatchSub, icon: "bolt",
-                           accent: Calm.peach, buttonTitle: Strings.playNow) { model.quickMatch() }
-                OptionTile(title: Strings.createRoom, subtitle: Strings.createRoomSub, icon: "plus",
-                           accent: Calm.teal, buttonTitle: Strings.createRoom) { model.createRoom() }
+                ArtActionTile(image: "menu_duo.jpg", kicker: Strings.homeOnlineKicker, title: Strings.quickMatch,
+                              detail: Strings.quickMatchSub, accent: Neo.magenta, icon: "bolt.fill",
+                              buttonTitle: Strings.playNow, skew: 16) { model.quickMatch() }
+                ArtActionTile(image: "menu_room.jpg", kicker: Strings.homePrivateKicker, title: Strings.createRoom,
+                              detail: Strings.createRoomSub, accent: Neo.cyan, icon: "plus",
+                              buttonTitle: Strings.createRoom, skew: 16) { model.createRoom() }
                 ZStack {
                     if showJoin {
-                        JoinPanel(showJoin: $showJoin)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .calmCard(radius: 28, padding: 14)
-                            .transition(.scale(scale: 0.92).combined(with: .opacity))
+                        ZStack {
+                            ArtBackground(image: "menu_join.jpg", accent: Palette.gold)
+                            JoinPanel(showJoin: $showJoin)
+                                .padding(.horizontal, 20)
+                        }
+                        .clipShape(SlantedShape(skew: 16))
+                        .overlay(SlantedShape(skew: 16).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1))
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
                     } else {
-                        OptionTile(title: Strings.joinRoom, subtitle: Strings.joinRoomSub, icon: "keyboard",
-                                   accent: Calm.sky, buttonTitle: Strings.enterCode) {
+                        ArtActionTile(image: "menu_join.jpg", kicker: Strings.homePrivateKicker, title: Strings.joinRoom,
+                                      detail: Strings.joinRoomSub, accent: Palette.gold, icon: "keyboard",
+                                      buttonTitle: Strings.enterCode, skew: 16) {
                             withAnimation(pageAnimation) { showJoin = true }
                         }
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
@@ -295,48 +273,9 @@ struct MenuView: View {
     }
 
     private var levelsPage: some View {
-        let index = model.selectedLevel
-        let level = Levels.all[min(index, Levels.all.count - 1)]
-        return HStack(spacing: 14) {
+        HStack(spacing: 14) {
             LevelPicker()
-            VStack(alignment: .leading, spacing: 10) {
-                Text(Strings.level(index + 1, of: Levels.all.count))
-                    .font(Calm.body(12))
-                    .foregroundStyle(Calm.teal.opacity(0.9))
-                Text(level.name)
-                    .font(Calm.title(28))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .id(index)
-                    .transition(.opacity)
-                StarsRow(filled: model.stars(for: index), size: 20, spacing: 4)
-                HStack(spacing: 6) {
-                    Image(systemName: "stopwatch").foregroundStyle(Calm.peach)
-                    Text(Strings.bestLabel + ": " + (model.bestTime(for: index).map { String(format: "%.1f s", $0) } ?? "–"))
-                }
-                .font(Calm.body(13))
-                .foregroundStyle(.white.opacity(0.8))
-                Spacer(minLength: 0)
-                Button {
-                    AudioManager.shared.play("click", volume: 0.5)
-                    model.playSolo()
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(Strings.play)
-                        Image(systemName: "arrow.right").font(.system(size: 15, weight: .semibold))
-                    }
-                    .font(Calm.title(18))
-                    .foregroundStyle(Calm.night)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(Capsule().fill(Calm.peach))
-                }
-                .buttonStyle(PressScaleStyle())
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .calmCard(radius: 28, padding: 18)
-            .animation(.easeOut(duration: 0.2), value: index)
+            LevelDetailPanel()
         }
     }
 
@@ -507,9 +446,8 @@ private struct JoinPanel: View {
     var body: some View {
         VStack(spacing: 12) {
             Text(Strings.joinRoom.uppercased())
-                .font(.system(size: 13, weight: .black, design: .rounded))
-                .foregroundStyle(.white.opacity(0.6))
-                .tracking(1.5)
+                .font(.race(22))
+                .foregroundStyle(.white)
             ZStack {
                 TextField("", text: $code)
                     .textInputAutocapitalization(.characters)
@@ -529,9 +467,9 @@ private struct JoinPanel: View {
                             .font(.system(size: 26, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 52)
-                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.10)))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(active ? Palette.gold : Color.white.opacity(0.18), lineWidth: active ? 2 : 1))
+                            .background(SlantedShape(skew: 8).fill(Neo.ink.opacity(0.8)))
+                            .overlay(SlantedShape(skew: 8)
+                                .strokeBorderCompat(active ? Palette.gold : Color.white.opacity(0.22), lineWidth: active ? 2 : 1))
                     }
                 }
                 .allowsHitTesting(false)
@@ -543,9 +481,12 @@ private struct JoinPanel: View {
                 focused = false
                 model.joinRoom(code: code)
             } label: {
-                Label(Strings.join, systemImage: "arrow.right.circle.fill")
+                HStack(spacing: 8) {
+                    Text(Strings.join.uppercased())
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .black))
+                }
             }
-            .buttonStyle(ChunkyButtonStyle(colors: code.count == 4 ? Palette.green : Palette.disabled, height: 46))
+            .buttonStyle(RaceButtonStyle(color: code.count == 4 ? Palette.gold : Color(white: 0.35), textColor: Neo.ink, height: 44, fontSize: 18))
             .disabled(code.count != 4 || model.connecting)
 
             Button(Strings.back) {
@@ -565,15 +506,18 @@ struct LevelPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "flag.checkered")
                 Text(Strings.levels.uppercased())
-                    .tracking(1.2)
+                    .font(.kicker(10))
+                    .tracking(1.5)
+                    .foregroundStyle(Neo.cyan)
                 Spacer()
                 Image(systemName: "star.fill").foregroundStyle(Palette.gold)
                 Text("\(totalStars)/\(Levels.all.count * 3)")
+                    .font(.race(15))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
             }
-            .font(.system(size: 12, weight: .black, design: .rounded))
-            .foregroundStyle(.white.opacity(0.7))
+            .font(.system(size: 12, weight: .black))
 
             let columns = Array(repeating: GridItem(.fixed(54), spacing: 8), count: 5)
             ScrollViewReader { proxy in
@@ -596,7 +540,8 @@ struct LevelPicker: View {
             }
         }
         .frame(width: 302)
-        .calmCard(radius: 24, padding: 12)
+        .padding(12)
+        .background(NeoPanel())
     }
 
     private var totalStars: Int {
@@ -616,26 +561,33 @@ private struct LevelTile: View {
             VStack(spacing: 3) {
                 if unlocked {
                     Text("\(index + 1)")
-                        .font(.system(size: 18, weight: .semibold, design: .rounded))
-                        .foregroundStyle(selected ? Calm.night : .white)
+                        .font(.race(19))
+                        .foregroundStyle(selected ? Neo.ink : .white)
                     StarsRow(filled: stars, size: 7, spacing: 1)
                 } else {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white.opacity(0.3))
                 }
             }
-            .frame(width: 54, height: 50)
+            .frame(width: 54, height: 48)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                SlantedShape(skew: 7)
                     .fill(selected
-                          ? AnyShapeStyle(LinearGradient(colors: [Calm.peach, Calm.rose], startPoint: .top, endPoint: .bottom))
-                          : AnyShapeStyle(Color.white.opacity(unlocked ? 0.08 : 0.03)))
+                          ? AnyShapeStyle(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .top, endPoint: .bottom))
+                          : AnyShapeStyle(Neo.ink.opacity(unlocked ? 0.85 : 0.45)))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .strokeBorder(selected ? Color.white.opacity(0.6) : Color.white.opacity(unlocked ? 0.16 : 0.06), lineWidth: 1)
+                SlantedShape(skew: 7)
+                    .strokeBorderCompat(selected ? Color.white.opacity(0.7) : Color.white.opacity(unlocked ? 0.14 : 0.05), lineWidth: 1)
             )
+            .overlay(alignment: .bottomLeading) {
+                // Difficulty tier as a thin coloured base line
+                SlantedShape(skew: 2).fill(TierColor.of(level: index).opacity(unlocked ? 0.9 : 0.3))
+                    .frame(width: 22, height: 3)
+                    .offset(x: 6, y: -1)
+            }
+            .shadow(color: selected ? Palette.gold.opacity(0.6) : .clear, radius: 8)
             .scaleEffect(selected ? 1.06 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: selected)
         }
