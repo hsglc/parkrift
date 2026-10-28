@@ -287,6 +287,14 @@ enum Strings {
     static var quickMatchSub: String { t("Rastgele bir rakiple hemen yarış", "Race a random opponent right away", "Compite ya contra un rival al azar") }
     static var searching: String { t("Rakip aranıyor…", "Finding an opponent…", "Buscando rival…") }
     static var noOpponent: String { t("Şu an rakip bulunamadı, biraz sonra tekrar dene.", "No opponent found right now, try again soon.", "No hay rivales ahora, inténtalo pronto.") }
+    /// A quiet greeting on the home screen, by the time of day.
+    static var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour < 5 || hour >= 22 { return t("İyi geceler", "Good night", "Buenas noches") }
+        if hour < 12 { return t("Günaydın", "Good morning", "Buenos días") }
+        if hour < 18 { return t("İyi günler", "Good afternoon", "Buenas tardes") }
+        return t("İyi akşamlar", "Good evening", "Buenas noches")
+    }
     static var weekendBonus: String { t("Hafta sonu x2", "Weekend x2", "Fin de semana x2") }
     static var weekendEvent: String { t("HAFTA SONU ETKİNLİĞİ · 2x PARA", "WEEKEND EVENT · 2x COINS", "EVENTO DE FIN DE SEMANA · 2x MONEDAS") }
     static var upgrade: String { t("Geliştir", "Upgrade", "Mejorar") }

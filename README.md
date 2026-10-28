@@ -78,8 +78,17 @@ Basket", "Police Barricade", "Police Cruiser" (free low poly editions, USDZ expo
 Pedestrians: ten Polyfork characters (Commuter, Salaryman Commuter, Passenger, Graduate Student, Professor,
 Backpacker, Arriving Hotel Guest, Trucker, Skate Filmer, Diner Waitress) animated with Polyfork's free Walk,
 Idle and Run clips, baked into pose meshes by `tools/convert_polyfork_people.py` (`Hop/Models/person_p*.usdz`).
-Traffic light: an original Meshy AI model (`tools/convert_meshy_props.py`). Street textures and sounds: procedural (`tools/make_road_textures.py`,
-`tools/make_crash.py`, `tools/make_arcade_sounds.py`, `tools/make_engine_sounds.py`).
+Traffic light: an original Meshy AI model (`tools/convert_meshy_props.py`). Street textures: procedural
+(`tools/make_road_textures.py`). Rain: procedural (`tools/make_arcade_sounds.py`).
+
+Sounds (built by `tools/make_real_sounds.py`):
+- Engine loops: "racing car engine sound loops" (banditracer.eu), OpenGameArt, CC0.
+- Horn: "Car Sound Effects Pack", OpenGameArt, CC0.
+- Tyre squeal, wind, bump, boost, crash hits and finish jingles: "Stunt Rally sounds", OpenGameArt,
+  CC-BY-SA 3.0 (VDrift sounds; crash hits by Halleck; boost by nathanshadow, via freesound.org).
+- Clicks, gear tick, glass: Kenney "Interface Sounds" and "Impact Sounds", CC0.
+- Police siren: "Sirens and Alarm Noise", OpenGameArt, CC0.
+- Music: "Chill lofi inspired [loop edit]" by omfgdude, OpenGameArt, CC0.
 
 No car in the game is a replica of a real make or model (earlier builds used Sketchfab replicas of real
 cars; they were removed because a free model licence does not cover the car maker's design and trademark rights).

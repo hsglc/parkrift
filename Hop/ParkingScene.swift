@@ -82,7 +82,7 @@ final class ParkingScene: SKScene {
     private var steerLabel = SKLabelNode()
     private let minimap = SKNode()
     private var mapScale: CGFloat = 0.168
-    private let mapRadius: CGFloat = 56
+    private let mapRadius: CGFloat = 60
     private var mapContent = SKNode()
     private var targetPointer = SKSpriteNode()
 
@@ -133,6 +133,7 @@ final class ParkingScene: SKScene {
     private var myWins = 0
     private var friendWins = 0
     private var friendMarker = SKShapeNode()
+    private var northMarker = SKLabelNode()
     private var policeMarker = SKShapeNode()
     private var gasPedal = SKSpriteNode()
     private var hornButton = SKSpriteNode()
@@ -391,7 +392,7 @@ final class ParkingScene: SKScene {
         view.allowsTransparency = true
         backgroundColor = .clear
         audio.ensureRunning()
-        audio.setMusicVolume(0.32)
+        audio.setMusicVolume(0.18)
         buildIfNeeded()
     }
 
@@ -1903,53 +1904,75 @@ final class ParkingScene: SKScene {
     private let dialSweep: CGFloat = CGFloat.pi * 1.5    // 270 degrees, clockwise
     private let dialMaxKmh: CGFloat = 100
 
+    /// Modern dial: a dark glass disc, a thin tachometer ring of segments that light up with the
+    /// revs (warm near the redline, cyan on nitro), a speed bar inside it, the speed in big
+    /// numerals and the gear underneath.
     private func buildSpeedometer(left: CGFloat, top: CGFloat) {
         speedDial = SKNode()
         speedDial.position = CGPoint(x: left + speedRadius + 14, y: top - 44 - speedRadius)
         hud.addChild(speedDial)
 
         let disc = SKShapeNode(circleOfRadius: speedRadius + 6)
-        disc.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.7)
-        disc.strokeColor = UIColor.white.withAlphaComponent(0.2)
+        disc.fillColor = UIColor(red: 0.03, green: 0.05, blue: 0.10, alpha: 0.62)
+        disc.strokeColor = UIColor.white.withAlphaComponent(0.12)
         disc.lineWidth = 1
         speedDial.addChild(disc)
 
+        // Faint segments of the tachometer ring
         let track = SKShapeNode()
-        let trackPath = CGMutablePath()
-        trackPath.addArc(center: .zero, radius: speedRadius - 4, startAngle: dialStart, endAngle: dialStart - dialSweep, clockwise: true)
-        track.path = trackPath
-        track.strokeColor = UIColor.white.withAlphaComponent(0.14)
-        track.lineWidth = 7
-        track.lineCap = .round
+        track.path = tachPath(segments: tachSegments)
+        track.strokeColor = UIColor.white.withAlphaComponent(0.10)
+        track.lineWidth = 5
+        track.lineCap = .butt
         speedDial.addChild(track)
 
-        // Tick marks every 10 km/h, longer every 20
-        let ticks = SKShapeNode()
-        let tickPath = CGMutablePath()
-        for step in 0...10 {
-            let angle = dialStart - dialSweep * CGFloat(step) / 10
-            let inner = speedRadius - (step % 2 == 0 ? 17 : 13)
-            let outer = speedRadius - 10
-            tickPath.move(to: CGPoint(x: cos(angle) * inner, y: sin(angle) * inner))
-            tickPath.addLine(to: CGPoint(x: cos(angle) * outer, y: sin(angle) * outer))
-        }
-        ticks.path = tickPath
-        ticks.strokeColor = UIColor.white.withAlphaComponent(0.45)
-        ticks.lineWidth = 1.5
-        speedDial.addChild(ticks)
-
         speedArc = SKShapeNode()
-        speedArc.lineWidth = 7
-        speedArc.lineCap = .round
-        speedArc.glowWidth = 1.5
+        speedArc.lineWidth = 5
+        speedArc.lineCap = .butt
         speedDial.addChild(speedArc)
 
-        speedLabel = makeLabel("0", size: 28, color: .white)
-        speedLabel.position = CGPoint(x: 0, y: 2)
+        // Speed bar: a thin inner arc
+        let speedTrack = SKShapeNode()
+        let trackPath = CGMutablePath()
+        trackPath.addArc(center: .zero, radius: speedRadius - 13, startAngle: dialStart, endAngle: dialStart - dialSweep, clockwise: true)
+        speedTrack.path = trackPath
+        speedTrack.strokeColor = UIColor.white.withAlphaComponent(0.08)
+        speedTrack.lineWidth = 2
+        speedTrack.lineCap = .round
+        speedDial.addChild(speedTrack)
+        speedBar = SKShapeNode()
+        speedBar.lineWidth = 2
+        speedBar.lineCap = .round
+        speedBar.strokeColor = UIColor(red: 0.45, green: 0.88, blue: 0.82, alpha: 1)
+        speedDial.addChild(speedBar)
+
+        speedLabel = makeLabel("0", size: 30, color: .white, font: "AvenirNext-DemiBold")
+        speedLabel.position = CGPoint(x: 0, y: 5)
         speedDial.addChild(speedLabel)
-        let unit = makeLabel("km/h", size: 10, color: UIColor.white.withAlphaComponent(0.6), font: "AvenirNext-Bold")
-        unit.position = CGPoint(x: 0, y: -20)
+        let unit = makeLabel("km/h", size: 9, color: UIColor.white.withAlphaComponent(0.5), font: "AvenirNext-Medium")
+        unit.position = CGPoint(x: 0, y: -13)
         speedDial.addChild(unit)
+        dialGear = makeLabel("1", size: 13, color: UIColor(red: 0.45, green: 0.88, blue: 0.82, alpha: 1), font: "AvenirNext-Bold")
+        dialGear.position = CGPoint(x: 0, y: -speedRadius + 4)
+        speedDial.addChild(dialGear)
+    }
+
+    private let tachSegments = 30
+    private var speedBar = SKShapeNode()
+    private var dialGear = SKLabelNode()
+    private var shownTachStep = -1
+
+    /// The first `count` of the tachometer's segments (small gaps between them).
+    private func tachPath(segments count: Int) -> CGPath {
+        let path = CGMutablePath()
+        let step = dialSweep / CGFloat(tachSegments)
+        for index in 0..<count {
+            let a0 = dialStart - step * CGFloat(index) - step * 0.12
+            let a1 = dialStart - step * CGFloat(index + 1) + step * 0.12
+            path.move(to: CGPoint(x: cos(a0) * (speedRadius - 3), y: sin(a0) * (speedRadius - 3)))
+            path.addArc(center: .zero, radius: speedRadius - 3, startAngle: a0, endAngle: a1, clockwise: true)
+        }
+        return path
     }
 
     /// 1 world unit = 10 cm, so units/s * 0.36 = km/h.
@@ -1963,30 +1986,39 @@ final class ParkingScene: SKScene {
             speedLabel.text = "\(shownKmh)"
         }
         let fraction = min(1, shownSpeed / dialMaxKmh)
-        let speedStep = fraction > 0.005 ? Int((fraction * 150).rounded()) : -1
+        let speedStep = fraction > 0.005 ? Int((fraction * 120).rounded()) : -1
         if speedStep != shownSpeedStep {
             shownSpeedStep = speedStep
             if speedStep >= 0 {
                 let path = CGMutablePath()
-                path.addArc(center: .zero, radius: speedRadius - 4, startAngle: dialStart,
-                            endAngle: dialStart - dialSweep * CGFloat(speedStep) / 150, clockwise: true)
-                speedArc.path = path
+                path.addArc(center: .zero, radius: speedRadius - 13, startAngle: dialStart,
+                            endAngle: dialStart - dialSweep * CGFloat(speedStep) / 120, clockwise: true)
+                speedBar.path = path
             } else {
-                speedArc.path = nil
+                speedBar.path = nil
             }
+        }
+        // Tachometer: segments lit by the revs
+        let revs = max(0, min(1, (rpm - idleRPM) / (redline - idleRPM)))
+        let lit = Int((revs * CGFloat(tachSegments)).rounded())
+        if lit != shownTachStep {
+            shownTachStep = lit
+            speedArc.path = lit > 0 ? tachPath(segments: lit) : nil
         }
         let color: UIColor
         if isBoosting {
-            color = UIColor(red: 0.35, green: 0.9, blue: 1.0, alpha: 1)
-        } else if fraction < 0.5 {
-            color = UIColor(red: 0.4, green: 0.95, blue: 0.55, alpha: 1)
-        } else if fraction < 0.8 {
-            color = UIColor(red: 1.0, green: 0.82, blue: 0.25, alpha: 1)
+            color = UIColor(red: 0.35, green: 0.85, blue: 1.0, alpha: 1)
+        } else if revs < 0.7 {
+            color = UIColor(white: 0.92, alpha: 1)
+        } else if revs < 0.9 {
+            color = UIColor(red: 1.0, green: 0.74, blue: 0.5, alpha: 1)
         } else {
-            color = UIColor(red: 1.0, green: 0.42, blue: 0.32, alpha: 1)
+            color = UIColor(red: 1.0, green: 0.38, blue: 0.36, alpha: 1)
         }
         speedArc.strokeColor = color
         speedLabel.fontColor = isBoosting ? color : .white
+        let gearText = gear == .reverse ? "R" : "\(gearIndex)"
+        if dialGear.text != gearText { dialGear.text = gearText }
     }
 
     // MARK: Minimap
@@ -2002,10 +2034,11 @@ final class ParkingScene: SKScene {
         codeLabel.position = CGPoint(x: minimap.position.x, y: minimap.position.y - radius - 14)
         mapScale = isCity ? radius / 700 : radius / 420
 
-        let backdrop = SKShapeNode(circleOfRadius: radius + 3)
-        backdrop.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.75)
-        backdrop.strokeColor = UIColor.white.withAlphaComponent(0.35)
-        backdrop.lineWidth = 1.5
+        // Dark glass disc with a thin light rim
+        let backdrop = SKShapeNode(circleOfRadius: radius + 4)
+        backdrop.fillColor = UIColor(red: 0.03, green: 0.05, blue: 0.10, alpha: 0.7)
+        backdrop.strokeColor = UIColor.white.withAlphaComponent(0.14)
+        backdrop.lineWidth = 1
         minimap.addChild(backdrop)
 
         let crop = SKCropNode()
@@ -2019,8 +2052,9 @@ final class ParkingScene: SKScene {
 
         let worldRect = CGRect(x: 0, y: 0, width: level.world.width * mapScale, height: level.world.height * mapScale)
         let ground = SKShapeNode(rect: worldRect)
-        ground.fillColor = isCity ? UIColor(red: 0.33, green: 0.34, blue: 0.38, alpha: 1) : UIColor(red: 0.22, green: 0.24, blue: 0.29, alpha: 1)
-        ground.strokeColor = UIColor.white.withAlphaComponent(0.25)
+        // Streets light slate, blocks deep navy, parks muted green: a modern navigation look
+        ground.fillColor = isCity ? UIColor(red: 0.30, green: 0.35, blue: 0.44, alpha: 1) : UIColor(red: 0.16, green: 0.19, blue: 0.26, alpha: 1)
+        ground.strokeColor = .clear
         mapContent.addChild(ground)
 
         func shape(center: CGPoint, size: CGSize, angle: CGFloat) -> SKShapeNode {
@@ -2036,25 +2070,28 @@ final class ParkingScene: SKScene {
             for block in city.blocks {
                 let node = SKShapeNode(rect: CGRect(x: block.minX * mapScale, y: block.minY * mapScale,
                                                     width: block.width * mapScale, height: block.height * mapScale), cornerRadius: 2)
-                node.fillColor = UIColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 1)
+                node.fillColor = UIColor(red: 0.07, green: 0.09, blue: 0.15, alpha: 1)
                 node.strokeColor = .clear
                 mapContent.addChild(node)
             }
             for obstacle in level.obstacles where obstacle.tint == Levels.park {
                 let node = shape(center: obstacle.center, size: obstacle.size, angle: 0)
-                node.fillColor = UIColor(red: 0.16, green: 0.36, blue: 0.20, alpha: 1)
+                node.fillColor = UIColor(red: 0.12, green: 0.27, blue: 0.24, alpha: 1)
                 mapContent.addChild(node)
             }
             routeLine = SKShapeNode()
-            routeLine.strokeColor = UIColor(red: 1.0, green: 0.82, blue: 0.20, alpha: 1)
-            routeLine.lineWidth = 3.5
+            routeLine.strokeColor = UIColor(red: 0.40, green: 0.88, blue: 1.0, alpha: 1)
+            routeLine.lineWidth = 4
+            routeLine.glowWidth = 1.5
             routeLine.lineCap = .round
             routeLine.lineJoin = .round
             mapContent.addChild(routeLine)
             for _ in traffic?.bots ?? [] {
                 let dot = SKSpriteNode(texture: dotTexture)
-                dot.size = CGSize(width: 5, height: 5)
-                dot.alpha = 0.85
+                dot.size = CGSize(width: 4, height: 4)
+                dot.color = UIColor(white: 0.85, alpha: 1)
+                dot.colorBlendFactor = 1
+                dot.alpha = 0.5
                 mapContent.addChild(dot)
                 botDots.append(dot)
             }
@@ -2117,11 +2154,34 @@ final class ParkingScene: SKScene {
         policeMarker.zPosition = 3
         policeMarker.isHidden = true
         mapContent.addChild(policeMarker)
-        // The player: fixed in the middle, always pointing up
-        myMarker = marker(CarArt.playerColors[slot])
-        myMarker.setScale(1.3)
+        // Soft edge: the map fades into the rim
+        for (index, alpha) in [0.55, 0.3, 0.12].enumerated() {
+            let ring = SKShapeNode(circleOfRadius: radius - CGFloat(index) * 3 - 1)
+            ring.strokeColor = UIColor(red: 0.03, green: 0.05, blue: 0.10, alpha: CGFloat(alpha))
+            ring.lineWidth = 3
+            ring.fillColor = .clear
+            minimap.addChild(ring)
+        }
+        // The player: a white navigation arrow in the middle with a soft halo, always pointing up
+        let halo = SKShapeNode(circleOfRadius: 11)
+        halo.fillColor = CarArt.playerColors[slot].withAlphaComponent(0.28)
+        halo.strokeColor = .clear
+        minimap.addChild(halo)
+        let arrow = CGMutablePath()
+        arrow.move(to: CGPoint(x: 8, y: 0))
+        arrow.addLine(to: CGPoint(x: -6, y: 6))
+        arrow.addLine(to: CGPoint(x: -3, y: 0))
+        arrow.addLine(to: CGPoint(x: -6, y: -6))
+        arrow.closeSubpath()
+        myMarker = SKShapeNode(path: arrow)
+        myMarker.fillColor = .white
+        myMarker.strokeColor = CarArt.playerColors[slot]
+        myMarker.lineWidth = 1.5
         myMarker.zRotation = CGFloat.pi / 2
         minimap.addChild(myMarker)
+        // North on the rim (the map turns with the car)
+        northMarker = makeLabel("N", size: 9, color: UIColor.white.withAlphaComponent(0.75), font: "AvenirNext-Bold")
+        minimap.addChild(northMarker)
         // Arrow on the rim pointing at the target when it is off the map
         targetPointer = makeIcon("arrowtriangle.up.fill", size: 11, color: level.race ? UIColor(red: 1, green: 0.82, blue: 0.2, alpha: 1)
                                                                                 : CarArt.playerColors[slot].lighter(by: 0.3))
@@ -2134,6 +2194,9 @@ final class ParkingScene: SKScene {
         // Rotate the map so the car's heading points up, and keep the car in the middle
         let rotation = CGFloat.pi / 2 - heading
         mapContent.zRotation = rotation
+        // World north (+y) after the rotation, on the rim
+        let north = CGFloat.pi / 2 + rotation
+        northMarker.position = CGPoint(x: cos(north) * (mapRadius - 8), y: sin(north) * (mapRadius - 8))
         let car = CGPoint(x: carPosition.x * mapScale, y: carPosition.y * mapScale)
         mapContent.position = CGPoint(x: -(car.x * cos(rotation) - car.y * sin(rotation)),
                                       y: -(car.x * sin(rotation) + car.y * cos(rotation)))
@@ -2428,10 +2491,6 @@ final class ParkingScene: SKScene {
         if throttle && drifting { target = max(target, redline * 0.86) }
         let rate: CGFloat = target > rpm ? 9 : (shiftCut > 0 ? 22 : 5)
         rpm += (target - rpm) * min(1, rate * dt)
-        // Lifting off at high revs: the exhaust pops
-        if lastThrottle && !throttle && rpm > 5000 && speed > 60 && phase == .driving && CGFloat.random(in: 0...1) < 0.65 {
-            audio.play("pop", volume: 0.32)
-        }
         lastThrottle = throttle
         if gear == .drive, gearLabel.text != "\(gearIndex)", phase == .driving { gearLabel.text = "\(gearIndex)" }
     }

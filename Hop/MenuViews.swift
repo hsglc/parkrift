@@ -1,18 +1,117 @@
 import SwiftUI
 import SceneKit
 
-/// Live 3D lot behind the menu screens, darkened on the left so text stays readable.
+/// Live 3D lot behind the menu screens under a calm dusk wash: deep blue on the left where the
+/// text sits, a soft teal and lavender glow, and two slow drifting lights.
 struct MenuBackdrop: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
         ZStack {
             SceneKitView(world: model.menuWorld)
-            LinearGradient(colors: [Palette.ink.opacity(0.80), Palette.ink.opacity(0.35), Palette.ink.opacity(0.70)],
+            LinearGradient(colors: [Calm.night.opacity(0.88), Calm.night.opacity(0.45), Calm.night.opacity(0.62)],
                            startPoint: .leading, endPoint: .trailing)
-            LinearGradient(colors: [Color.clear, Palette.ink.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+            LinearGradient(colors: [Calm.teal.opacity(0.10), .clear, Calm.lavender.opacity(0.12)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            DriftingLights()
+            LinearGradient(colors: [.clear, Calm.night.opacity(0.6)], startPoint: .center, endPoint: .bottom)
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Two large, very soft lights that wander slowly (one full drift takes about half a minute).
+private struct DriftingLights: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            GeometryReader { proxy in
+                let w = proxy.size.width, h = proxy.size.height
+                ZStack {
+                    Circle()
+                        .fill(Calm.teal.opacity(0.22))
+                        .frame(width: h * 0.9, height: h * 0.9)
+                        .blur(radius: 70)
+                        .position(x: w * (0.25 + 0.08 * sin(t / 17)), y: h * (0.35 + 0.1 * cos(t / 13)))
+                    Circle()
+                        .fill(Calm.lavender.opacity(0.18))
+                        .frame(width: h * 0.8, height: h * 0.8)
+                        .blur(radius: 80)
+                        .position(x: w * (0.78 + 0.07 * cos(t / 19)), y: h * (0.65 + 0.1 * sin(t / 15)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// The calm menu palette.
+enum Calm {
+    static let night = Color(red: 0.04, green: 0.07, blue: 0.13)
+    static let teal = Color(red: 0.40, green: 0.85, blue: 0.80)
+    static let lavender = Color(red: 0.66, green: 0.62, blue: 1.0)
+    static let peach = Color(red: 1.0, green: 0.74, blue: 0.58)
+    static let sky = Color(red: 0.50, green: 0.75, blue: 1.0)
+    static let rose = Color(red: 1.0, green: 0.62, blue: 0.72)
+
+    static func title(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold, design: .rounded) }
+    static func body(_ size: CGFloat) -> Font { .system(size: size, weight: .medium, design: .rounded) }
+}
+
+/// Frosted glass card used across the menu.
+struct CalmCard: ViewModifier {
+    var radius: CGFloat = 26
+    var padding: CGFloat = 18
+
+    func body(content: Content) -> some View {
+        content
+            .padding(padding)
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+                    .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Calm.night.opacity(0.35)))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.05)],
+                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.28), radius: 24, y: 12)
+    }
+}
+
+extension View {
+    func calmCard(radius: CGFloat = 26, padding: CGFloat = 18) -> some View {
+        modifier(CalmCard(radius: radius, padding: padding))
+    }
+}
+
+/// Round frosted icon button for the menu's top bar.
+private struct GlassIconButton: View {
+    let systemImage: String
+    var badge = false
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            AudioManager.shared.play("click", volume: 0.5)
+            action()
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+                .overlay(alignment: .topTrailing) {
+                    if badge {
+                        Circle().fill(Calm.peach).frame(width: 9, height: 9)
+                            .overlay(Circle().stroke(Calm.night, lineWidth: 2))
+                    }
+                }
+        }
+        .buttonStyle(PressScaleStyle())
     }
 }
 
@@ -100,27 +199,26 @@ struct MenuView: View {
         HStack(spacing: 12) {
             ZStack(alignment: .leading) {
                 if page == .home {
-                    HStack(alignment: .lastTextBaseline, spacing: 12) {
-                        Logo(size: 34)
-                        Text(Strings.tagline)
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.65))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(Strings.greeting)
+                            .font(Calm.body(12))
+                            .foregroundStyle(Calm.teal.opacity(0.9))
+                        Text("Parkrift")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundStyle(LinearGradient(colors: [Calm.peach, Calm.rose, Calm.lavender],
+                                                            startPoint: .leading, endPoint: .trailing))
                     }
                     .transition(.opacity)
                 } else {
                     HStack(spacing: 12) {
-                        RoundIconButton(systemImage: "chevron.left") { go(.home) }
+                        GlassIconButton(systemImage: "chevron.left") { go(.home) }
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(Strings.chooseMode.uppercased())
-                                .font(.kicker(9))
-                                .tracking(1.5)
-                                .foregroundStyle(Palette.neon)
-                            Text(pageTitle.uppercased())
-                                .font(.race(28))
+                            Text(Strings.chooseMode)
+                                .font(Calm.body(11))
+                                .foregroundStyle(Calm.teal.opacity(0.9))
+                            Text(pageTitle)
+                                .font(Calm.title(26))
                                 .foregroundStyle(.white)
-                                .shadow(color: .black.opacity(0.4), radius: 0, y: 2)
                         }
                     }
                     .transition(.opacity)
@@ -135,49 +233,24 @@ struct MenuView: View {
                     Image(systemName: "car.side.fill")
                         .foregroundStyle(Color(model.carChoice.color.lighter(by: 0.25)))
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(Strings.garage.uppercased())
-                            .font(.kicker(8))
-                            .tracking(1.2)
+                        Text(Strings.garage)
+                            .font(Calm.body(10))
                             .foregroundStyle(.white.opacity(0.6))
-                        Text(model.carChoice.spec.name.uppercased())
-                            .font(.race(15))
+                        Text(model.carChoice.spec.name)
+                            .font(Calm.title(14))
                             .foregroundStyle(.white)
                     }
                 }
-                .padding(.leading, 16)
-                .padding(.trailing, 12)
-                .frame(height: 42)
-                .background(SlantedShape(skew: 10).fill(Palette.ink.opacity(0.8)))
-                .overlay(SlantedShape(skew: 10).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                .padding(.horizontal, 14)
+                .frame(height: 40)
+                .background(Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
             }
             .buttonStyle(PressScaleStyle())
             CoinPill(coins: model.coins)
-            Button {
-                AudioManager.shared.play("click", volume: 0.6)
-                showDaily = true
-            } label: {
-                Image(systemName: "gift.fill")
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(Circle().fill(Palette.ink.opacity(0.75)))
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
-                    .overlay(alignment: .topTrailing) {
-                        if Progression.pendingGiftDay != nil {
-                            Circle().fill(Palette.red).frame(width: 11, height: 11)
-                                .overlay(Circle().stroke(Palette.ink, lineWidth: 2))
-                        }
-                    }
-            }
-            .buttonStyle(PressScaleStyle())
-            RoundIconButton(systemImage: "trophy.fill") {
-                AudioManager.shared.play("click", volume: 0.6)
-                GameCenter.showLeaderboards()
-            }
-            RoundIconButton(systemImage: "info") {
-                AudioManager.shared.play("click", volume: 0.6)
-                showAbout = true
-            }
+            GlassIconButton(systemImage: "gift", badge: Progression.pendingGiftDay != nil) { showDaily = true }
+            GlassIconButton(systemImage: "trophy") { GameCenter.showLeaderboards() }
+            GlassIconButton(systemImage: "info") { showAbout = true }
             SoundToggle()
         }
         .frame(height: 46)
@@ -192,11 +265,11 @@ struct MenuView: View {
                     Image(systemName: "sparkles")
                     Text(Strings.weekendEvent)
                 }
-                .font(.system(size: 11, weight: .black, design: .rounded))
-                .foregroundStyle(Palette.ink)
+                .font(Calm.title(11))
+                .foregroundStyle(Calm.night)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
-                .background(Capsule().fill(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .leading, endPoint: .trailing)))
+                .background(Capsule().fill(LinearGradient(colors: [Calm.peach, Calm.rose], startPoint: .leading, endPoint: .trailing)))
             }
             homeCards
             Text(Strings.credits)
@@ -209,15 +282,15 @@ struct MenuView: View {
 
     private var homeCards: some View {
         HStack(spacing: 12) {
-            ModeTile(number: "01", title: Strings.modeSoloTitle, subtitle: Strings.modeSoloSub, icon: "parkingsign",
+            ModeTile(index: 0, title: Strings.modeSoloTitle, subtitle: Strings.modeSoloSub, icon: "parkingsign",
                      chips: [Strings.levelsCount(Levels.all.count), "★ \(totalStars)/\(Levels.all.count * 3)"],
-                     accent: Color(red: 1.0, green: 0.55, blue: 0.18)) { go(.levels) }
-            ModeTile(number: "02", title: Strings.modeCityTitle, subtitle: Strings.modeCitySub, icon: "flag.checkered",
+                     accent: Calm.peach) { go(.levels) }
+            ModeTile(index: 1, title: Strings.modeCityTitle, subtitle: Strings.modeCitySub, icon: "building.2",
                      chips: [Strings.carRace, Strings.parkRace],
-                     accent: Color(red: 1.0, green: 0.25, blue: 0.45)) { go(.city) }
-            ModeTile(number: "03", title: Strings.modeOnlineTitle, subtitle: Strings.modeOnlineSub, icon: "person.2.fill",
+                     accent: Calm.lavender) { go(.city) }
+            ModeTile(index: 2, title: Strings.modeOnlineTitle, subtitle: Strings.modeOnlineSub, icon: "person.2",
                      chips: [Strings.twoPlayersOnline],
-                     accent: Palette.neon) { go(.online) }
+                     accent: Calm.teal) { go(.online) }
         }
     }
 
@@ -233,25 +306,25 @@ struct MenuView: View {
         case .city:
             HStack(spacing: 12) {
                 OptionTile(title: Strings.carRace, subtitle: Strings.carRaceInfo, icon: "flag.checkered",
-                           accent: Color(red: 1.0, green: 0.25, blue: 0.45), buttonTitle: Strings.play) { model.playRace() }
+                           accent: Calm.rose, buttonTitle: Strings.play) { model.playRace() }
                 OptionTile(title: Strings.parkRace, subtitle: Strings.cityRaceInfo, icon: "parkingsign",
-                           accent: Color(red: 0.55, green: 0.45, blue: 1.0), buttonTitle: Strings.play) { model.playCity() }
+                           accent: Calm.lavender, buttonTitle: Strings.play) { model.playCity() }
             }
         case .online:
             HStack(spacing: 12) {
-                OptionTile(title: Strings.quickMatch, subtitle: Strings.quickMatchSub, icon: "bolt.fill",
-                           accent: Palette.gold, buttonTitle: Strings.playNow) { model.quickMatch() }
-                OptionTile(title: Strings.createRoom, subtitle: Strings.createRoomSub, icon: "plus.circle.fill",
-                           accent: Palette.neon, buttonTitle: Strings.createRoom) { model.createRoom() }
+                OptionTile(title: Strings.quickMatch, subtitle: Strings.quickMatchSub, icon: "bolt",
+                           accent: Calm.peach, buttonTitle: Strings.playNow) { model.quickMatch() }
+                OptionTile(title: Strings.createRoom, subtitle: Strings.createRoomSub, icon: "plus",
+                           accent: Calm.teal, buttonTitle: Strings.createRoom) { model.createRoom() }
                 ZStack {
                     if showJoin {
                         JoinPanel(showJoin: $showJoin)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .racePlate(skew: 16, padding: 14)
+                            .calmCard(radius: 28, padding: 14)
                             .transition(.scale(scale: 0.92).combined(with: .opacity))
                     } else {
-                        OptionTile(title: Strings.joinRoom, subtitle: Strings.joinRoomSub, icon: "keyboard.fill",
-                                   accent: Color(red: 0.35, green: 0.95, blue: 0.55), buttonTitle: Strings.enterCode) {
+                        OptionTile(title: Strings.joinRoom, subtitle: Strings.joinRoomSub, icon: "keyboard",
+                                   accent: Calm.sky, buttonTitle: Strings.enterCode) {
                             withAnimation(pageAnimation) { showJoin = true }
                         }
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
@@ -267,12 +340,11 @@ struct MenuView: View {
         return HStack(spacing: 14) {
             LevelPicker()
             VStack(alignment: .leading, spacing: 10) {
-                Text(Strings.level(index + 1, of: Levels.all.count).uppercased())
-                    .font(.system(size: 12, weight: .black, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .tracking(1.2)
-                Text(level.name.uppercased())
-                    .font(.race(28))
+                Text(Strings.level(index + 1, of: Levels.all.count))
+                    .font(Calm.body(12))
+                    .foregroundStyle(Calm.teal.opacity(0.9))
+                Text(level.name)
+                    .font(Calm.title(28))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -280,22 +352,30 @@ struct MenuView: View {
                     .transition(.opacity)
                 StarsRow(filled: model.stars(for: index), size: 20, spacing: 4)
                 HStack(spacing: 6) {
-                    Image(systemName: "stopwatch.fill").foregroundStyle(Palette.gold)
+                    Image(systemName: "stopwatch").foregroundStyle(Calm.peach)
                     Text(Strings.bestLabel + ": " + (model.bestTime(for: index).map { String(format: "%.1f s", $0) } ?? "–"))
                 }
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(Calm.body(13))
                 .foregroundStyle(.white.opacity(0.8))
                 Spacer(minLength: 0)
-                Button { model.playSolo() } label: {
+                Button {
+                    AudioManager.shared.play("click", volume: 0.5)
+                    model.playSolo()
+                } label: {
                     HStack(spacing: 8) {
-                        Text(Strings.play.uppercased())
-                        Image(systemName: "chevron.right.2").font(.system(size: 16, weight: .black))
+                        Text(Strings.play)
+                        Image(systemName: "arrow.right").font(.system(size: 15, weight: .semibold))
                     }
+                    .font(Calm.title(18))
+                    .foregroundStyle(Calm.night)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Capsule().fill(Calm.peach))
                 }
-                .buttonStyle(RaceButtonStyle(color: Palette.gold, height: 50, fontSize: 22))
+                .buttonStyle(PressScaleStyle())
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .racePlate(skew: 16, padding: 16)
+            .calmCard(radius: 28, padding: 18)
             .animation(.easeOut(duration: 0.2), value: index)
         }
     }
@@ -317,100 +397,89 @@ struct MenuView: View {
     }
 }
 
-/// Big mode tile on the home page, racing-game style: slanted carbon plate, accent art at the top
-/// with speed stripes, a large number, condensed italic title and an accent bar at the bottom.
+/// Mode card on the home page: frosted glass, a soft accent glow, an icon in a tinted circle,
+/// a calm rounded title, a short line and small chips. Cards rise in one after another.
 private struct ModeTile: View {
-    let number: String
+    let index: Int
     let title: String
     let subtitle: String
     let icon: String
     let chips: [String]
     let accent: Color
     let action: () -> Void
+    @State private var shown = false
 
     var body: some View {
-        Button(action: action) {
-            ZStack(alignment: .topLeading) {
-                TileArt(icon: icon, accent: accent)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(number)
-                        .font(.race(34))
-                        .foregroundStyle(.white.opacity(0.95))
-                        .shadow(color: .black.opacity(0.35), radius: 0, x: 2, y: 2)
-                    Spacer(minLength: 0)
-                    Text(title.uppercased())
-                        .font(.race(30))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                    Text(subtitle)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        ForEach(chips, id: \.self) { chip in
-                            Text(chip.uppercased())
-                                .font(.race(11, weight: .heavy))
-                                .foregroundStyle(.white.opacity(0.9))
-                                .lineLimit(1)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(SlantedShape(skew: 4).fill(Color.white.opacity(0.1)))
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right.2")
-                            .font(.system(size: 14, weight: .black))
-                            .foregroundStyle(accent)
+        Button {
+            AudioManager.shared.play("click", volume: 0.5)
+            action()
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    IconBadge(icon: icon, accent: accent, size: 50)
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                }
+                Spacer(minLength: 0)
+                Text(title)
+                    .font(Calm.title(24))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(subtitle)
+                    .font(Calm.body(12))
+                    .foregroundStyle(.white.opacity(0.68))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    ForEach(chips, id: \.self) { chip in
+                        Text(chip)
+                            .font(Calm.body(11))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(accent.opacity(0.14)))
                     }
                 }
-                .padding(.leading, 26)
-                .padding(.trailing, 18)
-                .padding(.vertical, 14)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SlantedShape(skew: 18).fill(Palette.carbon.opacity(0.88)))
-            .clipShape(SlantedShape(skew: 18))
-            .overlay(SlantedShape(skew: 18).stroke(Color.white.opacity(0.14), lineWidth: 1))
-            .overlay(alignment: .bottom) {
-                SlantedShape(skew: 2).fill(accent).frame(height: 4).padding(.leading, 4).padding(.trailing, 22)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(alignment: .topTrailing) {
+                Circle().fill(accent.opacity(0.22)).frame(width: 170, height: 170).blur(radius: 50).offset(x: 40, y: -50)
             }
-            .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+            .calmCard(radius: 28, padding: 18)
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         }
         .buttonStyle(PressableCardStyle())
-    }
-}
-
-/// Accent gradient, speed stripes and a big icon in the top part of a tile.
-private struct TileArt: View {
-    let icon: String
-    let accent: Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topTrailing) {
-                LinearGradient(colors: [accent.opacity(0.85), accent.opacity(0.25), .clear],
-                               startPoint: .topTrailing, endPoint: UnitPoint(x: 0.1, y: 0.75))
-                // Speed stripes
-                ForEach(0..<4, id: \.self) { index in
-                    SlantedShape(skew: 30)
-                        .fill(Color.white.opacity(0.10 - Double(index) * 0.02))
-                        .frame(width: 70 - CGFloat(index) * 10, height: 7)
-                        .offset(x: -CGFloat(index) * 26 - 8, y: 30 + CGFloat(index) * 13)
-                }
-                Image(systemName: icon)
-                    .font(.system(size: min(96, proxy.size.height * 0.36), weight: .black))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .shadow(color: accent.opacity(0.8), radius: 16)
-                    .rotationEffect(.degrees(-6))
-                    .padding(.top, 22)
-                    .padding(.trailing, 26)
-            }
+        .opacity(shown ? 1 : 0)
+        .offset(y: shown ? 0 : 18)
+        .onAppear {
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.9).delay(0.08 * Double(index))) { shown = true }
         }
     }
 }
 
-/// Option inside a mode page: tile art, title, description and a slanted play button.
+/// An icon in a softly tinted circle.
+private struct IconBadge: View {
+    let icon: String
+    let accent: Color
+    var size: CGFloat = 48
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.system(size: size * 0.42, weight: .medium))
+            .foregroundStyle(accent)
+            .frame(width: size, height: size)
+            .background(Circle().fill(accent.opacity(0.16)))
+            .overlay(Circle().strokeBorder(accent.opacity(0.35), lineWidth: 1))
+    }
+}
+
+/// Option inside a mode page: icon, title, description and a soft pill button.
 private struct OptionTile: View {
     let title: String
     let subtitle: String
@@ -420,37 +489,41 @@ private struct OptionTile: View {
     let action: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            TileArt(icon: icon, accent: accent)
-            VStack(alignment: .leading, spacing: 8) {
-                Spacer(minLength: 0)
-                Text(title.uppercased())
-                    .font(.race(30))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.72))
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(action: action) {
-                    HStack(spacing: 8) {
-                        Text(buttonTitle.uppercased())
-                        Image(systemName: "chevron.right.2").font(.system(size: 15, weight: .black))
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            IconBadge(icon: icon, accent: accent, size: 46)
+            Spacer(minLength: 0)
+            Text(title)
+                .font(Calm.title(22))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(subtitle)
+                .font(Calm.body(12))
+                .foregroundStyle(.white.opacity(0.68))
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                AudioManager.shared.play("click", volume: 0.5)
+                action()
+            } label: {
+                HStack(spacing: 6) {
+                    Text(buttonTitle)
+                    Image(systemName: "arrow.right").font(.system(size: 13, weight: .semibold))
                 }
-                .buttonStyle(RaceButtonStyle(color: accent, textColor: Palette.ink, height: 46, fontSize: 20))
-                .padding(.top, 2)
+                .font(Calm.title(16))
+                .foregroundStyle(Calm.night)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Capsule().fill(accent))
             }
-            .padding(.leading, 26)
-            .padding(.trailing, 20)
-            .padding(.vertical, 16)
+            .buttonStyle(PressScaleStyle())
+            .padding(.top, 2)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(SlantedShape(skew: 18).fill(Palette.carbon.opacity(0.9)))
-        .clipShape(SlantedShape(skew: 18))
-        .overlay(SlantedShape(skew: 18).stroke(Color.white.opacity(0.14), lineWidth: 1))
-        .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(alignment: .topTrailing) {
+            Circle().fill(accent.opacity(0.2)).frame(width: 160, height: 160).blur(radius: 50).offset(x: 40, y: -50)
+        }
+        .calmCard(radius: 28, padding: 18)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 }
 
@@ -563,7 +636,7 @@ struct LevelPicker: View {
             }
         }
         .frame(width: 302)
-        .racePlate(skew: 14, padding: 12)
+        .calmCard(radius: 24, padding: 12)
     }
 
     private var totalStars: Int {
@@ -583,8 +656,8 @@ private struct LevelTile: View {
             VStack(spacing: 3) {
                 if unlocked {
                     Text("\(index + 1)")
-                        .font(.system(size: 19, weight: .black, design: .rounded))
-                        .foregroundStyle(selected ? Palette.ink : .white)
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundStyle(selected ? Calm.night : .white)
                     StarsRow(filled: stars, size: 7, spacing: 1)
                 } else {
                     Image(systemName: "lock.fill")
@@ -596,8 +669,8 @@ private struct LevelTile: View {
             .background(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(selected
-                          ? AnyShapeStyle(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .top, endPoint: .bottom))
-                          : AnyShapeStyle(Color.white.opacity(unlocked ? 0.10 : 0.04)))
+                          ? AnyShapeStyle(LinearGradient(colors: [Calm.peach, Calm.rose], startPoint: .top, endPoint: .bottom))
+                          : AnyShapeStyle(Color.white.opacity(unlocked ? 0.08 : 0.03)))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -640,6 +713,11 @@ struct AboutView: View {
                                   "Pedestrians and their animations, cones, drums, barricade, police car",
                                   "Peatones y sus animaciones, conos, bidones, valla, coche de policía"),
                author: "Polyfork", license: Strings.pick("Ticari kullanım", "Commercial use", "Uso comercial"), link: "https://polyfork.dev"),
+        Credit(what: Strings.pick("Lastik, rüzgâr, çarpma ve bitiş sesleri", "Tyre, wind, crash and finish sounds", "Sonidos de neumáticos, viento, choques y meta"),
+               author: "Stunt Rally / VDrift, Halleck, nathanshadow", license: "CC BY-SA 3.0", link: "https://opengameart.org/content/stunt-rally-sounds"),
+        Credit(what: Strings.pick("Motor, korna, siren sesleri ve müzik", "Engine, horn and siren sounds, music", "Motor, claxon, sirena y música"),
+               author: "OpenGameArt (banditracer.eu, omfgdude)", license: "CC0", link: "https://opengameart.org"),
+        Credit(what: Strings.pick("Arayüz sesleri", "Interface sounds", "Sonidos de interfaz"), author: "Kenney", license: "CC0", link: "https://kenney.nl"),
         Credit(what: Strings.pick("Trafik ışığı", "Traffic light", "Semáforo"),
                author: Strings.pick("Özgün, Meshy AI ile üretildi", "Original, made with Meshy AI", "Originales, hechos con Meshy AI"), license: "CC BY 4.0", link: "https://www.meshy.ai")
     ] }

@@ -56,7 +56,7 @@ final class AudioManager {
 
         buffers["music"] = load("music", ext: "m4a")
         for name in ["engine_low", "engine_high", "bump", "beep", "go", "park", "click", "horn", "nitro", "crash", "whoosh",
-                     "skid", "siren", "rain", "wind", "shift", "pop"] {
+                     "skid", "siren", "rain", "wind", "shift"] {
             buffers[name] = load(name, ext: "wav")
         }
 
@@ -154,8 +154,8 @@ final class AudioManager {
     }
 
     /// The engine at `rpm` (revolutions per minute) under `load` (0 coasting ... 1 full
-    /// throttle). The low loop was recorded at about 1560 rpm and the high one near 3960 rpm:
-    /// each is pitched to the rpm, and they crossfade between 2000 and 4500 rpm.
+    /// throttle). Two recorded loops, a low-rev and a high-rev one, are each pitched with the rpm
+    /// and crossfade between 2000 and 4500 rpm.
     func setMotor(active: Bool, rpm: Float, load: Float) {
         guard engine.isRunning, let low = buffers["engine_low"], let high = buffers["engine_high"] else { return }
         if active && !motorStarted {
@@ -166,12 +166,12 @@ final class AudioManager {
             motorStarted = true
         }
         let r = max(700, min(7600, rpm))
-        motorPitch.rate = max(0.4, min(3.0, r / 1560))
-        motorHighPitch.rate = max(0.4, min(2.2, r / 3960))
+        motorPitch.rate = 0.75 + (r - 700) / 3300 * 0.85            // 0.75 at idle, 1.6 at 4000
+        motorHighPitch.rate = max(0.7, 0.9 + (r - 2500) / 4500 * 1.0)   // 0.9 at 2500, 1.9 at 7000
         let x = max(0, min(1, (r - 2000) / 2500))
         let blend = x * x * (3 - 2 * x)
         // Louder and harder under load; quieter (but not silent) on the overrun
-        let level: Float = active ? (0.11 + 0.15 * load + 0.07 * min(1, r / 7000)) : 0
+        let level: Float = active ? (0.09 + 0.12 * load + 0.06 * min(1, r / 7000)) : 0
         motorNode.volume = level * (1 - blend * 0.85)
         motorHighNode.volume = level * blend * (0.55 + 0.45 * load)
     }
