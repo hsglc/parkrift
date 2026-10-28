@@ -373,6 +373,8 @@ final class ParkingScene: SKScene {
         localCar?.setRim(mine.rimColor)
         let friend = model.friendCar ?? CarChoice.friendDefault
         remoteCar = world.makeCar(color: friend.color, style: .racer, model: friend.model)
+        // Solo: the friend's car stays hidden, so it holds no 4K textures
+        remoteCar?.setTexturesLoaded(online)
         remoteCar?.setRim(friend.rimColor)
         remoteChoice = friend
         // The chosen car's driving character (small differences so online races stay fair)

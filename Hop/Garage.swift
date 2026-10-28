@@ -190,6 +190,17 @@ final class GarageStage {
         car.node.runAction(.sequence([.wait(duration: 0.12), .group([.fadeIn(duration: 0.25), drop, grow])]))
     }
 
+    /// The garage screen is open or not: closed, even the shown car lets its textures go, so the
+    /// menu and the game never carry the garage's 4K car as well.
+    func setActive(_ active: Bool) {
+        guard let id = shown?.model, let car = cars[id] else { return }
+        car.setTexturesLoaded(active)
+        if active, let choice = shown {
+            car.setPaint(choice.color)
+            car.setRim(choice.rimColor)
+        }
+    }
+
     /// Unlock reveal on the stage: the platform ring flashes white, a light column sweeps up
     /// through the car, sparks burst from the ring in the car's accent colour, the car hops and
     /// spins once and the camera pushes in and settles back.
@@ -498,9 +509,11 @@ struct GarageView: View {
         .sheet(isPresented: $showUpgrades) { UpgradeView(choice: $choice).environmentObject(model) }
         .onAppear {
             choice = model.carChoice
+            stage.setActive(true)
             stage.show(choice, animated: false)
             withAnimation(.easeOut(duration: 0.6).delay(0.15)) { statsShown = true }
         }
+        .onDisappear { stage.setActive(false) }
         .onChange(of: choice) { old, new in
             stage.show(new)
             if old.model != new.model {
