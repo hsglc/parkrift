@@ -78,13 +78,26 @@ jobs:
             done
             kill $pid 2>/dev/null || true
           }
+          # Menu screens straight from the simulator's screen (the app's own snapshot misses
+          # materials and the 3D garage)
+          still() {
+            local label=$1 wait=$2; shift 2
+            xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+            sleep 2
+            xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" > /dev/null 2>&1
+            sleep "$wait"
+            xcrun simctl io "$UDID" screenshot "raw/$label.png" || true
+          }
           shoot city
           shoot finish -finishtest
+          still home 9 -staymenu
+          still garage 12 -staygarage
+          still levels 9 -staylevels
           pip3 install --break-system-packages pillow pyjwt cryptography requests >/dev/null 2>&1 || pip3 install pillow pyjwt cryptography requests
           python3 - <<'PY'
           import os
           from PIL import Image
-          order = ['city-menu', 'city-shot-hud', 'city-garage', 'finish-shot-finish', 'city-shot-mid']
+          order = ['home', 'city-shot-hud', 'garage', 'finish-shot-finish', 'levels', 'city-shot-mid']
           n = 0
           for name in order:
               path = f'raw/{name}.png'

@@ -558,6 +558,24 @@ struct RootView: View {
                 }
             }
             AudioManager.shared.ensureRunning()
+            // Store screenshots (simulator, taken from outside with simctl): stay on a screen
+            let args = ProcessInfo.processInfo.arguments
+            if PerfSettings.benchmark && args.contains("-staymenu") {
+                AudioManager.shared.isMuted = true
+                return
+            }
+            if PerfSettings.benchmark && args.contains("-staygarage") {
+                AudioManager.shared.isMuted = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.openGarage(.menu) }
+                return
+            }
+            if PerfSettings.benchmark && args.contains("-staylevels") {
+                AudioManager.shared.isMuted = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    NotificationCenter.default.post(name: .showLevelsPage, object: nil)
+                }
+                return
+            }
             if PerfSettings.benchmark && model.screen == .menu {
                 AudioManager.shared.isMuted = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { saveWindowSnapshot(named: "menu") }

@@ -166,6 +166,10 @@ struct MenuView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration + 0.9) { showDaily = true }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .showLevelsPage)) { _ in
+            model.selectedLevel = 17
+            go(.levels)
+        }
         .onChange(of: model.errorText) { _, error in
             if error != nil { withAnimation(pageAnimation) { page = .online } }
         }
@@ -601,6 +605,8 @@ private struct LevelTile: View {
 extension Notification.Name {
     /// The player picked another language: every screen redraws its texts.
     static let languageChanged = Notification.Name("languageChanged")
+    /// Opens the level list (store screenshots).
+    static let showLevelsPage = Notification.Name("showLevelsPage")
 }
 
 /// Privacy policy, support and the 3D model licenses (attribution required by CC BY).
