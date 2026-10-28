@@ -3,7 +3,7 @@ import Foundation
 /// WebSocket connection to the Parkrift room server (Cloudflare Durable Objects).
 @MainActor
 final class NetClient {
-    static let baseURL = "wss://parkpark.huseyinglc0-946.workers.dev/room/"
+    static let baseURL = "wss://parkrift.huseyinglc0-946.workers.dev/room/"
 
     var onMessage: (@MainActor ([String: Any]) -> Void)?
     var onClose: (@MainActor (String?) -> Void)?

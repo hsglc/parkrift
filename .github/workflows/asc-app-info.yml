@@ -18,7 +18,7 @@ jobs:
       APP_NAME: ${{ inputs.name }}
       SUBTITLE_EN: "Park, drift and race a friend"
       SUBTITLE_TR: "Park et, drift at, yarış"
-      PRIVACY_URL: https://parkpark.huseyinglc0-946.workers.dev/privacy
+      PRIVACY_URL: https://parkrift.huseyinglc0-946.workers.dev/privacy
     steps:
       - uses: actions/checkout@v4
       - name: Write key
