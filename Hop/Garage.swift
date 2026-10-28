@@ -399,6 +399,8 @@ struct GarageView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(Strings.garage.uppercased())
                         .font(.race(30))
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(.white)
                     Text(modeLabel.uppercased())
                         .font(.kicker(10))

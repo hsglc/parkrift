@@ -14,11 +14,22 @@ struct HomeScreen: View {
     private var maxStars: Int { Levels.all.count * 3 }
 
     var body: some View {
+        GeometryReader { proxy in
+            // Narrow screens (iPhone Duo's outer display, small iPhones): the modes only
+            let compact = proxy.size.width < 700
+            content(compact: compact)
+        }
+        .onAppear { withAnimation(.spring(response: 0.6, dampingFraction: 0.86)) { shown = true } }
+    }
+
+    private func content(compact: Bool) -> some View {
         HStack(spacing: 16) {
-            profileColumn
-                .frame(width: 210)
-                .opacity(shown ? 1 : 0)
-                .offset(x: shown ? 0 : -24)
+            if !compact {
+                profileColumn
+                    .frame(width: 210)
+                    .opacity(shown ? 1 : 0)
+                    .offset(x: shown ? 0 : -24)
+            }
             HStack(spacing: 12) {
                 careerTile
                     .rise(shown, delay: 0.05)
@@ -35,7 +46,6 @@ struct HomeScreen: View {
                 .frame(maxWidth: 250)
             }
         }
-        .onAppear { withAnimation(.spring(response: 0.6, dampingFraction: 0.86)) { shown = true } }
     }
 
     // MARK: Left: brand, progress, car
@@ -130,7 +140,11 @@ struct HomeScreen: View {
                         Text(Strings.level(index + 1, of: Levels.all.count))
                             .font(.race(14, weight: .heavy))
                             .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                            .fixedSize()
                         Text(tier)
+                            .lineLimit(1)
+                            .fixedSize()
                             .font(.race(11))
                             .foregroundStyle(Neo.ink)
                             .padding(.horizontal, 7)
@@ -423,6 +437,7 @@ struct NeoPageTitle: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(kicker.uppercased()).font(.kicker(9)).tracking(1.5).foregroundStyle(Neo.cyan)
                 Text(title.uppercased()).font(.race(28)).foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.6)
             }
         }
     }

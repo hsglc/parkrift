@@ -28,43 +28,41 @@ jobs:
               exit 1
             }
           grep -E "warning:.*(deprecated|Duo|reserved)" build.log | head -20 || true
-      - name: Screens on iPhone Duo and iPhone Pro Max
+      - name: Screens on iPhone Duo, folded and open
         run: |
           RUNTIME=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-27-1' | head -1)
           mkdir -p duo
-          for DEV in iPhone-Duo iPhone-17-Pro-Max; do
-            UDID=$(xcrun simctl create "$DEV" "com.apple.CoreSimulator.SimDeviceType.$DEV" "$RUNTIME") || continue
-            xcrun simctl boot "$UDID"
-            xcrun simctl bootstatus "$UDID" -b
-            xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
-            # The Duo has two displays: try the plain call, then each display by name
-            shot() {
-              local out=$1
-              xcrun simctl io "$UDID" screenshot --mask=ignored "$out" 2>/dev/null && return
-              for d in 1 2 3; do
-                xcrun simctl io "$UDID" screenshot --display="$d" --mask=ignored "${out%.png}-$d.png" 2>/dev/null && echo "display $d ok"
-              done
-              true
-            }
+          UDID=$(xcrun simctl create Duo com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$RUNTIME")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
+          for STATE in folded open; do
+            if [ "$STATE" = open ]; then
+              # Open the device: inner display (3) on, outer (1) off
+              xcrun simctl io "$UDID" screenConfig --display=3 power on || true
+              xcrun simctl io "$UDID" screenConfig --display=1 power off || true
+              sleep 4
+              DISP=3
+            else
+              DISP=1
+            fi
+            shot() { xcrun simctl io "$UDID" screenshot --display=$DISP --mask=ignored "$1" || true; }
             still() {
               local label=$1 wait=$2; shift 2
               xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
               sleep 2
               xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" > /dev/null 2>&1
               sleep "$wait"
-              shot "duo/$DEV-$label.png"
+              shot "duo/$STATE-$label.png"
             }
             still home 9 -staymenu
             still levels 9 -staylevels
             still garage 12 -staygarage
-            still loading 3.4 -playpark
             still park 11 -playpark
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
             xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark > /dev/null 2>&1
-            sleep 22; shot "duo/$DEV-race1.png"
-            sleep 10; shot "duo/$DEV-race2.png"
-            xcrun simctl shutdown "$UDID" || true
+            sleep 22; shot "duo/$STATE-race.png"
           done
           ls -la duo
       - uses: actions/upload-artifact@v4

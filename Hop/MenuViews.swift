@@ -198,6 +198,9 @@ struct MenuView: View {
         }
     }
 
+    /// Narrow screens drop the garage chip from page top bars (the title needs the room).
+    @State private var compactTopBar = false
+
     private var topBar: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .leading) {
@@ -209,7 +212,7 @@ struct MenuView: View {
                 }
             }
             Spacer()
-            if page != .home {
+            if page != .home && !compactTopBar {
                 NeoGarageChip()
             }
             CoinPill(coins: model.coins)
@@ -219,6 +222,10 @@ struct MenuView: View {
             SoundToggle()
         }
         .frame(height: 46)
+        .background(GeometryReader { proxy in
+            Color.clear.onAppear { compactTopBar = proxy.size.width < 700 }
+                .onChange(of: proxy.size.width) { _, width in compactTopBar = width < 700 }
+        })
     }
 
     // MARK: Home: three mode cards
