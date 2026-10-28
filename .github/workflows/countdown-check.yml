@@ -1,0 +1,60 @@
+name: Countdown check
+
+# Builds the app for the simulator and takes a burst of screenshots through a parking level's
+# start countdown.
+on:
+  workflow_dispatch:
+
+jobs:
+  countdown:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+
+      - name: Build for simulator
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project Hop.xcodeproj -scheme Hop -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS=BENCHMARK build > build.log 2>&1 || {
+              grep -E "error:" build.log | head -40 | while read -r line; do echo "::error::$line"; done
+              exit 1
+            }
+
+      - name: Countdown screenshots
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          best = ""
+          for runtime, devices in data.items():
+              if "iOS" in runtime:
+                  for d in devices:
+                      if d["name"].startswith("iPhone") and "Pro Max" in d["name"]:
+                          best = d["udid"]
+          print(best)
+          ')
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
+          mkdir -p shots
+          xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -playpark -AppleLanguages "(tr)" > /dev/null 2>&1
+          sleep 3
+          for i in $(seq -w 1 40); do
+            xcrun simctl io "$UDID" screenshot --mask=ignored "shots/t$i.png" > /dev/null 2>&1 || true
+            sleep 0.25
+          done
+          ls shots | wc -l
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: countdown
+          path: shots
