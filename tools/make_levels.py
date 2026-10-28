@@ -292,15 +292,173 @@ def pillars(lv, rng, d):
     scatter_cones(lv, rng, int(2 + 6 * d), 260, 880, 200, 300)
 
 
-LAYOUTS = [row_bays, parallel, angled, middle_slot, maze, pillars]
+def alcoves(lv, rng, d):
+    """Garage alcoves along one side: three walls round each bay, so the car has to be lined up
+    in the lane first and go straight in (or back in); the other alcoves hold parked cars and a
+    row of cars narrows the lane."""
+    top = rng.random() < 0.5
+    inner = 46 - 8 * d          # alcove width (car 22)
+    depth = 76 - 8 * d          # alcove length (car 44)
+    t = 10
+    pitch = inner + t
+    count = int((900 - 300) / pitch)
+    xs = [300 + i * pitch for i in range(count)]
+    mouth = 300 if top else 200
+    yc = mouth + depth / 2 if top else mouth - depth / 2
+    for i in range(count + 1):
+        lv.wall(300 - pitch / 2 + i * pitch, yc, t, depth)
+    back = yc + (depth / 2 + 5) * (1 if top else -1)
+    lv.wall(300 - pitch / 2 + count * pitch / 2, back, count * pitch + t, 10)
+    free = sorted(rng.sample(range(1, count - 1), 2))
+    if free[1] - free[0] < 3:
+        free = [free[0], min(count - 2, free[0] + 3)]
+    for i, x in enumerate(xs):
+        if i not in free:
+            lv.car(x, yc, 90, rng.randint(1, 5))
+    lv.spots = [(xs[i], yc, depth - 8, inner - 6, 90) for i in free]
+    lane = 150 - 35 * d
+    other = mouth - lane if top else mouth + lane
+    for x in range(330, 900, 58):
+        if rng.random() < 0.5 + 0.4 * d:
+            lv.car(x, other + (-11 if top else 11), 0, rng.randint(1, 5))
+    lv.starts = [(90, mouth - lane / 2 if top else mouth + lane / 2, 0),
+                 (90, (mouth - lane - 60) if top else (mouth + lane + 60), 0)]
+    scatter_cones(lv, rng, int(1 + 3 * d), 250, 880, 20, 480)
+
+
+def turnaround(lv, rng, d):
+    """The car starts nose to a dead end: the bays are behind it, past a split row of parked cars
+    and cones, so every run begins with a turn in a tight space."""
+    lv.wall(985, 250, 30, 500)
+    lv.wall(15, 250, 30, 500)
+    for x in range(560, 960, 50):
+        lv.car(x, 250, 0, rng.randint(1, 5))
+    depth = 74 - 10 * d
+    width = 42 - 8 * d
+    spots = []
+    for half, yc in ((0, 125), (1, 375)):
+        sy = yc + rng.uniform(-50, 50)
+        spots.append((30 + depth / 2 + 4, sy, depth, width, 0))
+        for k in (-1, 1):
+            lv.car(30 + 26, sy + k * (width + 4), 0, rng.randint(1, 5))
+    lv.spots = spots
+    lv.starts = [(880, 125 + rng.uniform(-30, 30), 0), (880, 375 + rng.uniform(-30, 30), 0)]
+    # Narrow passes between the halves of the lot
+    for x in (330 + rng.uniform(-30, 30), 460 + rng.uniform(-30, 30)):
+        lv.wall(x, 250, 20, 70 + 90 * d)
+    scatter_cones(lv, rng, int(3 + 7 * d), 180, 780, 30, 470)
+
+
+def island(lv, rng, d):
+    """Two bays at an odd angle in an island of parked cars in the middle of the lot, with
+    pillars around: the line in has to be planned from far away."""
+    ang = rng.choice([30, 60, 120, 150])
+    a = math.radians(ang)
+    across = (-math.sin(a), math.cos(a))
+    cx, cy = rng.uniform(500, 640), 250
+    pitch = 42 - 6 * d
+    length = 68 - 8 * d
+    spots = []
+    for k in range(-3, 4):
+        x, y = cx + across[0] * k * pitch, cy + across[1] * k * pitch
+        if k in (-1, 1):
+            spots.append((x, y, length, pitch - 6, ang))
+        else:
+            lv.car(x, y, ang, rng.randint(1, 5))
+    lv.spots = spots
+    for i in range(int(4 + 4 * d)):
+        t = rng.uniform(0, 2 * math.pi)
+        r = rng.uniform(190, 230)
+        lv.wall(cx + math.cos(t) * r * 1.3, cy + math.sin(t) * r * 0.9, 26, 26)
+    lv.starts = [(90, 110, 0), (90, 390, 0)]
+    scatter_cones(lv, rng, int(2 + 6 * d), 200, 900, 20, 480)
+
+
+def corridor(lv, rng, d):
+    """Two walled lanes with a chicane each, ending in a small yard where the bay lies across
+    the lane's end between parked cars: a late, tight turn in."""
+    width = 112 - 30 * d
+    lv.wall(500, 250, 1000, 16)
+    for yc in (125, 375):
+        for side in (-1, 1):
+            edge = yc + side * (width / 2 + 6)
+            if abs(edge - 250) > 20 and 15 < edge < 485:
+                lv.wall(470, edge, 520, 12)
+        # Chicane blocks from alternating sides
+        for j, x in enumerate((360, 520)):
+            side = 1 if (j + (yc > 250)) % 2 == 0 else -1
+            bite = width * (0.32 + 0.12 * d)
+            lv.wall(x + rng.uniform(-20, 20), yc + side * (width / 2 - bite / 2), 18, bite)
+    depth = 72 - 10 * d
+    w = 42 - 8 * d
+    spots = []
+    for yc in (125, 375):
+        sy = yc + rng.uniform(-40, 40)
+        spots.append((935, sy, depth, w, 0))
+        for k in (-1, 1):
+            if 30 < sy + k * (w + 4) < 470:
+                lv.car(935, sy + k * (w + 4), 0, rng.randint(1, 5))
+    lv.wall(985, 250, 30, 500)
+    lv.spots = spots
+    lv.starts = [(90, 125, 0), (90, 375, 0)]
+    scatter_cones(lv, rng, int(1 + 3 * d), 780, 880, 40, 460)
+
+
+def slalom(lv, rng, d):
+    """A cone slalom down the lot, then a tight parallel bay against the curb."""
+    parallel(lv, rng, d)
+    gate = 110 - 35 * d
+    for j, x in enumerate(range(280, 760, 120)):
+        centre = 250 + (60 if j % 2 == 0 else -60) * (1 if rng.random() < 0.5 else 1)
+        for y in range(120, 390, 16):
+            if abs(y - centre) > gate / 2:
+                lv.cone(x, y)
+
+
+def mirror(lv, horizontal, vertical):
+    """Mirrors a finished layout so starts, bays and turns differ between levels."""
+    def mx(x):
+        return W - x if horizontal else x
+
+    def my(y):
+        return H - y if vertical else y
+
+    def ang(deg):
+        if horizontal:
+            deg = 180 - deg
+        if vertical:
+            deg = -deg
+        # (-180, 180]: the game treats ±90 as a straight bay
+        deg = (deg + 180) % 360 - 180
+        return 180 if deg == -180 else deg
+
+    # Walls and cones are axis-aligned boxes: only their position moves
+    lv.obs = [(k, mx(x), my(y), w, h, ang(dg) if k == 'car' else dg, t) for k, x, y, w, h, dg, t in lv.obs]
+    lv.spots = [(mx(x), my(y), w, h, ang(dg)) for x, y, w, h, dg in lv.spots]
+    lv.starts = [(mx(x), my(y), ang(dg)) for x, y, dg in lv.starts]
+
+
+# Easier shapes come first; the new tight ones (alcoves, turnaround, island, corridor, slalom)
+# take over as the levels go on
+EARLY = [row_bays, parallel, angled, middle_slot, alcoves, island, maze, pillars]
+LATE = [alcoves, turnaround, island, corridor, slalom, maze, parallel, angled, row_bays, pillars, middle_slot]
+LAYOUTS = EARLY
+
+
+def layout_for(index):
+    pool = EARLY if index < 12 else LATE
+    return pool[index % len(pool)]
 
 
 def build(index):
     d = index / 39
-    for attempt in range(400):
+    layout = layout_for(index)
+    for attempt in range(600):
         rng = random.Random(index * 7919 + attempt)
         lv = Level(NAMES[index])
-        LAYOUTS[index % len(LAYOUTS)](lv, rng, min(1.0, d))
+        layout(lv, rng, min(1.0, d))
+        # Every other level is mirrored left-right, every third top-bottom
+        mirror(lv, horizontal=index % 2 == 1, vertical=index % 3 == 2)
         problem = lv.check()
         if problem is None:
             return lv, attempt
@@ -331,7 +489,7 @@ def main():
     for i in range(40):
         lv, attempts = build(i)
         levels.append(lv)
-        print(f'level {i + 11:2d} {LAYOUTS[i % len(LAYOUTS)].__name__:12s} {lv.name[1]:16s} '
+        print(f'level {i + 11:2d} {layout_for(i).__name__:12s} {lv.name[1]:16s} '
               f'obstacles {len(lv.obs):2d} tries {attempts + 1}')
     body = ',\n\n'.join(swift(lv) for lv in levels)
     spanish = '\n'.join(f'        "{en}": "{es}",' for tr, en, es in NAMES)
