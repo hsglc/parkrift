@@ -123,11 +123,6 @@ struct CarSpec {
     ]
 
     static let all: [CarSpec] = [
-        polyfork(.italia, name: "Vento 84", maker: "CORSA", className: "S",
-                 stats: CarStats(speed: 0.88, acceleration: 0.84, handling: 0.86, nitro: 0.72),
-                 tuning: (1.02, 1.0, 1.02, 1.0, 1.0),
-                 wheels: [(1.288, 0.330, -0.800, true), (1.288, 0.330, 0.800, true), (-1.323, 0.330, -0.800, false), (-1.323, 0.330, 0.800, false)],
-                 radius: 0.330, rear: -2.225, height: 1.210),
         polyfork(.concept, name: "Tempesta V8", maker: "VOLTA", className: "S+",
                  stats: CarStats(speed: 0.96, acceleration: 0.86, handling: 0.72, nitro: 0.80),
                  tuning: (1.06, 1.0, 0.95, 1.05, 1.0),
@@ -138,32 +133,51 @@ struct CarSpec {
                  tuning: (0.94, 1.07, 1.08, 1.1, 0.85),
                  wheels: [(1.475, 0.288, -0.808, true), (1.475, 0.288, 0.808, true), (-1.128, 0.288, -0.808, false), (-1.128, 0.288, 0.808, false)],
                  radius: 0.288, rear: -2.300, height: 1.243),
-        polyfork(.strada, name: "Strada S", maker: "NORDWERK", className: "A",
-                 stats: CarStats(speed: 0.82, acceleration: 0.90, handling: 0.90, nitro: 0.74),
-                 tuning: (1.0, 1.04, 1.04, 1.0, 1.0),
-                 wheels: [(1.223, 0.330, -0.793, true), (1.223, 0.330, 0.793, true), (-1.230, 0.330, -0.793, false), (-1.230, 0.330, 0.793, false)],
-                 radius: 0.330, rear: -2.100, height: 1.560),
-        polyfork(.toro, name: "Toro 76", maker: "ATLAS", className: "A",
-                 stats: CarStats(speed: 0.84, acceleration: 0.82, handling: 0.80, nitro: 0.86),
-                 tuning: (1.0, 0.98, 0.99, 1.05, 0.96),
-                 wheels: [(1.390, 0.312, -0.834, true), (1.390, 0.312, 0.834, true), (-1.390, 0.312, -0.834, false), (-1.390, 0.312, 0.834, false)],
-                 radius: 0.312, rear: -2.300, height: 1.342),
-        polyfork(.arrow, name: "Arrow Wagon", maker: "ARROWWORKS", className: "A",
-                 stats: CarStats(speed: 0.82, acceleration: 0.80, handling: 0.78, nitro: 0.92),
-                 tuning: (1.0, 0.98, 0.98, 1.08, 0.94),
-                 wheels: [(1.456, 0.300, -0.789, true), (1.456, 0.300, 0.789, true), (-1.215, 0.300, -0.789, false), (-1.215, 0.300, 0.789, false)],
-                 radius: 0.300, rear: -2.300, height: 1.376),
-        polyfork(.bison, name: "Bison 78", maker: "ATLAS", className: "A",
-                 stats: CarStats(speed: 0.80, acceleration: 0.84, handling: 0.70, nitro: 0.92),
-                 tuning: (0.98, 1.0, 0.94, 1.1, 0.88),
-                 wheels: [(1.527, 0.340, -0.911, true), (1.527, 0.340, 0.911, true), (-1.348, 0.340, -0.911, false), (-1.348, 0.340, 0.911, false)],
-                 radius: 0.340, rear: -2.300, height: 1.701),
-        polyfork(.classico, name: "Terra X", maker: "TERRA", className: "A",
-                 stats: CarStats(speed: 0.78, acceleration: 0.86, handling: 0.74, nitro: 0.90),
-                 tuning: (0.98, 1.0, 0.96, 1.06, 0.92),
-                 wheels: [(1.506, 0.432, -0.907, true), (1.506, 0.432, 0.907, true), (-1.302, 0.432, -0.907, false), (-1.302, 0.432, 0.907, false)],
-                 radius: 0.432, rear: -2.225, height: 2.215)
+        meshy(.italia, name: "Rosso GT", maker: "CORSA", className: "S",
+              stats: CarStats(speed: 0.88, acceleration: 0.84, handling: 0.86, nitro: 0.72),
+              tuning: (1.02, 1.0, 1.02, 1.0, 1.0),
+              wheels: [(1.180, 0.330, -0.818, true), (1.181, 0.330, 0.824, true), (-1.400, 0.334, -0.814, false), (-1.398, 0.332, 0.814, false)],
+              radius: 0.332, rear: -2.227, height: 1.116),
+        meshy(.strada, name: "Strada S", maker: "NORDWERK", className: "A",
+              stats: CarStats(speed: 0.82, acceleration: 0.90, handling: 0.90, nitro: 0.74),
+              tuning: (1.0, 1.04, 1.04, 1.0, 1.0),
+              wheels: [(1.077, 0.410, -0.929, true), (1.084, 0.410, 0.930, true), (-1.272, 0.415, -0.929, false), (-1.270, 0.415, 0.930, false)],
+              radius: 0.413, rear: -2.017, height: 1.730),
+        meshy(.toro, name: "Volta R", maker: "VOLTA", className: "S+",
+              stats: CarStats(speed: 0.96, acceleration: 0.90, handling: 0.82, nitro: 0.78),
+              tuning: (1.06, 1.04, 0.98, 1.02, 1.0),
+              wheels: [(1.086, 0.297, -0.822, true), (1.086, 0.297, 0.825, true), (-1.449, 0.309, -0.819, false), (-1.447, 0.309, 0.823, false)],
+              radius: 0.303, rear: -2.325, height: 0.832),
+        meshy(.arrow, name: "Arrow GT", maker: "ARROWWORKS", className: "S",
+              stats: CarStats(speed: 0.92, acceleration: 0.86, handling: 0.88, nitro: 0.76),
+              tuning: (1.04, 1.02, 1.04, 1.0, 1.0),
+              wheels: [(1.401, 0.335, -0.798, true), (1.401, 0.333, 0.791, true), (-1.295, 0.335, -0.797, false), (-1.301, 0.333, 0.789, false)],
+              radius: 0.334, rear: -2.326, height: 1.200),
+        meshy(.bison, name: "Bison", maker: "ATLAS", className: "A",
+              stats: CarStats(speed: 0.80, acceleration: 0.84, handling: 0.70, nitro: 0.92),
+              tuning: (0.98, 1.0, 0.94, 1.1, 0.88),
+              wheels: [(1.350, 0.382, -0.855, true), (1.353, 0.381, 0.855, true), (-1.313, 0.380, -0.865, false), (-1.313, 0.380, 0.865, false)],
+              radius: 0.381, rear: -2.224, height: 2.074),
+        meshy(.classico, name: "Classico 87", maker: "VINTAGE", className: "S",
+              stats: CarStats(speed: 0.90, acceleration: 0.80, handling: 0.76, nitro: 0.88),
+              tuning: (1.05, 0.97, 0.96, 1.08, 0.92),
+              wheels: [(1.306, 0.318, -0.731, true), (1.306, 0.318, 0.743, true), (-1.092, 0.316, -0.740, false), (-1.092, 0.317, 0.744, false)],
+              radius: 0.317, rear: -2.182, height: 1.229)
     ].sorted { $0.id.rawValue < $1.id.rawValue }
+
+    /// An original car generated with Meshy AI and refined and converted with
+    /// tools/convert_meshy_cars.py: a textured body painted through its mask, glass and lamp
+    /// meshes the game lights, and a separate wheel.
+    private static func meshy(_ id: CarModelID, name: String, maker: String, className: String, stats: CarStats,
+                              tuning: (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat),
+                              wheels: [(Float, Float, Float, Bool)], radius: Float, rear: Float, height: Float) -> CarSpec {
+        let file = "\(id)"
+        return CarSpec(id: id, file: file, name: name, maker: maker, className: className, stats: stats,
+                       wheelSpots: wheels, wheelRadius: radius, wheelModelSide: -1,
+                       exhausts: [SCNVector3(rear - 0.02, 0.32, 0.34), SCNVector3(rear - 0.02, 0.32, -0.34)],
+                       topSpeed: tuning.0, acceleration: tuning.1, steering: tuning.2, nitroPower: tuning.3, nitroFill: tuning.4,
+                       textured: true, textureBase: file + "_basecolor.jpg", textureMask: file + "_mask.png", height: height)
+    }
 
     /// A free low poly car from Polyfork, converted with tools/convert_polyfork_cars.py: one body
     /// mesh coloured through a small palette texture (painted where its mask is white), lamp
@@ -356,8 +370,9 @@ enum CarModels {
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
         material.diffuse.contents = image(base)
-        // Palette cells: no mipmaps, so far-away faces do not blend with the next colour
-        material.diffuse.mipFilter = .none
+        // Palette cells: no mipmaps, so far-away faces do not blend with the next colour; painted
+        // textures (Meshy cars) are mipmapped so they stay smooth far away
+        material.diffuse.mipFilter = base.hasSuffix("_palette.png") ? .none : .linear
         // Glossy car paint with a clear coat (glass, chrome and trim are their own meshes now)
         material.metalness.contents = NSNumber(value: 0.2)
         material.roughness.contents = NSNumber(value: 0.3)
