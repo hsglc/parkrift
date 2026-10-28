@@ -1,0 +1,64 @@
+name: iPhone Duo check
+
+# Builds with Xcode 27.1 and takes screenshots on the iPhone Duo simulator (inner and, when the
+# simulator can fold, outer display) to check the layout before App Store submission.
+on:
+  workflow_dispatch:
+
+jobs:
+  duo:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          xcrun simctl help 2>&1 | grep -i -E "fold|posture|display|hinge" || true
+      - name: Build for simulator
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project Hop.xcodeproj -scheme Hop -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS=BENCHMARK build > build.log 2>&1 || {
+              grep -E "error:" build.log | head -40 | while read -r line; do echo "::error::$line"; done
+              exit 1
+            }
+          grep -E "warning:.*(deprecated|Duo|reserved)" build.log | head -20 || true
+      - name: Screens on iPhone Duo
+        run: |
+          RUNTIME=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-27-1' | head -1)
+          UDID=$(xcrun simctl create "Duo" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$RUNTIME")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
+          mkdir -p duo
+          still() {
+            local label=$1 wait=$2; shift 2
+            xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+            sleep 2
+            xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" > /dev/null 2>&1
+            sleep "$wait"
+            xcrun simctl io "$UDID" screenshot "duo/$label.png" || true
+          }
+          still home 9 -staymenu
+          still levels 9 -staylevels
+          still garage 12 -staygarage
+          # A race (the benchmark drives it): two moments
+          xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+          sleep 2
+          xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark > /dev/null 2>&1
+          sleep 22; xcrun simctl io "$UDID" screenshot duo/race1.png || true
+          sleep 10; xcrun simctl io "$UDID" screenshot duo/race2.png || true
+          ls -la duo
+          python3 -c "
+          from PIL import Image
+          import glob
+          for f in sorted(glob.glob('duo/*.png')): print(f, Image.open(f).size)
+          " 2>/dev/null || sips -g pixelWidth -g pixelHeight duo/*.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: duo
+          path: duo
