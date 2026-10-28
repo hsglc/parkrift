@@ -331,6 +331,20 @@ enum CarModels {
         return holder
     }
 
+    /// Paint for the textured cars is applied on the GPU: the base texture is multiplied by the
+    /// paint color where the mask is white. Changing the paint only changes a shader value, so no
+    /// image is drawn and nothing new is uploaded (each first paint or car used to draw a
+    /// 1024 px image on the main thread and upload it, which made the garage stutter).
+    private static let paintShader = """
+    #pragma arguments
+    texture2d<float> paintMask;
+    float3 paintColor;
+    #pragma body
+    constexpr sampler maskSampler(filter::linear, mip_filter::none, address::repeat);
+    float paintAmount = paintMask.sample(maskSampler, _surface.diffuseTexcoord).r;
+    _surface.diffuse.rgb = mix(_surface.diffuse.rgb, _surface.diffuse.rgb * paintColor, paintAmount);
+    """
+
     private static let textureLock = NSLock()
     private static var images: [String: UIImage] = [:]
     private static var recent: [String] = []
