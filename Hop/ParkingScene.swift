@@ -602,7 +602,7 @@ final class ParkingScene: SKScene {
         countdownNode.position = countdownHome
         countdownNode.zPosition = 5
         let band = SKSpriteNode(texture: CarArt.finishBand)
-        band.size = CGSize(width: 420, height: 104)
+        band.size = CGSize(width: 540, height: 132)
         band.colorBlendFactor = 1
         band.color = .red
         band.blendMode = .add
@@ -616,7 +616,7 @@ final class ParkingScene: SKScene {
         pill.isHidden = true
         countdownNode.addChild(pill)
         countdownPill = pill
-        let ring = SKShapeNode(circleOfRadius: 64)
+        let ring = SKShapeNode(circleOfRadius: 82)
         ring.lineWidth = 4
         ring.fillColor = .clear
         ring.strokeColor = .white
@@ -625,20 +625,20 @@ final class ParkingScene: SKScene {
         countdownNode.addChild(ring)
         countdownRing = ring
         // The outgoing number (shrinks away) and the incoming one (slams in)
-        countdownShadow = makeLabel("", size: 112, color: .white, font: "AvenirNextCondensed-HeavyItalic")
+        countdownShadow = makeLabel("", size: 144, color: .white, font: "AvenirNextCondensed-HeavyItalic")
         countdownShadow.verticalAlignmentMode = .center
         countdownNode.addChild(countdownShadow)
-        countdownLabel = makeLabel("3", size: 112, color: .white, font: "AvenirNextCondensed-HeavyItalic")
+        countdownLabel = makeLabel("3", size: 144, color: .white, font: "AvenirNextCondensed-HeavyItalic")
         countdownLabel.verticalAlignmentMode = .center
         countdownNode.addChild(countdownLabel)
         countdownLamps = (0..<3).map { index in
-            let lamp = SKShapeNode(rectOf: CGSize(width: 30, height: 30), cornerRadius: 9)
-            lamp.position = CGPoint(x: CGFloat(index - 1) * 44, y: 96)
+            let lamp = SKShapeNode(rectOf: CGSize(width: 38, height: 38), cornerRadius: 11)
+            lamp.position = CGPoint(x: CGFloat(index - 1) * 56, y: 122)
             lamp.fillColor = UIColor(white: 0.12, alpha: 0.85)
             lamp.strokeColor = UIColor.white.withAlphaComponent(0.25)
             lamp.lineWidth = 1.5
             let glow = SKSpriteNode(texture: dotTexture)
-            glow.size = CGSize(width: 90, height: 90)
+            glow.size = CGSize(width: 116, height: 116)
             glow.blendMode = .add
             glow.alpha = 0
             glow.name = "glow"
@@ -649,12 +649,12 @@ final class ParkingScene: SKScene {
         }
         // Three segments under the number fill over the three seconds
         countdownSegments = (0..<3).map { index in
-            let track = SKSpriteNode(color: UIColor.white.withAlphaComponent(0.14), size: CGSize(width: 58, height: 5))
-            track.position = CGPoint(x: CGFloat(index - 1) * 64, y: -78)
+            let track = SKSpriteNode(color: UIColor.white.withAlphaComponent(0.14), size: CGSize(width: 74, height: 6))
+            track.position = CGPoint(x: CGFloat(index - 1) * 82, y: -98)
             countdownNode.addChild(track)
-            let fill = SKSpriteNode(color: .white, size: CGSize(width: 58, height: 5))
+            let fill = SKSpriteNode(color: .white, size: CGSize(width: 74, height: 6))
             fill.anchorPoint = CGPoint(x: 0, y: 0.5)
-            fill.position = CGPoint(x: -29, y: 0)
+            fill.position = CGPoint(x: -37, y: 0)
             fill.xScale = 0.001
             track.addChild(fill)
             return fill
@@ -1268,7 +1268,7 @@ final class ParkingScene: SKScene {
         countdownLabel.text = text
         countdownColor = colors[text] ?? UIColor(red: 0.25, green: 1.0, blue: 0.5, alpha: 1)
         countdownLabel.fontColor = go ? countdownColor : .white
-        countdownLabel.fontSize = go ? 96 : 112
+        countdownLabel.fontSize = go ? 122 : 144
         let lit = go ? 3 : max(0, 4 - (Int(text) ?? 3))
         for (index, lamp) in countdownLamps.enumerated() {
             let on = index < lit
