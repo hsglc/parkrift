@@ -569,6 +569,14 @@ struct RootView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.openGarage(.menu) }
                 return
             }
+            if PerfSettings.benchmark && args.contains("-playpark") {
+                // A parking level, started from the menu (loading screen, then the HUD)
+                AudioManager.shared.isMuted = true
+                model.selectedLevel = 2
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.playSolo() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { model.leaveGarage(confirmed: true) }
+                return
+            }
             if PerfSettings.benchmark && args.contains("-staylevels") {
                 AudioManager.shared.isMuted = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {

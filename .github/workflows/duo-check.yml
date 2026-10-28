@@ -27,37 +27,36 @@ jobs:
               exit 1
             }
           grep -E "warning:.*(deprecated|Duo|reserved)" build.log | head -20 || true
-      - name: Screens on iPhone Duo
+      - name: Screens on iPhone Duo and iPhone Pro Max
         run: |
           RUNTIME=$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-27-1' | head -1)
-          UDID=$(xcrun simctl create "Duo" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$RUNTIME")
-          xcrun simctl boot "$UDID"
-          xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
           mkdir -p duo
-          still() {
-            local label=$1 wait=$2; shift 2
+          for DEV in iPhone-Duo iPhone-18-Pro-Max; do
+            UDID=$(xcrun simctl create "$DEV" "com.apple.CoreSimulator.SimDeviceType.$DEV" "$RUNTIME")
+            xcrun simctl boot "$UDID"
+            xcrun simctl bootstatus "$UDID" -b
+            xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
+            still() {
+              local label=$1 wait=$2; shift 2
+              xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+              sleep 2
+              xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" > /dev/null 2>&1
+              sleep "$wait"
+              xcrun simctl io "$UDID" screenshot --mask=ignored "duo/$DEV-$label.png" || true
+            }
+            still home 9 -staymenu
+            still levels 9 -staylevels
+            still garage 12 -staygarage
+            still loading 3.4 -playpark
+            still park 11 -playpark
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
-            xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark "$@" > /dev/null 2>&1
-            sleep "$wait"
-            xcrun simctl io "$UDID" screenshot --mask=ignored "duo/$label.png" || true
-          }
-          still home 9 -staymenu
-          still levels 9 -staylevels
-          still garage 12 -staygarage
-          # A race (the benchmark drives it): two moments
-          xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
-          sleep 2
-          xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark > /dev/null 2>&1
-          sleep 22; xcrun simctl io "$UDID" screenshot duo/race1.png || true
-          sleep 10; xcrun simctl io "$UDID" screenshot duo/race2.png || true
+            xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark > /dev/null 2>&1
+            sleep 22; xcrun simctl io "$UDID" screenshot --mask=ignored "duo/$DEV-race1.png" || true
+            sleep 10; xcrun simctl io "$UDID" screenshot --mask=ignored "duo/$DEV-race2.png" || true
+            xcrun simctl shutdown "$UDID" || true
+          done
           ls -la duo
-          python3 -c "
-          from PIL import Image
-          import glob
-          for f in sorted(glob.glob('duo/*.png')): print(f, Image.open(f).size)
-          " 2>/dev/null || sips -g pixelWidth -g pixelHeight duo/*.png
       - uses: actions/upload-artifact@v4
         with:
           name: duo
