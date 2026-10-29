@@ -2241,11 +2241,9 @@ final class World3D {
         // Sidewalks / plazas on each block
         for block in city.blocks {
             let plane = SCNPlane(width: block.width / 10, height: block.height / 10)
-            // Pavers: one texture tile is 2 x 2 m
-            let sidewalk = Mat.lambert(CityArt.pavers)
-            sidewalk.diffuse.wrapS = .repeat
-            sidewalk.diffuse.wrapT = .repeat
-            sidewalk.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(block.width / 20), Float(block.height / 20), 1)
+            // Photo-scanned paving slabs (Poly Haven), a tile every 2.5 m; wet or snowy with the weather
+            let sidewalk = Scenery.surface("pavement", tile: 2.5, size: CGSize(width: block.width / 10, height: block.height / 10), normal: 0.8)
+            roadMaterials.append(sidewalk)
             plane.materials = [sidewalk]
             let node = flat(plane, y: 0.08)
             let p = World3D.vec(CGPoint(x: block.midX, y: block.midY))
@@ -2254,7 +2252,6 @@ final class World3D {
             ground.addChildNode(node)
         }
         // Low barriers around the map edge
-        let barrier = Mat.pbr(UIColor(red: 0.85, green: 0.85, blue: 0.86, alpha: 1), rough: 0.8)
         let edges: [(CGPoint, CGFloat, CGFloat)] = [
             (CGPoint(x: world.width / 2, y: -4), world.width + 16, 8),
             (CGPoint(x: world.width / 2, y: world.height + 4), world.width + 16, 8),
@@ -2263,7 +2260,8 @@ final class World3D {
         ]
         for edge in edges {
             let box = SCNBox(width: edge.1 / 10, height: 0.9, length: edge.2 / 10, chamferRadius: 0.1)
-            box.materials = [barrier]
+            // Concrete repeated every 2 m along the barrier (one stretched texture looked flat)
+            box.materials = [Scenery.surface("concrete", tile: 2, size: CGSize(width: max(edge.1, edge.2) / 10, height: 0.9))]
             let node = SCNNode(geometry: box)
             node.position = World3D.vec(edge.0, y: 0.45)
             ground.addChildNode(node)
@@ -2350,10 +2348,13 @@ final class World3D {
         let mesh = MeshBuilder()
         let poleMaterial = Mat.pbr(UIColor(white: 0.22, alpha: 1), metal: 0.6, rough: 0.45)
         let headMaterial = Mat.pbr(UIColor(white: 0.08, alpha: 1), metal: 0.2, rough: 0.6)
-        let curbMaterial = Mat.pbr(UIColor(white: 0.82, alpha: 1), rough: 0.85)
+        // Kerbs: textured concrete (repeated along their length below), not flat white
+        let curbMaterial = Scenery.shared("concrete", tile: 1, size: CGSize(width: 1, height: 1))
         let lampGlow = Mat.glow(UIColor(red: 1.0, green: 0.92, blue: 0.75, alpha: 1))
         lampGlow.diffuse.intensity = 1.4
-        let stopLine = Mat.lambert(UIColor(white: 0.95, alpha: 1))
+        // Worn road paint (the zebra stripe's texture), not a flat white that glowed at night
+        let stopLine = Mat.pbr(UIColor(white: 0.8, alpha: 1), metal: 0, rough: 0.75)
+        stopLine.diffuse.contents = UIImage(named: "zebra_albedo.jpg")
         func box(_ c: SCNVector3, _ w: Float, _ h: Float, _ l: Float, _ m: SCNMaterial) {
             mesh.addBox(center: SIMD3(c.x, c.y, c.z), width: w, height: h, length: l, angle: 0, wall: m, roof: m,
                         wallRepeats: { _ in SIMD2(1, 1) })
@@ -2461,7 +2462,10 @@ final class World3D {
                 (CGPoint(x: block.maxX, y: block.midY), 0.3, Float(block.height / 10))
             ]
             for (point, w, l) in edges {
-                box(World3D.vec(point), w, 0.16, l, curbMaterial)
+                let c = World3D.vec(point)
+                mesh.addBox(center: SIMD3(c.x, c.y, c.z), width: w, height: 0.16, length: l, angle: 0, wall: curbMaterial, roof: curbMaterial,
+                            wallRepeats: { span in SIMD2(max(1, span / 1.5), 1) },
+                            roofRepeats: SIMD2(max(1, w / 1.5), max(1, l / 1.5)))
             }
         }
         if let geometry = mesh.build() {

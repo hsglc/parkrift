@@ -56,7 +56,8 @@ final class MeshBuilder {
     /// Axis-aligned box (rotated about y by `angle`) standing on y = 0 at `center`.
     /// `sideRepeats(width or length) -> uv repeats` sets the texture tiling on the walls.
     func addBox(center: SIMD3<Float>, width: Float, height: Float, length: Float, angle: Float,
-                wall: SCNMaterial, roof: SCNMaterial, wallRepeats: (Float) -> SIMD2<Float>) {
+                wall: SCNMaterial, roof: SCNMaterial, wallRepeats: (Float) -> SIMD2<Float>,
+                roofRepeats: SIMD2<Float> = SIMD2(1, 1)) {
         let c = cos(angle), s = sin(angle)
         func p(_ x: Float, _ y: Float, _ z: Float) -> SIMD3<Float> {
             SIMD3(center.x + x * c + z * s, center.y + y, center.z - x * s + z * c)
@@ -68,7 +69,7 @@ final class MeshBuilder {
         quad([p(w, 0, -l), p(-w, 0, -l), p(-w, h, -l), p(w, h, -l)], normal: n(0, -1), uvMax: wallRepeats(width), material: wall)
         quad([p(w, 0, l), p(w, 0, -l), p(w, h, -l), p(w, h, l)], normal: n(1, 0), uvMax: wallRepeats(length), material: wall)
         quad([p(-w, 0, -l), p(-w, 0, l), p(-w, h, l), p(-w, h, -l)], normal: n(-1, 0), uvMax: wallRepeats(length), material: wall)
-        quad([p(-w, h, l), p(w, h, l), p(w, h, -l), p(-w, h, -l)], normal: SIMD3(0, 1, 0), uvMax: SIMD2(1, 1), material: roof)
+        quad([p(-w, h, l), p(w, h, l), p(w, h, -l), p(-w, h, -l)], normal: SIMD3(0, 1, 0), uvMax: roofRepeats, material: roof)
     }
 
     /// Any flat quad: corners counter-clockwise seen from the side `normal` points to; `uv` per corner

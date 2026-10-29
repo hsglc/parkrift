@@ -315,6 +315,11 @@ final class ParkingScene: SKScene {
     private var driftSide: CGFloat = 1
     private var driftCalm: CGFloat = 0
     private var drifting = false
+    /// Arcade drift (as in Asphalt): the angle the car holds to its line, eased toward a target
+    private var driftSlip: CGFloat = 0
+    /// Letting go: the angle eases back to straight before the drift ends
+    private var driftExiting = false
+    private var driftCounter: CGFloat = 0
     private var driftScore: CGFloat = 0
     private var driftClock: CGFloat = 0
     private var lastDriftEnd: TimeInterval = -10
@@ -2634,7 +2639,9 @@ final class ParkingScene: SKScene {
         // the slide on throttle spins the car; the car's yaw has inertia, so the angle builds and
         // settles instead of jumping.
         if !drifting { travelHeading = heading }
-        if handbrake && velocity > 40 && !drifting && airTime <= 0 { startDrift() }
+        // Into a drift: the DRIFT button at speed, or a dab of the brake while steering hard
+        let brakeFlick = reverseDown && !gasDown && velocity > 55 && abs(wheelInput) > 0.6
+        if (handbrake || brakeFlick) && velocity > 35 && !drifting && airTime <= 0 { startDrift() }
         var steerYaw = velocity / wheelBase * tan(steer)
         // The tyres can only hold so much sideways force: past it the car runs wide (understeer)
         // and the tyres squeal
@@ -2648,40 +2655,35 @@ final class ParkingScene: SKScene {
         }
         var newHeading = heading + steerYaw * dt
         if drifting && airTime <= 0 {
-            var slip = CGFloat.angleDelta(travelHeading, heading)
-            let speedShare = min(1, abs(velocity) / 90)
-            let rearGrip: CGFloat = (handbrake ? 0.25 : (gasDown ? 0.6 : 2.2)) * surface.rear
-            var target = 0.8 * steerYaw - slip * rearGrip * 3
-            if gasDown && !handbrake {
-                // Power oversteer: wheelspin pushes the tail further out
-                target += (slip >= 0 ? 1 : -1) * 2.6 * speedShare * min(1, abs(slip) / 0.35)
+            // Arcade drift: the car slides at a held angle to its line and carves the corner
+            // faster than grip allows, keeping almost all its speed. Steering into the drift
+            // tightens it and opens the angle, steering out straightens it; letting go of both the
+            // button and the steering eases the car straight and the drift ends. No spin-outs.
+            let input = wheelInput * driftSide           // > 0: into the drift, < 0: counter-steer
+            let into = max(0, input), against = max(0, -input)
+            driftCounter = against > 0.3 ? driftCounter + dt : 0
+            if !driftExiting && ((!handbrake && abs(wheelInput) < 0.1) || driftCounter > 0.22 || velocity < 28) {
+                driftExiting = true
             }
-            if handbrake && abs(wheelInput) > 0.1 { target += (wheelInput > 0 ? 1 : -1) * speedShare }
-            yawSpeed += (target - yawSpeed) * min(1, dt * 3)
-            newHeading = heading + yawSpeed * dt
-            // The tyres drag the direction of travel round toward where the car points
-            let pull: CGFloat = handbrake ? 0.7 : (gasDown ? 1.4 : 2.4)
-            travelHeading += CGFloat.angleDelta(travelHeading, newHeading) * min(1, pull * dt)
-            slip = CGFloat.angleDelta(travelHeading, newHeading)
-            // Sliding sideways scrubs speed; the locked rear wheels even more
-            velocity -= velocity * (0.3 * abs(sin(slip)) + (handbrake ? 0.5 : 0)) * dt
-            if handbrake { braking = true }
+            let grip = surface.grip
+            let targetSlip: CGFloat = driftExiting ? 0 : driftSide * (0.32 + 0.26 * into - 0.18 * against) * (0.85 + 0.15 * grip)
+            driftSlip += (targetSlip - driftSlip) * min(1, dt * (driftExiting ? 7 : 4.5))
+            // How fast the line turns: tighter than grip at speed, more with the steering held in
+            let speedShare = min(1, abs(velocity) / 90)
+            let turn = driftExiting ? 0 : driftSide * (0.55 + 0.75 * into - 0.45 * against) * (1.1 + 0.6 * speedShare) * (0.7 + 0.3 * grip)
+            travelHeading += turn * dt
+            newHeading = travelHeading + driftSlip
+            yawSpeed = (newHeading - heading) / max(dt, 0.0001)
+            // A light scrub only (Asphalt keeps the speed through a drift); the throttle holds it
+            velocity -= velocity * (0.07 + 0.08 * abs(sin(driftSlip))) * dt
+            // Nitro fills while sliding
+            if !driftExiting { nitro = min(1, nitro + dt * 0.09 * min(1, abs(driftSlip) / 0.35) * speedShare) }
             let before = driftClock
             driftClock += dt
-            driftScore += abs(velocity) * abs(slip) * dt * 0.9
+            driftScore += abs(velocity) * abs(driftSlip) * dt * 0.9
             if before < 2.2 && driftClock >= 2.2 { dispatchPolice(Strings.crimeDrift) }
-            // Grip back: small angle for a moment, or the tail swung past straight
-            driftCalm = abs(slip) < (gasDown ? 0.06 : 0.16) ? driftCalm + dt : 0
-            if abs(slip) > 1.55 {
-                // Spun out: the slide stops the car and the points are lost
-                failDrift()
-                velocity *= 0.4
-                yawSpeed *= 0.5
-                newHeading = heading
-                bumpHaptic.impactOccurred(intensity: 0.6)
-            } else if !handbrake && (driftCalm > 0.25 || slip * driftSide < -0.05) {
-                endDrift()
-            } else if abs(velocity) < 20 {
+            if driftExiting && abs(driftSlip) < 0.03 {
+                newHeading = travelHeading
                 endDrift()
             }
         } else {
@@ -2817,13 +2819,15 @@ final class ParkingScene: SKScene {
 
     private func startDrift() {
         drifting = true
+        driftExiting = false
+        driftCounter = 0
         driftScore = 0
         driftClock = 0
         driftCalm = 0
         travelHeading = heading
-        // The handbrake kicks the tail out toward the steering
+        driftSlip = 0
+        // The drift goes the way the player steers (or the way the car is already turning)
         driftSide = wheelInput > 0.1 ? 1 : (wheelInput < -0.1 ? -1 : (steer >= 0 ? 1 : -1))
-        yawSpeed = velocity / wheelBase * tan(steer) + driftSide * 1.6
         tickHaptic.impactOccurred(intensity: 0.7)
     }
 
@@ -2831,13 +2835,15 @@ final class ParkingScene: SKScene {
     private func endDrift() {
         guard drifting else { return }
         drifting = false
+        driftExiting = false
+        driftSlip = 0
         lastDriftEnd = lastUpdate
         lastDriftScore = driftScore
         travelHeading = heading
         let points = Int(driftScore.rounded())
         if driftScore > 40 && driftClock > 0.4 {
             runDriftPoints += points
-            nitro = min(1, nitro + min(0.6, driftScore / 1500))
+            nitro = min(1, nitro + min(0.25, driftScore / 3000))
             flashBonus(Strings.driftBonus(points))
             audio.play("whoosh", volume: 0.5)
             notifyHaptic.notificationOccurred(.success)
@@ -2849,6 +2855,8 @@ final class ParkingScene: SKScene {
     private func failDrift() {
         guard drifting else { return }
         drifting = false
+        driftExiting = false
+        driftSlip = 0
         lastDriftEnd = -10
         lastDriftScore = 0
         travelHeading = heading

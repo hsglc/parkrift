@@ -151,11 +151,11 @@ final class GarageStage {
         let accent = choice.color.lighter(by: 0.15)
         ringMaterial.emission.contents = accent
         floorGlow.multiply.contents = accent
-        car.setTexturesLoaded(true)
-        car.setPaint(choice.color)
-        car.setRim(choice.rimColor)
-        guard previous?.model != choice.model else { return }
-
+        if previous?.model == choice.model {
+            car.setPaint(choice.color)
+            car.setRim(choice.rimColor)
+            return
+        }
         let tiny = SCNVector3(0.001, 0.001, 0.001)
         if let previous = previous, let old = cars[previous.model], animated {
             old.node.removeAllActions()
@@ -178,26 +178,46 @@ final class GarageStage {
             car.node.opacity = 1
             car.node.scale = SCNVector3(1, 1, 1)
             car.node.position.y = 0.1
+            loadTextures(of: choice, on: car)
             return
         }
+        // The new car waits out of sight until its textures are decoded, then drops in finished
         car.node.opacity = 0
         car.node.scale = SCNVector3(0.88, 0.88, 0.88)
         car.node.position.y = 0.6
-        let drop = SCNAction.move(to: SCNVector3(0, 0.1, 0), duration: 0.35)
-        drop.timingMode = .easeOut
-        let grow = SCNAction.scale(to: 1, duration: 0.35)
-        grow.timingMode = .easeOut
-        car.node.runAction(.sequence([.wait(duration: 0.12), .group([.fadeIn(duration: 0.25), drop, grow])]))
+        let started = CACurrentMediaTime()
+        loadTextures(of: choice, on: car) {
+            let drop = SCNAction.move(to: SCNVector3(0, 0.1, 0), duration: 0.35)
+            drop.timingMode = .easeOut
+            let grow = SCNAction.scale(to: 1, duration: 0.35)
+            grow.timingMode = .easeOut
+            let wait = max(0, 0.12 - (CACurrentMediaTime() - started))
+            car.node.runAction(.sequence([.wait(duration: wait), .group([.fadeIn(duration: 0.25), drop, grow])]))
+        }
     }
 
     /// The garage screen is open or not: closed, even the shown car lets its textures go, so the
     /// menu and the game never carry the garage's 4K car as well.
     func setActive(_ active: Bool) {
         guard let id = shown?.model, let car = cars[id] else { return }
-        car.setTexturesLoaded(active)
         if active, let choice = shown {
-            car.setPaint(choice.color)
-            car.setRim(choice.rimColor)
+            loadTextures(of: choice, on: car)
+        } else {
+            car.setTexturesLoaded(false)
+        }
+    }
+
+    /// The car's 4K maps are decoded in the background and put on it when ready (until then it
+    /// shows for a moment in its plain material), so the garage never freezes to decode them.
+    private func loadTextures(of choice: CarChoice, on car: Car3D, ready: (() -> Void)? = nil) {
+        car.setPaint(choice.color)
+        car.setRim(choice.rimColor)
+        CarModels.whenDecoded(CarSpec.of(choice.model)) { [weak self] in
+            guard let self = self, self.shown?.model == choice.model, let current = self.shown else { return }
+            car.setTexturesLoaded(true)
+            car.setPaint(current.color)
+            car.setRim(current.rimColor)
+            ready?()
         }
     }
 

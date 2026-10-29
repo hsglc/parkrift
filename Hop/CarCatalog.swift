@@ -388,12 +388,44 @@ enum CarModels {
         textureLock.lock()
         defer { textureLock.unlock() }
         if let cached = images[name] { return cached }
+        if let ready = decoded[name] { return ready }
         guard let loaded = UIImage(named: name) else { return nil }
         let small = loaded.size.width * loaded.scale <= 1024
         guard keep, small else { return loaded }
         let decoded = loaded.preparingForDisplay() ?? loaded
         images[name] = decoded
         return decoded
+    }
+
+    /// Big images decoded ahead on a background thread, handed to the next material that asks.
+    private static var decoded: [String: UIImage] = [:]
+    private static let decodeQueue = DispatchQueue(label: "car-textures", qos: .userInitiated)
+
+    /// Decodes a car's 4K maps off the main thread, then runs `then` on the main thread. Applying
+    /// the textures right after costs no decoding there (a 4K JPEG decoded on the main thread froze
+    /// the garage for a moment on every entry and every car change).
+    static func whenDecoded(_ spec: CarSpec, then: @escaping () -> Void) {
+        let names = [spec.textureBase, spec.textureMask, spec.textureNormal, spec.textureRough, spec.textureMetal].compactMap { $0 }
+        decodeQueue.async {
+            var ready: [String: UIImage] = [:]
+            for name in names {
+                textureLock.lock()
+                let known = images[name] ?? decoded[name]
+                textureLock.unlock()
+                if known != nil { continue }
+                if let loaded = UIImage(named: name) { ready[name] = loaded.preparingForDisplay() ?? loaded }
+            }
+            textureLock.lock()
+            decoded.merge(ready) { a, _ in a }
+            textureLock.unlock()
+            DispatchQueue.main.async {
+                then()
+                // The materials hold what they took; the cache lets go so nothing extra stays
+                textureLock.lock()
+                for name in names { decoded[name] = nil }
+                textureLock.unlock()
+            }
+        }
     }
 
     /// Decodes the player's car images on a background thread at launch (the others load when

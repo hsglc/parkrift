@@ -117,7 +117,7 @@ save('click.wav', fade(level(load(find('kenney/**/click_005.ogg')), 0.10), 0.000
 # Gear change: a light, dull mechanical tick
 save('shift.wav', fade(level(band(load(find('kenney/**/impactPlate_light_002.ogg')), 120, 2500), 0.06), 0.001, 0.15))
 
-save('horn.wav', fade(level(load(find('oga/pack/Car_Horn.ogg')), 0.18), 0.002, 0.05))
+# horn.wav: BigSoundBank #0258 'Recent car horn' (CC0), one 0.62 s blast cut and normalised with ffmpeg
 
 # Police siren: three yelp cycles from the recording, looped
 siren = trim(load(find('siren/siren_0.mp3')), 36.5, 38.75)
