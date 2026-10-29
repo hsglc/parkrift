@@ -3635,6 +3635,8 @@ final class ParkingScene: SKScene {
         busted = false
         chase.driveOff(from: carPosition)
         world?.endSpectate()
+        // Straight back behind the car (easing from the orbit could pass through a building)
+        world?.follow(position: carPosition, heading: heading, dt: 0, snap: true)
         policeEdges.forEach { $0.run(.fadeAlpha(to: 0.002, duration: 0.3)) }
         bustedNode?.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
         bustedNode = nil
