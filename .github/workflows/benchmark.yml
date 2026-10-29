@@ -70,7 +70,19 @@ jobs:
             # Screenshot after the measurement (the app waits 5 s before quitting)
             DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
             rm -f "$DATA/Documents/bench.json"
-            for i in $(seq 1 90); do [ -f "$DATA/Documents/bench.json" ] && break; sleep 1; done
+            # Peak memory of the app process (resident, MB), sampled every second
+            local peak=0
+            for i in $(seq 1 90); do
+              [ -f "$DATA/Documents/bench.json" ] && break
+              local apppid=$(pgrep -f "Hop.app/Hop" | head -1)
+              if [ -n "$apppid" ]; then
+                local rss=$(ps -o rss= -p "$apppid" 2>/dev/null | tr -d ' ')
+                [ -n "$rss" ] && [ "$rss" -gt "$peak" ] && peak=$rss
+              fi
+              sleep 1
+            done
+            echo "::notice title=mem-$label::peak RSS $((peak / 1024)) MB"
+            echo "$((peak / 1024))" > "results/$label.mem"
             xcrun simctl io "$UDID" screenshot "results/$label.png" || true
             cp "$DATA/Documents/shot-start.png" "results/$label-start.png" 2>/dev/null || true
             cp "$DATA/Documents/shot-mid.png" "results/$label-mid.png" 2>/dev/null || true
@@ -92,8 +104,8 @@ jobs:
               tail -20 "results/$label.log" | while read -r l; do echo "::warning::$l"; done
             fi
           }
-          run optimized-1
-          run finish-1 -finishtest
+          run race-1
+          run race-2
 
       - name: Collect crash reports
         if: always()
