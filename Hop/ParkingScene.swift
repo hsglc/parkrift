@@ -3612,6 +3612,7 @@ final class ParkingScene: SKScene {
         node.run(.group([.fadeIn(withDuration: 0.15), .sequence([.scale(to: 1.08, duration: 0.15), .scale(to: 1.0, duration: 0.1)])]))
         hud.addChild(node)
         bustedNode = node
+        if benchmark { run(.wait(forDuration: 1.2)) { Task { @MainActor in saveWindowSnapshot(named: "shot-busted") } } }
     }
 
     private func updateBusted(_ dt: CGFloat, _ chase: PoliceChase) {
