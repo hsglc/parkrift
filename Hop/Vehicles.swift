@@ -340,8 +340,14 @@ enum MeshMerge {
             }
         }
         guard !positions.isEmpty, !all.isEmpty else { return nil }
-        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals),
-                                             SCNGeometrySource(textureCoordinates: uvs)],
+        // UVs as 32-bit floats (the CGPoint initializer may keep doubles on 64-bit devices)
+        var uvFloats: [Float] = []
+        uvFloats.reserveCapacity(uvs.count * 2)
+        for uv in uvs { uvFloats.append(Float(uv.x)); uvFloats.append(Float(uv.y)) }
+        let uvData = uvFloats.withUnsafeBufferPointer { Data(buffer: $0) }
+        let uvSource = SCNGeometrySource(data: uvData, semantic: .texcoord, vectorCount: uvs.count, usesFloatComponents: true,
+                                         componentsPerVector: 2, bytesPerComponent: 4, dataOffset: 0, dataStride: 8)
+        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals), uvSource],
                                    elements: [SCNGeometryElement(indices: all, primitiveType: .triangles)])
         geometry.materials = [material]
         return geometry
