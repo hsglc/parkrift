@@ -333,7 +333,8 @@ final class AppModel: ObservableObject {
         scene = nil
         world = nil
         screen = .game
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+        // After the loading screen's entrance has played (building blocks the main thread)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self = self, self.screen == .game, self.scene == nil else { return }
             let newWorld = World3D()
             let newScene = ParkingScene(size: CGSize(width: 852, height: 393))

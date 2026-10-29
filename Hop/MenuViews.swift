@@ -930,29 +930,6 @@ struct LoadingView: View {
     var endsAt: Date? = nil
     @State private var tip = Strings.tips.randomElement() ?? ""
     @State private var shown = false
-    /// Where the bar was when the close time became known, so it carries on from there.
-    @State private var handoff: (time: Date, value: Double)?
-
-    /// Fill in proportion to the elapsed time: steady towards 90 % over the expected time (and
-    /// creeping on if the level takes longer), then on to 100 % exactly at the close time. It
-    /// follows the clock, so a busy frame never makes it stall and then jump.
-    private func progress(at now: Date) -> Double {
-        let elapsed = now.timeIntervalSince(shownAt)
-        let linear = min(1, elapsed / max(0.5, expected))
-        var value = linear * 0.92
-        if elapsed > expected {
-            let over = elapsed - expected
-            value = 0.92 + 0.06 * (1 - exp(-over / 2))
-        }
-        if let end = endsAt, let handoff = handoff {
-            let span = max(0.05, end.timeIntervalSince(handoff.time))
-            let t = min(1, max(0, now.timeIntervalSince(handoff.time) / span))
-            value = handoff.value + (1 - handoff.value) * t
-        }
-        // A light ease at the very start so it does not leap off zero
-        return min(1, max(0, value))
-    }
-
     private var modeTitle: String {
         if Levels.isRace(level) { return Strings.carRace }
         if Levels.isCity(level) { return Strings.parkRace }
@@ -978,13 +955,11 @@ struct LoadingView: View {
             ZStack(alignment: .bottomLeading) {
                 Neo.ink
                 if let image = UIImage(named: art) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
+                    // Zooms in Core Animation: it keeps moving while the level is built on the
+                    // main thread
+                    DriftingImage(image: image)
                         .frame(width: proxy.size.width, height: proxy.size.height)
-                        .scaleEffect(shown ? 1.06 : 1.0)
                         .clipped()
-                        .animation(.easeOut(duration: 3), value: shown)
                         .allowsHitTesting(false)
                 }
                 LinearGradient(colors: [Neo.ink.opacity(0.92), Neo.ink.opacity(0.55), Neo.ink.opacity(0.2)],
@@ -1013,11 +988,8 @@ struct LoadingView: View {
                         .shadow(color: .black.opacity(0.5), radius: 10)
                         .padding(.top, 2)
                     HStack(spacing: 10) {
-                        TimelineView(.animation) { context in
-                            SlantedBar(value: progress(at: context.date), color: accent)
-                                .frame(width: 260, height: 6)
-                        }
-                        .frame(width: 260, height: 6)
+                        LoadingBar(shownAt: shownAt, expected: expected, endsAt: endsAt, color: UIColor(accent))
+                            .frame(width: 260, height: 6)
                         Text(Strings.loadingText.uppercased())
                             .font(.kicker(9)).tracking(1.2)
                             .foregroundStyle(.white.opacity(0.55))
@@ -1049,15 +1021,159 @@ struct LoadingView: View {
             }
         }
         .ignoresSafeArea()
-        .onAppear {
-            shown = true
-            if endsAt != nil { handoff = (Date(), progress(at: Date())) }
+        .onAppear { shown = true }
+    }
+}
+
+
+/// The loading bar as a Core Animation layer: once committed, its animation runs in the render
+/// server, so it fills smoothly even while the main thread is busy building the level (a
+/// SwiftUI timeline froze and then jumped). Steady towards 92 % over the expected time, creeping
+/// on if the level takes longer, then to 100 % exactly at the close time.
+struct LoadingBar: UIViewRepresentable {
+    let shownAt: Date
+    let expected: TimeInterval
+    let endsAt: Date?
+    let color: UIColor
+
+    func makeUIView(context: Context) -> LoadingBarView {
+        let view = LoadingBarView()
+        view.configure(color: color)
+        return view
+    }
+
+    func updateUIView(_ view: LoadingBarView, context: Context) {
+        view.run(shownAt: shownAt, expected: expected, endsAt: endsAt)
+    }
+}
+
+final class LoadingBarView: UIView {
+    private let track = CAShapeLayer()
+    private let fill = CALayer()
+    private let fillHolder = CALayer()
+    private let shape = CAShapeLayer()
+    private var started: Date?
+    private var finishing: Date?
+
+    func configure(color: UIColor) {
+        backgroundColor = .clear
+        track.fillColor = UIColor.white.withAlphaComponent(0.12).cgColor
+        layer.addSublayer(track)
+        let gradient = CAGradientLayer()
+        gradient.colors = [color.cgColor, color.withAlphaComponent(0.7).cgColor]
+        gradient.startPoint = CGPoint(x: 0, y: 0.5)
+        gradient.endPoint = CGPoint(x: 1, y: 0.5)
+        fill.addSublayer(gradient)
+        fill.anchorPoint = CGPoint(x: 0, y: 0.5)
+        fillHolder.addSublayer(fill)
+        fillHolder.mask = shape
+        fillHolder.shadowColor = color.cgColor
+        layer.addSublayer(fillHolder)
+        layer.shadowColor = color.cgColor
+        layer.shadowOpacity = 0.6
+        layer.shadowRadius = 4
+        layer.shadowOffset = .zero
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let path = UIBezierPath()
+        let r = bounds, skew: CGFloat = 4
+        path.move(to: CGPoint(x: r.minX + skew, y: r.minY))
+        path.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        path.addLine(to: CGPoint(x: r.maxX - skew, y: r.maxY))
+        path.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+        path.close()
+        track.path = path.cgPath
+        shape.path = path.cgPath
+        track.frame = bounds
+        fillHolder.frame = bounds
+        shape.frame = bounds
+        fill.bounds = bounds
+        fill.position = CGPoint(x: 0, y: bounds.midY)
+        fill.sublayers?.first?.frame = bounds
+        CATransaction.commit()
+    }
+
+    /// The bar's value for a moment, from the clock alone (as the old timeline did).
+    private func value(at now: Date, shownAt: Date, expected: TimeInterval) -> CGFloat {
+        let elapsed = now.timeIntervalSince(shownAt)
+        if elapsed <= expected { return CGFloat(min(1, elapsed / max(0.5, expected)) * 0.92) }
+        return CGFloat(0.92 + 0.06 * (1 - exp(-(elapsed - expected) / 2)))
+    }
+
+    private var current: CGFloat {
+        CGFloat((fill.presentation()?.value(forKeyPath: "transform.scale.x") as? NSNumber)?.doubleValue ?? 0.02)
+    }
+
+    func run(shownAt: Date, expected: TimeInterval, endsAt: Date?) {
+        let now = Date()
+        if let end = endsAt {
+            guard finishing != end else { return }
+            finishing = end
+            let from = max(0.02, current)
+            fill.removeAllAnimations()
+            let to = CABasicAnimation(keyPath: "transform.scale.x")
+            to.fromValue = from
+            to.toValue = 1
+            to.duration = max(0.05, end.timeIntervalSince(now))
+            to.fillMode = .forwards
+            to.isRemovedOnCompletion = false
+            fill.setValue(1, forKeyPath: "transform.scale.x")
+            fill.add(to, forKey: "fill")
+            return
         }
-        .onChange(of: endsAt) { _, end in
-            guard end != nil else { handoff = nil; return }
-            let now = Date()
-            handoff = nil
-            handoff = (now, progress(at: now))
+        guard started != shownAt else { return }
+        started = shownAt
+        finishing = nil
+        // Up to 92 % at the expected time, then a slow creep: keyframes sampled from the curve
+        let total = max(expected, 0) + 8
+        let start = max(0, now.timeIntervalSince(shownAt))
+        var times: [NSNumber] = []
+        var values: [CGFloat] = []
+        let steps = 24
+        for k in 0...steps {
+            let t = start + (total - start) * Double(k) / Double(steps)
+            times.append(NSNumber(value: Double(k) / Double(steps)))
+            values.append(max(0.02, value(at: shownAt.addingTimeInterval(t), shownAt: shownAt, expected: expected)))
         }
+        let animation = CAKeyframeAnimation(keyPath: "transform.scale.x")
+        animation.values = values
+        animation.keyTimes = times
+        animation.duration = max(0.1, total - start)
+        animation.fillMode = .forwards
+        animation.isRemovedOnCompletion = false
+        fill.removeAllAnimations()
+        fill.setValue(values.last ?? 0.98, forKeyPath: "transform.scale.x")
+        fill.add(animation, forKey: "fill")
+    }
+}
+
+/// The loading art, slowly zooming in (Core Animation, so a busy main thread does not stop it).
+struct DriftingImage: UIViewRepresentable {
+    let image: UIImage
+
+    func makeUIView(context: Context) -> UIView {
+        let holder = UIView()
+        holder.clipsToBounds = true
+        let view = UIImageView(image: image)
+        view.contentMode = .scaleAspectFill
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        holder.addSubview(view)
+        let zoom = CABasicAnimation(keyPath: "transform.scale")
+        zoom.fromValue = 1.0
+        zoom.toValue = 1.06
+        zoom.duration = 3
+        zoom.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        zoom.fillMode = .forwards
+        zoom.isRemovedOnCompletion = false
+        view.layer.add(zoom, forKey: "zoom")
+        return holder
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        view.subviews.first?.frame = view.bounds
     }
 }

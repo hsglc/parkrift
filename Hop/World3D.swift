@@ -1950,12 +1950,22 @@ final class World3D {
         roadMaterials.removeAll()
         detailMaterials.removeAll()
         lampPools = nil
+        var clock = CACurrentMediaTime()
+        func lap(_ what: String) {
+            guard PerfSettings.benchmark else { return }
+            let now = CACurrentMediaTime()
+            FileHandle.standardError.write(String(format: "PPTIME %@ %.0f ms\n", what, (now - clock) * 1000).data(using: .utf8)!)
+            clock = now
+        }
         if let city = level.city {
             buildCity(city, world: level.world)
+            lap("buildCity")
             levelRoot.addChildNode(CityDecor.build(level: level, city: city))
+            lap("cityDecor")
         }
         // City rounds have their weather; a parking lot can be wet (a harder level)
         setWeather(level.city != nil || level.weather == .rain || level.weather == .snow ? level.weather : .day)
+        lap("weather")
 
         if level.city == nil {
             levelRoot.addChildNode(Scenery.markingsNode(for: level))
@@ -2677,6 +2687,14 @@ final class World3D {
         }
         var objects: [Any] = [scene.rootNode] + World3D.signalMaterials
         if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries + TrafficVehicles.allGeometries }
+        // Street trees and traffic lights, near and far meshes (their textures upload now too)
+        for prop in Scenery.trees + World3D.signalTemplates {
+            prop.enumerateHierarchy { node, _ in
+                guard let geometry = node.geometry else { return }
+                objects.append(geometry)
+                objects += (geometry.levelsOfDetail ?? []).compactMap { $0.geometry }
+            }
+        }
         if cityMap != nil {
             objects += PedestrianModels.all + StreetProps.allGeometries
             World3D.policeTemplate?.enumerateHierarchy { node, _ in

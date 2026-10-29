@@ -897,7 +897,7 @@ final class ParkingScene: SKScene {
             warmCrop.run(.sequence([.wait(forDuration: 0.5), .removeFromParent()]))
         }
         defer {
-            stage("level loaded")
+            stage(String(format: "level loaded in %.0f ms", (CACurrentMediaTime() - loadStarted) * 1000))
             world.warmUp { [weak self] in
                 self?.stage("warm-up done")
                 self?.becomeReady()
