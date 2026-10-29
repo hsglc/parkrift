@@ -335,9 +335,10 @@ final class GarageStage {
 
     /// Builds the stage and compiles its shaders ahead of time (called from the menu), so the
     /// first visit to the garage does not freeze.
-    static func prewarm(using renderer: SCNSceneRenderer?) {
+    static func prewarm(using renderer: SCNSceneRenderer?, done: (() -> Void)? = nil) {
         let stage = shared
-        renderer?.prepare([stage.scene], completionHandler: nil)
+        guard let renderer = renderer else { done?(); return }
+        renderer.prepare([stage.scene]) { _ in DispatchQueue.main.async { done?() } }
     }
 
     /// Turns the platform by a drag (radians).

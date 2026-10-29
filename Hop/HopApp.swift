@@ -82,13 +82,16 @@ final class AppModel: ObservableObject {
         set { UserDefaults.standard.set(min(Levels.all.count, newValue), forKey: "pp.unlocked") }
     }
 
+    /// The car models and garage studio are ready (the launch screen waits for this).
+    @Published var bootReady = false
+
     init() {
         World3D.prewarmCars()
         CarModels.prewarmRetroTextures(CarChoice.saved.model)
         PedestrianModels.preload()
         // Car models load in the background; then the garage studio is built while the menu is idle
         CarModels.preload { [weak self] in
-            GarageStage.prewarm(using: self?.menuWorld.renderer)
+            GarageStage.prewarm(using: self?.menuWorld.renderer) { self?.bootReady = true }
         }
         NotificationCenter.default.addObserver(forName: .languageChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.objectWillChange.send() }
@@ -575,6 +578,12 @@ final class AppModel: ObservableObject {
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @State private var splash = !PerfSettings.benchmark
+    @State private var splashTimeUp = false
+
+    private func hideSplash() {
+        guard splash else { return }
+        withAnimation(.easeInOut(duration: 0.45)) { splash = false }
+    }
 
     var body: some View {
         ZStack {
@@ -620,13 +629,19 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.35), value: model.screen)
+        .onChange(of: model.bootReady) { _, ready in
+            if ready && splashTimeUp { hideSplash() }
+        }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .onAppear {
             if splash {
+                // At least 2.5 s, and until the models are ready (at most 2 s more)
                 DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration) {
-                    withAnimation(.easeInOut(duration: 0.45)) { splash = false }
+                    splashTimeUp = true
+                    if model.bootReady { hideSplash() }
                 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration + 2) { hideSplash() }
             }
             AudioManager.shared.ensureRunning()
             if ProcessInfo.processInfo.arguments.contains("-crashtest") {

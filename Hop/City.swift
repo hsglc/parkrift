@@ -426,7 +426,7 @@ extension Levels {
         var blocks = Array(map.blocks.indices)
         blocks.shuffle(using: &rng)
         // Every round shows a different sky: races start at night, city rounds in the rain
-        let weather = Weather(rawValue: (round + (race ? 1 : 2)) % 3) ?? .day
+        let weather = Weather(rawValue: (round + (race ? 1 : 2)) % 4) ?? .day
         return ArcadeLayout(alleyBlocks: Set(blocks.prefix(3)), rng: rng, weather: weather)
     }
 

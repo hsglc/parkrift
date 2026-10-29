@@ -1,100 +1,93 @@
 import SwiftUI
 
-/// The 2 second opening screen: the key art (Meshy text-to-image, Textures/splash.jpg) slowly
-/// pushing in under falling rain, the title sliding in with a light sweep, and a neon line that
-/// fills while the game gets ready.
+/// The 2.5 second brand loading screen at launch: the key art dimmed and slowly pushing in under
+/// falling rain, the app icon and the PARKRIFT wordmark in the middle, and a loading bar that fills
+/// in proportion to the time. The car models, textures and garage studio are made ready behind
+/// it, so the menu is smooth from its first frame.
 struct SplashView: View {
-    static let duration: TimeInterval = 2.0
+    static let duration: TimeInterval = 2.5
     @State private var start = Date()
-    @State private var appeared = false
     private let art = UIImage(named: "splash.jpg")
+    private let icon = UIImage(named: "brand_icon.jpg")
 
     var body: some View {
         TimelineView(.animation) { timeline in
-            let t = min(1, timeline.date.timeIntervalSince(start) / SplashView.duration)
+            let elapsed = timeline.date.timeIntervalSince(start)
+            let t = min(1, elapsed / SplashView.duration)
             GeometryReader { proxy in
-                ZStack(alignment: .leading) {
+                ZStack {
                     Color(red: 0.02, green: 0.03, blue: 0.07)
                     if let art = art {
                         Image(uiImage: art)
                             .resizable()
                             .scaledToFill()
                             .frame(width: proxy.size.width, height: proxy.size.height)
-                            // Slow push in and a little drift to the left
-                            .scaleEffect(1.04 + 0.07 * t, anchor: UnitPoint(x: 0.62, y: 0.55))
-                            .offset(x: -14 * t)
+                            .scaleEffect(1.04 + 0.06 * t, anchor: UnitPoint(x: 0.6, y: 0.55))
                             .clipped()
+                            .blur(radius: 6)
+                            .opacity(0.45)
                     }
-                    // Darker on the left for the title, and a deep fade along the bottom
-                    LinearGradient(colors: [.black.opacity(0.78), .black.opacity(0.35), .clear],
-                                   startPoint: .leading, endPoint: UnitPoint(x: 0.72, y: 0.5))
-                    LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: UnitPoint(x: 0.5, y: 0.55), endPoint: .bottom)
-                    RainOverlay(time: timeline.date.timeIntervalSince(start))
-                    title(t: t)
-                        .padding(.leading, max(36, proxy.size.width * 0.07))
+                    RadialGradient(colors: [.clear, .black.opacity(0.85)], center: .center,
+                                   startRadius: proxy.size.height * 0.2, endRadius: proxy.size.width * 0.7)
+                    RainOverlay(time: elapsed)
+                    brand(t: t, height: proxy.size.height)
                     progress(t: t, width: proxy.size.width)
                 }
             }
         }
         .ignoresSafeArea()
+        .allowsHitTesting(false)
         .onAppear { start = Date() }
     }
 
-    private func title(t: Double) -> some View {
-        // Each part arrives a moment after the previous one
-        func rise(_ delay: Double) -> Double { min(1, max(0, (t - delay) / 0.28)) }
+    private func brand(t: Double, height: CGFloat) -> some View {
+        func rise(_ delay: Double, _ length: Double = 0.22) -> Double { min(1, max(0, (t - delay) / length)) }
         let ease = { (x: Double) in 1 - pow(1 - x, 3) }
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Capsule().fill(Color(red: 0.25, green: 0.95, blue: 1.0)).frame(width: 22, height: 3)
-                Text("PARK · DRIFT · ONLINE")
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-                    .tracking(3)
-                    .foregroundStyle(.white.opacity(0.8))
+        let iconSize = min(128, height * 0.3)
+        let glow = 0.35 + 0.25 * sin(t * .pi * 2)
+        return VStack(spacing: 14) {
+            if let icon = icon {
+                Image(uiImage: icon)
+                    .resizable()
+                    .frame(width: iconSize, height: iconSize)
+                    .clipShape(RoundedRectangle(cornerRadius: iconSize * 0.225, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: iconSize * 0.225, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1))
+                    .shadow(color: Color(red: 0.25, green: 0.95, blue: 1.0).opacity(glow), radius: 26)
+                    .scaleEffect(0.82 + 0.18 * ease(rise(0.0, 0.3)))
+                    .opacity(ease(rise(0.0, 0.25)))
             }
-            .opacity(ease(rise(0.05)))
-            .offset(x: -24 * (1 - ease(rise(0.05))))
-            ZStack(alignment: .leading) {
-                Text("PARKRIFT")
-                    .font(.system(size: 64, weight: .black, design: .rounded))
-                    .italic()
-                    .tracking(2)
-                    .foregroundStyle(LinearGradient(colors: [.white, Color(red: 0.78, green: 0.93, blue: 1.0)],
-                                                    startPoint: .top, endPoint: .bottom))
-                    .shadow(color: Color(red: 0.2, green: 0.85, blue: 1.0).opacity(0.55), radius: 18)
+            ZStack {
+                Wordmark(size: 52)
                 // A band of light running across the letters
-                Text("PARKRIFT")
-                    .font(.system(size: 64, weight: .black, design: .rounded))
-                    .italic()
-                    .tracking(2)
-                    .foregroundStyle(.white)
+                Wordmark(size: 52)
                     .mask(
                         GeometryReader { box in
                             LinearGradient(colors: [.clear, .white, .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 70)
+                                .frame(width: 60)
                                 .rotationEffect(.degrees(18))
-                                .offset(x: -90 + (box.size.width + 180) * min(1, max(0, (t - 0.35) / 0.5)))
+                                .offset(x: -90 + (box.size.width + 180) * min(1, max(0, (t - 0.4) / 0.45)))
                         }
                     )
                     .blendMode(.plusLighter)
             }
             .opacity(ease(rise(0.12)))
-            .offset(x: -40 * (1 - ease(rise(0.12))))
-            .scaleEffect(0.94 + 0.06 * ease(rise(0.12)), anchor: .leading)
-            Text(Strings.splashTagline)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+            .offset(y: 14 * (1 - ease(rise(0.12))))
+            Text(Strings.splashTagline.uppercased())
+                .font(.kicker(11))
+                .tracking(3)
                 .foregroundStyle(.white.opacity(0.6))
-                .opacity(ease(rise(0.3)))
-                .offset(y: 8 * (1 - ease(rise(0.3))))
+                .opacity(ease(rise(0.28)))
         }
+        .offset(y: -14)
     }
 
     private func progress(t: Double, width: CGFloat) -> some View {
         // In proportion to the time (full just before the fade), only softened at both ends
         let x = min(1, t / 0.96)
         let fill = CGFloat(0.8 * x + 0.2 * x * x * (3 - 2 * x))
-        let lineWidth = min(320, width * 0.4)
-        return VStack(alignment: .leading, spacing: 8) {
+        let lineWidth = min(300, width * 0.36)
+        return VStack(spacing: 8) {
             ZStack(alignment: .leading) {
                 Capsule().fill(.white.opacity(0.12))
                 Capsule()
@@ -108,9 +101,8 @@ struct SplashView: View {
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.5))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .padding(.leading, max(36, width * 0.07))
-        .padding(.bottom, 30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .padding(.bottom, 26)
     }
 }
 

@@ -1104,6 +1104,11 @@ final class World3D {
     /// Warm light pools under the street lamps (shown at night).
     private var lampPools: SCNNode?
     private var rain: SCNNode?
+    private var snow: SCNNode?
+    /// The parking lot's ground materials (wet or snowy with the weather, like the streets).
+    var lotMaterials: [SCNMaterial] = []
+    /// Grass round the lot (white under snow).
+    private var grassMaterials: [SCNMaterial] = []
     private(set) var weather: Weather = .day
 
     private func buildLights() {
@@ -1144,17 +1149,22 @@ final class World3D {
     private func buildGround() {
         // Grass all around
         let grass = SCNPlane(width: 600, height: 600)
-        let grassMaterial = Mat.lambert(CarArt.grassImage(size: CGSize(width: 128, height: 128)))
+        let grassMaterial = Mat.pbr(.white, metal: 0, rough: 1)
+        grassMaterial.diffuse.contents = CarArt.grassImage(size: CGSize(width: 128, height: 128))
         grassMaterial.diffuse.wrapS = .repeat
         grassMaterial.diffuse.wrapT = .repeat
         grassMaterial.diffuse.contentsTransform = SCNMatrix4MakeScale(120, 120, 1)
         grass.materials = [grassMaterial]
+        grassMaterials = [grassMaterial]
         scene.rootNode.addChildNode(flat(grass, y: -0.06))
 
         // Asphalt lot
         let lot = SCNPlane(width: 100, height: 50)
-        let lotMaterial = Mat.lambert(CarArt.asphaltImage(size: Levels.world))
+        // Physically based (not Lambert) so it can turn wet and glossy, or snowy, with the weather
+        let lotMaterial = Mat.pbr(.white, metal: 0, rough: 0.92)
+        lotMaterial.diffuse.contents = CarArt.asphaltImage(size: Levels.world)
         lot.materials = [lotMaterial]
+        lotMaterials = [lotMaterial]
         lotRoot.addChildNode(flat(lot, y: 0))
 
         // Raised curbs
@@ -1604,6 +1614,7 @@ final class World3D {
         weather = newWeather
         let night = newWeather == .night
         let wet = newWeather == .rain
+        let snowy = newWeather == .snow
         switch newWeather {
         case .day:
             scene.background.contents = CityArt.sky
@@ -1628,24 +1639,39 @@ final class World3D {
             ambientLight.intensity = 210
             ambientLight.color = UIColor(red: 0.45, green: 0.52, blue: 0.80, alpha: 1)
         case .rain:
-            // Storm light: dark, cold, misty; the wet street catches every light
+            // Overcast and soft: a grey day, light mist, the wet street catches the lights
             scene.background.contents = CityArt.rainSky
             scene.lightingEnvironment.contents = CityArt.rainSky
-            scene.lightingEnvironment.intensity = 1.15
-            scene.fogColor = UIColor(red: 0.30, green: 0.34, blue: 0.40, alpha: 1)
-            scene.fogStartDistance = 18
-            scene.fogEndDistance = 120
-            sunLight.intensity = 380
-            sunLight.color = UIColor(red: 0.78, green: 0.84, blue: 0.95, alpha: 1)
-            ambientLight.intensity = 300
-            ambientLight.color = UIColor(red: 0.62, green: 0.69, blue: 0.82, alpha: 1)
+            scene.lightingEnvironment.intensity = 1.2
+            scene.fogColor = UIColor(red: 0.46, green: 0.50, blue: 0.56, alpha: 1)
+            scene.fogStartDistance = 32
+            scene.fogEndDistance = 175
+            sunLight.intensity = 560
+            sunLight.color = UIColor(red: 0.84, green: 0.88, blue: 0.96, alpha: 1)
+            ambientLight.intensity = 380
+            ambientLight.color = UIColor(red: 0.68, green: 0.74, blue: 0.84, alpha: 1)
+        case .snow:
+            // Bright white overcast: soft shadows, pale blue mist, snow on the ground
+            scene.background.contents = CityArt.rainSky
+            scene.lightingEnvironment.contents = CityArt.rainSky
+            scene.lightingEnvironment.intensity = 1.55
+            scene.fogColor = UIColor(red: 0.80, green: 0.84, blue: 0.90, alpha: 1)
+            scene.fogStartDistance = 26
+            scene.fogEndDistance = 155
+            sunLight.intensity = 720
+            sunLight.color = UIColor(red: 0.92, green: 0.95, blue: 1.0, alpha: 1)
+            ambientLight.intensity = 560
+            ambientLight.color = UIColor(red: 0.84, green: 0.89, blue: 1.0, alpha: 1)
         }
         lampPools?.isHidden = !night
         // Wet asphalt: darker and glossy, with puddles and rain rings (World3D.wetRoadShader)
-        for material in roadMaterials {
-            material.roughness.intensity = wet ? 0.45 : 1
-            material.diffuse.intensity = wet ? 0.72 : 1
-            material.shaderModifiers = wet ? [.surface: World3D.wetRoadShader] : nil
+        for material in roadMaterials + lotMaterials {
+            material.roughness.intensity = wet ? 0.5 : 1
+            material.diffuse.intensity = wet ? 0.78 : 1
+            material.shaderModifiers = wet ? [.surface: World3D.wetRoadShader] : (snowy ? [.surface: World3D.snowRoadShader] : nil)
+        }
+        for material in grassMaterials {
+            material.shaderModifiers = snowy ? [.surface: World3D.snowRoadShader] : nil
         }
         if wet {
             if rain == nil { rain = World3D.makeRain() }
@@ -1657,6 +1683,12 @@ final class World3D {
         } else {
             rain?.removeFromParentNode()
             rainGround.removeFromParentNode()
+        }
+        if snowy {
+            if snow == nil { snow = World3D.makeSnow() }
+            if let snow = snow, snow.parent == nil { cameraNode.addChildNode(snow) }
+        } else {
+            snow?.removeFromParentNode()
         }
     }
 
@@ -1721,7 +1753,59 @@ final class World3D {
     _surface.diffuse.rgb *= mix(1.0, 0.62, puddle);
     """
 
-    /// Rain around the camera: a near layer of fast, thin streaks and a far, denser curtain.
+    /// Snow on the ground: drifts in world space (whiter, rough, a soft sparkle), the tracks the
+    /// traffic keeps clearer along the lanes.
+    static let snowRoadShader = """
+    #pragma body
+    float3 wp = (scn_frame.inverseViewTransform * float4(_surface.position, 1.0)).xyz;
+    float2 p = wp.xz;
+    float n = sin(p.x * 0.31 + sin(p.y * 0.23) * 1.7) * sin(p.y * 0.37 + sin(p.x * 0.19) * 1.3);
+    n = n * 0.5 + 0.5;
+    float fine = fract(sin(dot(floor(p * 9.0), float2(12.9898, 78.233))) * 43758.5453);
+    float cover = clamp(0.55 + 0.45 * smoothstep(0.25, 0.75, n) - 0.08 * fine, 0.0, 1.0);
+    float3 snowColor = float3(0.90, 0.93, 0.98) - 0.05 * fine;
+    _surface.diffuse.rgb = mix(_surface.diffuse.rgb, snowColor, cover * 0.82);
+    _surface.roughness = mix(_surface.roughness, 0.78, cover);
+    _surface.metalness = mix(_surface.metalness, 0.0, cover);
+    """
+
+    /// Snow around the camera: soft round flakes drifting down slowly, near and far.
+    private static func makeSnow() -> SCNNode {
+        func layer(birthRate: CGFloat, box: CGFloat, size: CGFloat, alpha: CGFloat, speed: CGFloat, life: CGFloat) -> SCNParticleSystem {
+            let system = SCNParticleSystem()
+            system.birthRate = birthRate
+            system.emitterShape = SCNBox(width: box, height: 0.1, length: box, chamferRadius: 0)
+            system.particleLifeSpan = life
+            system.particleLifeSpanVariation = life * 0.15
+            system.particleVelocity = speed
+            system.particleVelocityVariation = speed * 0.35
+            system.emittingDirection = SCNVector3(0.22, -1, 0.08)
+            system.spreadingAngle = 18
+            system.particleSize = size
+            system.particleSizeVariation = size * 0.45
+            system.particleColor = UIColor(white: 1, alpha: alpha)
+            system.particleColorVariation = SCNVector4(0, 0, 0, 0.3)
+            system.particleImage = CarArt.glowParticle()
+            system.blendMode = .alpha
+            system.isLightingEnabled = false
+            system.isAffectedByGravity = false
+            system.loops = true
+            // Flakes sway as they fall
+            system.particleAngularVelocity = 40
+            system.particleAngularVelocityVariation = 80
+            return system
+        }
+        let node = SCNNode()
+        node.position = SCNVector3(0, 8, -9)
+        node.addParticleSystem(layer(birthRate: 320, box: 24, size: 0.09, alpha: 0.9, speed: 1.7, life: 5.5))
+        let far = SCNNode()
+        far.position = SCNVector3(0, 6, -26)
+        far.addParticleSystem(layer(birthRate: 520, box: 60, size: 0.16, alpha: 0.55, speed: 1.4, life: 6))
+        node.addChildNode(far)
+        return node
+    }
+
+    /// Rain around the camera: a near layer of thin, quick streaks and a far, soft curtain.
     private static func makeRain() -> SCNNode {
         func layer(birthRate: CGFloat, box: CGFloat, size: CGFloat, alpha: CGFloat, speed: CGFloat) -> SCNParticleSystem {
             let system = SCNParticleSystem()
@@ -1735,11 +1819,11 @@ final class World3D {
             system.spreadingAngle = 2
             system.particleSize = size
             system.particleSizeVariation = size * 0.3
-            system.stretchFactor = 0.022
-            system.particleColor = UIColor(red: 0.74, green: 0.80, blue: 0.90, alpha: alpha)
-            system.particleColorVariation = SCNVector4(0, 0, 0.08, 0.25)
+            system.stretchFactor = 0.026
+            system.particleColor = UIColor(red: 0.80, green: 0.85, blue: 0.92, alpha: alpha)
+            system.particleColorVariation = SCNVector4(0, 0, 0.05, 0.3)
             system.particleImage = CarArt.rainStreak()
-            system.blendMode = .additive
+            system.blendMode = .alpha
             system.isLightingEnabled = false
             system.isAffectedByGravity = false
             system.loops = true
@@ -1747,10 +1831,10 @@ final class World3D {
         }
         let node = SCNNode()
         node.position = SCNVector3(0, 13, -9)
-        node.addParticleSystem(layer(birthRate: 1500, box: 22, size: 0.05, alpha: 0.42, speed: 30))
+        node.addParticleSystem(layer(birthRate: 750, box: 22, size: 0.03, alpha: 0.32, speed: 28))
         let far = SCNNode()
         far.position = SCNVector3(0, 4, -26)
-        far.addParticleSystem(layer(birthRate: 1700, box: 60, size: 0.09, alpha: 0.2, speed: 24))
+        far.addParticleSystem(layer(birthRate: 800, box: 60, size: 0.06, alpha: 0.14, speed: 24))
         node.addChildNode(far)
         return node
     }
@@ -1758,7 +1842,7 @@ final class World3D {
     /// Small drops bouncing up where the rain lands, in front of the camera.
     private static func makeSplashes() -> SCNParticleSystem {
         let system = SCNParticleSystem()
-        system.birthRate = 700
+        system.birthRate = 260
         system.emitterShape = SCNPlane(width: 26, height: 26)
         system.particleLifeSpan = 0.22
         system.particleLifeSpanVariation = 0.08
@@ -1766,9 +1850,9 @@ final class World3D {
         system.particleVelocityVariation = 0.8
         system.emittingDirection = SCNVector3(0, 1, 0)
         system.spreadingAngle = 35
-        system.particleSize = 0.035
-        system.particleSizeVariation = 0.015
-        system.particleColor = UIColor(red: 0.85, green: 0.9, blue: 1.0, alpha: 0.5)
+        system.particleSize = 0.025
+        system.particleSizeVariation = 0.01
+        system.particleColor = UIColor(red: 0.85, green: 0.9, blue: 1.0, alpha: 0.32)
         system.particleImage = CarArt.glowParticle()
         system.blendMode = .additive
         system.isLightingEnabled = false
@@ -1856,7 +1940,7 @@ final class World3D {
             levelRoot.addChildNode(CityDecor.build(level: level, city: city))
         }
         // City rounds have their weather; a parking lot can be wet (a harder level)
-        setWeather(level.city != nil || level.weather == .rain ? level.weather : .day)
+        setWeather(level.city != nil || level.weather == .rain || level.weather == .snow ? level.weather : .day)
 
         if level.race {
             buildFinish(level.spots[0])
@@ -2496,7 +2580,7 @@ final class World3D {
             jobs[index]()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { next(index + 1) }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { next(0) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { next(0) }
     }
 
     // MARK: Nitro pickups and speed cameras

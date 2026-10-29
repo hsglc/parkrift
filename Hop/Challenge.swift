@@ -7,7 +7,7 @@ import CoreGraphics
 ///   - time limit (from level 3): from the real driving distance to the bay, shrinking,
 ///   - crash limit (from level 5): 4, then 3, 2, 1, and none from level 42 ("zero margin"),
 ///   - back it in (straight bays, every other level from 9, all of them from 30): nose out,
-///   - wet ground (every fifth level from 10): rain and much less grip,
+///   - weather (every fifth level from 10): rain or snow, with their grip, braking and traction,
 ///   - patrol cars (from level 12; two from level 30): a car drives up and down the lot and
 ///     stops for nobody but you, faster in every level.
 /// Every level plays about six levels' worth harder than its number.
@@ -20,6 +20,8 @@ struct ParkChallenge {
     let maxHits: Int?
     let reverseIn: Bool
     let wetGround: Bool
+    /// The slippery level is snowy rather than rainy.
+    var snow: Bool = false
     let patrols: [PatrolLane]
     let patrolSpeed: CGFloat
 
@@ -56,6 +58,8 @@ struct ParkChallenge {
         let straight = level.spots.allSatisfy { abs(abs($0.angle) - CGFloat.pi / 2) < 0.05 }
         let reverse = straight && n >= 9 && (n % 2 == 0 || n >= 30)
         let wet = n >= 8 && n % 5 == 0
+        // Rain and snow take turns: snow on 15, 25, 35, 45
+        let snowy = wet && (n / 5) % 2 == 1
         var lanes: [PatrolLane] = []
         if n >= 12 {
             lanes = patrolLanes(level: level, count: n >= 30 ? 2 : 1)
@@ -72,7 +76,7 @@ struct ParkChallenge {
             limit = (maneuver + meters / speed).rounded(.up)
         }
         return ParkChallenge(number: n, tier: tier, alignTolerance: align, holdTime: hold, timeLimit: limit, maxHits: maxHits,
-                             reverseIn: reverse, wetGround: wet, patrols: lanes, patrolSpeed: 40 + 65 * t)
+                             reverseIn: reverse, wetGround: wet, snow: snowy, patrols: lanes, patrolSpeed: 40 + 65 * t)
     }
 
     /// The rules shown before the start: (SF Symbol, text).
@@ -83,7 +87,7 @@ struct ParkChallenge {
             list.append(("exclamationmark.triangle.fill", maxHits == 0 ? Strings.ruleNoHits : Strings.ruleHits(maxHits)))
         }
         if reverseIn { list.append(("arrow.uturn.backward", Strings.ruleReverse)) }
-        if wetGround { list.append(("cloud.rain.fill", Strings.ruleWet)) }
+        if wetGround { list.append(snow ? ("snowflake", Strings.ruleSnow) : ("cloud.rain.fill", Strings.ruleWet)) }
         if !patrols.isEmpty { list.append(("car.fill", Strings.rulePatrol(patrols.count))) }
         if number >= 25 { list.append(("scope", Strings.rulePrecise)) }
         return list

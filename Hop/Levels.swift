@@ -36,7 +36,7 @@ struct PropDef {
 }
 
 enum Weather: Int {
-    case day, night, rain
+    case day, night, rain, snow
 }
 
 struct SpotDef {
@@ -113,98 +113,7 @@ enum Levels {
         ObstacleDef(kind: .cone, center: CGPoint(x: x, y: y), size: CGSize(width: 14, height: 14), angle: 0, tint: 0)
     }
 
-    static let all: [LevelDef] = base + more
-
-    static let base: [LevelDef] = [
-        // 1 — straight ahead
-        LevelDef(nameTR: "İlk Park", nameEN: "First Park",
-                 starts: [start(140, 150), start(140, 350)],
-                 spots: [spot(820, 150, 76, 44), spot(820, 350, 76, 44)],
-                 obstacles: [cone(480, 250), cone(520, 250), cone(560, 250),
-                             car(756, 293, 0, 2), cone(914, 68), cone(706, 260)]),
-
-        // 2 — turn 90° into the top row
-        LevelDef(nameTR: "Dik Park", nameEN: "Turn In",
-                 starts: [start(120, 120), start(120, 220)],
-                 spots: [spot(420, 420, 76, 44, 90), spot(580, 420, 76, 44, 90)],
-                 obstacles: [car(340, 425, 90, 1), car(500, 425, 90, 2), car(660, 425, 90, 3),
-                             cone(800, 200), cone(820, 230),
-                             car(760, 437, 90, 3), car(468, 320, 90, 3), cone(633, 312), cone(305, 238), cone(369, 372)]),
-
-        // 3 — slot between parked cars in the middle row
-        LevelDef(nameTR: "Araba Arası", nameEN: "Between Cars",
-                 starts: [start(100, 420), start(100, 80)],
-                 spots: [spot(460, 250, 72, 38), spot(760, 250, 72, 38)],
-                 obstacles: [car(260, 250, 0, 1), car(360, 250, 0, 4), car(560, 250, 0, 2),
-                             car(660, 250, 0, 3), car(860, 250, 0, 5),
-                             car(566, 180, 90, 3), car(875, 190, 74, 1), cone(540, 431), cone(392, 351), cone(783, 314)]),
-
-        // 4 — angled bays
-        LevelDef(nameTR: "Açılı Park", nameEN: "Angled Bays",
-                 starts: [start(100, 400), start(100, 310)],
-                 spots: [spot(450, 115, 72, 38, 45), spot(600, 115, 72, 38, 45)],
-                 obstacles: [car(300, 115, 45, 2), car(525, 115, 45, 1), car(750, 115, 45, 4),
-                             cone(850, 300), cone(870, 330),
-                             car(676, 227, 45, 5), car(485, 219, 135, 1), car(292, 54, 135, 4), cone(786, 261), cone(452, 179), cone(243, 55), cone(699, 449)]),
-
-        // 5 — drive around the divider
-        LevelDef(nameTR: "Etrafından Dolaş", nameEN: "Go Around",
-                 starts: [start(120, 420), start(120, 340)],
-                 spots: [spot(400, 75, 68, 40, 90), spot(600, 75, 68, 40, 90)],
-                 obstacles: [wall(500, 250, 600, 20),
-                             car(340, 78, 90, 3), car(460, 78, 90, 1), car(540, 78, 90, 5), car(660, 78, 90, 2),
-                             car(538, 151, 0, 5), car(745, 93, 90, 3), car(666, 41, 0, 1), cone(850, 188), cone(495, 64), cone(502, 33), cone(302, 126)]),
-
-        // 6 — parallel parking at the curb
-        LevelDef(nameTR: "Paralel Park", nameEN: "Parallel Park",
-                 starts: [start(80, 170), start(80, 260)],
-                 spots: [spot(265, 52, 62, 30), spot(625, 52, 62, 30)],
-                 obstacles: [wall(500, 15, 1000, 30),
-                             car(200, 52, 0, 1), car(330, 52, 0, 2), car(440, 52, 0, 3),
-                             car(560, 52, 0, 4), car(690, 52, 0, 5), car(900, 52, 0, 1),
-                             car(150, 450, 0, 2), car(320, 450, 0, 3), car(490, 450, 0, 4),
-                             car(660, 450, 0, 5), car(830, 450, 0, 1),
-                             car(592, 237, 90, 4), car(566, 169, 90, 1), car(447, 86, 177, 2), car(299, 131, 0, 4), cone(315, 298), cone(610, 140), cone(696, 89), cone(225, 327), cone(590, 107)]),
-
-        // 7 — zig-zag maze
-        LevelDef(nameTR: "Labirent", nameEN: "Maze",
-                 starts: [start(100, 120), start(100, 400)],
-                 spots: [spot(860, 120, 70, 38), spot(860, 380, 70, 38)],
-                 obstacles: [wall(330, 170, 20, 340), wall(660, 330, 20, 340),
-                             cone(760, 250), cone(950, 250), cone(480, 250),
-                             car(903, 278, 99, 1), car(962, 406, 90, 3), car(754, 353, 0, 1), car(850, 203, 0, 4), cone(895, 62), cone(419, 111), cone(960, 311), cone(214, 349), cone(957, 155)]),
-
-        // 8 — tight perpendicular bays
-        LevelDef(nameTR: "Dar Yerler", nameEN: "Tight Bays",
-                 starts: [start(80, 330), start(80, 150)],
-                 spots: [spot(430, 430, 62, 34, 90), spot(610, 430, 62, 34, 90)],
-                 obstacles: [car(250, 432, 90, 1), car(310, 432, 90, 2), car(370, 432, 90, 3),
-                             car(490, 432, 90, 4), car(550, 432, 90, 5), car(670, 432, 90, 1), car(730, 432, 90, 2),
-                             car(240, 250, 90, 3), car(296, 250, 90, 4), car(352, 250, 90, 5), car(408, 250, 90, 1),
-                             car(464, 250, 90, 2), car(520, 250, 90, 3), car(576, 250, 90, 4), car(632, 250, 90, 5),
-                             car(688, 250, 90, 1), car(744, 250, 90, 2), car(800, 250, 90, 3),
-                             car(315, 337, 180, 4), car(551, 382, 9, 2), car(525, 346, 180, 4), car(738, 322, 90, 4), car(280, 366, 0, 4), cone(714, 186), cone(699, 310), cone(303, 316), cone(692, 355), cone(484, 344), cone(816, 457)]),
-
-        // 9 — tight parallel with cones in the lane
-        LevelDef(nameTR: "Sıkı Paralel", nameEN: "Tight Parallel",
-                 starts: [start(80, 180), start(80, 290)],
-                 spots: [spot(260, 50, 58, 30), spot(660, 50, 58, 30)],
-                 obstacles: [wall(500, 15, 1000, 30),
-                             car(200, 50, 0, 2), car(320, 50, 0, 3), car(460, 50, 0, 4),
-                             car(600, 50, 0, 5), car(720, 50, 0, 1), car(880, 50, 0, 2),
-                             cone(420, 170), cone(520, 140), cone(800, 190), cone(300, 230),
-                             car(150, 455, 0, 3), car(300, 455, 0, 4), car(450, 455, 0, 5),
-                             car(600, 455, 0, 1), car(750, 455, 0, 2), car(900, 455, 0, 3),
-                             car(534, 80, 0, 4), car(173, 123, 90, 4), car(672, 234, 0, 3), car(213, 231, 90, 3), car(738, 94, 0, 5), cone(834, 364), cone(768, 416), cone(315, 164), cone(271, 278), cone(604, 245), cone(578, 232)]),
-
-        // 10 — the garage: low entrance, angled bays, pillars
-        LevelDef(nameTR: "Garaj", nameEN: "Garage",
-                 starts: [start(100, 420), start(100, 330)],
-                 spots: [spot(720, 80, 58, 30, 60), spot(860, 80, 58, 30, 60)],
-                 obstacles: [wall(540, 210, 20, 180), wall(760, 300, 440, 20),
-                             car(650, 80, 60, 1), car(790, 80, 60, 3), car(930, 80, 60, 5),
-                             cone(700, 210), cone(850, 215),
-                             cone(300, 250), cone(330, 280), cone(270, 220),
-                             car(690, 162, 90, 5), car(801, 122, 174, 1), car(611, 173, 150, 5), car(937, 143, 15, 5), car(706, 266, 0, 4), car(579, 146, 150, 5), cone(404, 142), cone(323, 332), cone(446, 108), cone(349, 46), cone(840, 128), cone(311, 50), cone(945, 172)])
-    ]
+    /// The 50 parking levels (Hop/LevelsMore.swift, made by tools/design_levels.py on a measured
+    /// difficulty curve).
+    static let all: [LevelDef] = more
 }

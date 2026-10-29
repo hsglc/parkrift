@@ -850,7 +850,7 @@ final class ParkingScene: SKScene {
         controlsLayer.alpha = 1
         hud.removeAllActions()
         hud.alpha = 1
-        if challenge.wetGround { level.weather = .rain }
+        if challenge.wetGround { level.weather = challenge.snow ? .snow : .rain }
         failReason = nil
         lastHitWarned = false
         model?.results = nil
@@ -950,10 +950,11 @@ final class ParkingScene: SKScene {
         airTime = 0
         shownDriftPoints = -1
         driftLabel.alpha = 0.002
-        localCar?.setHeadlights((level.city != nil && level.weather == .night) || level.weather == .rain)
-        audio.setLoop("rain", volume: isRaining ? 0.42 : 0)
+        localCar?.setHeadlights((level.city != nil && level.weather == .night) || isRaining || isSnowing)
+        audio.setLoop("rain", volume: isRaining ? 0.3 : 0)
+        audio.setLoop("snow", volume: isSnowing ? 0.32 : 0)
         // Spray particles exist from the start (no first-use hitch), idle until the car moves
-        localCar?.setSpray(isRaining ? 0.001 : 0)
+        localCar?.setSpray(isRaining || isSnowing ? 0.001 : 0)
         // The horn matters in traffic only: parking levels keep fewer buttons
         hornButton.isHidden = !isCity
         setupRainLayers()
@@ -2061,6 +2062,22 @@ final class ParkingScene: SKScene {
     // MARK: - Rain
 
     private var isRaining: Bool { level.weather == .rain }
+    private var isSnowing: Bool { level.weather == .snow }
+
+    /// How the road holds the tyres, as in real life: dry asphalt, wet (less side grip, longer
+    /// braking, a little wheelspin, floating at speed) or snow (much less of everything, slower
+    /// steering response).
+    private struct Surface {
+        let grip: CGFloat
+        let brake: CGFloat
+        let traction: CGFloat
+        let steer: CGFloat
+        let rear: CGFloat
+        static let dry = Surface(grip: 1, brake: 1, traction: 1, steer: 1, rear: 1)
+        static let wet = Surface(grip: 0.72, brake: 0.72, traction: 0.88, steer: 0.92, rear: 0.62)
+        static let snow = Surface(grip: 0.46, brake: 0.48, traction: 0.62, steer: 0.78, rear: 0.42)
+    }
+    private var surface: Surface { isSnowing ? .snow : (isRaining ? .wet : .dry) }
     private var lightningClock: CGFloat = 6
     private var lensClock: CGFloat = 0
     private let lensLayer = SKNode()
@@ -2069,22 +2086,14 @@ final class ParkingScene: SKScene {
     /// Splashes follow the camera, the rear wheels throw water, drops land on the "lens", and
     /// now and then lightning lights the city.
     private func updateRain(_ dt: CGFloat) {
-        guard isRaining else { return }
+        guard isRaining || isSnowing else { return }
         world?.updateRain()
-        localCar?.setSpray(abs(velocity) / maxForward)
-        lightningClock -= dt
-        if lightningClock <= 0 {
-            lightningClock = CGFloat.random(in: 9...20)
-            world?.lightning()
-            flashOverlay.removeAllActions()
-            flashOverlay.alpha = 0.002
-            flashOverlay.run(.sequence([.fadeAlpha(to: 0.22, duration: 0.04), .fadeAlpha(to: 0.03, duration: 0.07),
-                                        .fadeAlpha(to: 0.16, duration: 0.05), .fadeAlpha(to: 0.002, duration: 0.35)]))
-            haptic(0.35)
-        }
+        localCar?.setSpray(abs(velocity) / maxForward * (isSnowing ? 0.7 : 1))
+        guard isRaining else { return }
+        // Now and then a single drop on the lens (a calm rain, not a storm)
         lensClock -= dt
-        if lensClock <= 0 && lensLayer.children.count < 14 {
-            lensClock = CGFloat.random(in: 0.12...0.4)
+        if lensClock <= 0 && lensLayer.children.count < 4 {
+            lensClock = CGFloat.random(in: 1.2...3.2)
             addLensDrop()
         }
     }
@@ -2096,7 +2105,7 @@ final class ParkingScene: SKScene {
     /// A water drop on the screen: lands, sits a moment, and runs down.
     private func addLensDrop() {
         let drop = SKSpriteNode(texture: ParkingScene.dropTexture)
-        let radius = CGFloat.random(in: 5...13)
+        let radius = CGFloat.random(in: 4...9)
         drop.size = CGSize(width: radius * 2, height: radius * 2.2)
         drop.position = CGPoint(x: CGFloat.random(in: 0...size.width), y: CGFloat.random(in: size.height * 0.25...size.height))
         drop.alpha = 0
@@ -2105,7 +2114,7 @@ final class ParkingScene: SKScene {
         let sit = TimeInterval.random(in: 0.4...1.6)
         let run = TimeInterval.random(in: 0.9...1.8)
         drop.run(.sequence([
-            .group([.fadeAlpha(to: CGFloat.random(in: 0.45...0.8), duration: 0.08), .scale(to: 1, duration: 0.08)]),
+            .group([.fadeAlpha(to: CGFloat.random(in: 0.3...0.5), duration: 0.12), .scale(to: 1, duration: 0.12)]),
             .wait(forDuration: sit),
             .group([.moveBy(x: CGFloat.random(in: -8...8), y: -CGFloat.random(in: 60...160), duration: run),
                     .scaleX(to: 0.7, y: 1.25, duration: run),
@@ -2612,11 +2621,11 @@ final class ParkingScene: SKScene {
         // Automatic gearbox: the opposite pedal brakes first, then selects the other gear
         if gasDown && reverseDown {
             braking = true
-            velocity = approach(velocity, 0, brakeDecel * dt)
+            velocity = approach(velocity, 0, brakeDecel * surface.brake * dt)
         } else if gasDown {
             if gear == .reverse && velocity < -2 {
                 braking = true
-                velocity = approach(velocity, 0, brakeDecel * dt)
+                velocity = approach(velocity, 0, brakeDecel * surface.brake * dt)
             } else {
                 gear = .drive
                 let headroom = max(0, 1 - velocity / maxForward)
@@ -2624,16 +2633,16 @@ final class ParkingScene: SKScene {
                 let x = rpm / redline
                 let torque = max(0.35, 1 - pow((x - 0.62) / 0.5, 2))
                 let pull = (0.72 + 0.36 * torque) * (shiftCut > 0 ? 0.35 : 1)
-                velocity += engineAccel * pow(headroom, 0.7) * pull * dt
+                velocity += engineAccel * pow(headroom, 0.7) * pull * surface.traction * dt
             }
         } else if reverseDown {
             if gear == .drive && velocity > 2 {
                 braking = true
-                velocity = approach(velocity, 0, brakeDecel * dt)
+                velocity = approach(velocity, 0, brakeDecel * surface.brake * dt)
             } else {
                 gear = .reverse
                 let headroom = max(0, 1 - (-velocity) / maxReverse)
-                velocity -= reverseAccel * pow(headroom, 0.7) * dt
+                velocity -= reverseAccel * pow(headroom, 0.7) * surface.traction * dt
             }
         } else {
             let creep = engaged ? (gear == .drive ? creepSpeed : -creepSpeed) : 0
@@ -2661,7 +2670,7 @@ final class ParkingScene: SKScene {
         // Full lock while sliding, so the player can counter-steer
         let speedFactor = drifting ? 1 : 1 - 0.4 * min(1, abs(velocity) / maxForward)
         let targetSteer = wheelInput * maxSteer * speedFactor
-        steer = approach(steer, targetSteer, steerRate * (drifting ? 1.6 : 1) * dt)
+        steer = approach(steer, targetSteer, steerRate * surface.steer * (drifting ? 1.6 : 1) * dt)
 
         // Drift: the body (heading) and the direction of travel (travelHeading) come apart.
         // Pulling the handbrake at speed locks the rear wheels and kicks the tail out toward the
@@ -2674,7 +2683,9 @@ final class ParkingScene: SKScene {
         var steerYaw = velocity / wheelBase * tan(steer)
         // The tyres can only hold so much sideways force: past it the car runs wide (understeer)
         // and the tyres squeal
-        let maxLateral = lateralGrip * (challenge.wetGround ? 0.55 : 1)
+        // Wet or snowy: less side grip, and on water at speed the tyres start to float (aquaplaning)
+        let floating = isRaining ? max(0, abs(velocity) / maxForward - 0.7) * 1.2 : 0
+        let maxLateral = lateralGrip * surface.grip * (1 - min(0.35, floating))
         understeer = 0
         if !drifting && abs(velocity * steerYaw) > maxLateral {
             understeer = min(1, (abs(velocity * steerYaw) - maxLateral) / 300)
@@ -2684,7 +2695,7 @@ final class ParkingScene: SKScene {
         if drifting && airTime <= 0 {
             var slip = CGFloat.angleDelta(travelHeading, heading)
             let speedShare = min(1, abs(velocity) / 90)
-            let rearGrip: CGFloat = (handbrake ? 0.25 : (gasDown ? 0.6 : 2.2)) * (challenge.wetGround ? 0.6 : 1)
+            let rearGrip: CGFloat = (handbrake ? 0.25 : (gasDown ? 0.6 : 2.2)) * surface.rear
             var target = 0.8 * steerYaw - slip * rearGrip * 3
             if gasDown && !handbrake {
                 // Power oversteer: wheelspin pushes the tail further out

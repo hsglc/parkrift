@@ -156,7 +156,8 @@ enum Strings {
     static func ruleHits(_ count: Int) -> String { t("En fazla \(count) çarpma", "Max \(count) hits", "Máx. \(count) golpes") }
     static var ruleNoHits: String { t("Sıfır çarpma", "Zero hits", "Cero golpes") }
     static var ruleReverse: String { t("Geri geri park et", "Back it in", "Aparca marcha atrás") }
-    static var ruleWet: String { t("Kaygan zemin", "Slippery ground", "Suelo resbaladizo") }
+    static var ruleWet: String { t("Yağmur: ıslak zemin, uzun fren", "Rain: wet ground, longer braking", "Lluvia: suelo mojado, frenada larga") }
+    static var ruleSnow: String { t("Kar: çok kaygan, yavaş fren", "Snow: very slippery, slow braking", "Nieve: muy resbaladizo, frenada lenta") }
     static func rulePatrol(_ count: Int) -> String {
         count > 1 ? t("\(count) devriye araç", "\(count) patrol cars", "\(count) coches patrulla")
                   : t("Devriye araç", "Patrol car", "Coche patrulla")

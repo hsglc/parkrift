@@ -21,7 +21,7 @@ final class AudioManager {
     /// Looping layers whose volume follows the game: tyre screech, police siren, rain.
     private var loopNodes: [String: AVAudioPlayerNode] = [:]
     private var loopStarted = Set<String>()
-    private static let loopNames = ["skid", "siren", "rain", "wind"]
+    private static let loopNames = ["skid", "siren", "rain", "wind", "snow"]
 
     var isMuted: Bool {
         get { UserDefaults.standard.bool(forKey: "pp.muted") }
@@ -56,7 +56,7 @@ final class AudioManager {
 
         buffers["music"] = load("music", ext: "m4a")
         for name in ["engine_low", "engine_high", "bump", "beep", "go", "park", "click", "horn", "nitro", "crash", "whoosh",
-                     "skid", "siren", "rain", "wind", "shift"] {
+                     "skid", "siren", "rain", "wind", "snow", "shift"] {
             buffers[name] = load(name, ext: "wav")
         }
 
