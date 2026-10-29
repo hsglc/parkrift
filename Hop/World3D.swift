@@ -708,7 +708,7 @@ final class Car3D {
                 sprays.append(system)
             }
         }
-        for system in sprays { system.birthRate = 160 * max(0, min(1, amount)) }
+        for system in sprays { system.birthRate = 95 * max(0, min(1, amount)) }
     }
 
     /// Rim colour: the wheels get their own rim and tyre materials (one per car).
@@ -1951,10 +1951,12 @@ final class World3D {
         }
         let node = SCNNode()
         node.position = SCNVector3(0, 8, -9)
-        node.addParticleSystem(layer(birthRate: 320, box: 24, size: 0.09, alpha: 0.9, speed: 1.7, life: 5.5))
+        // About 1,900 flakes in the air (was 4,900): snow is large soft sprites, so its cost is the
+        // overdraw; slightly bigger and brighter flakes keep it looking as thick
+        node.addParticleSystem(layer(birthRate: 170, box: 22, size: 0.1, alpha: 0.92, speed: 1.7, life: 5.0))
         let far = SCNNode()
         far.position = SCNVector3(0, 6, -26)
-        far.addParticleSystem(layer(birthRate: 520, box: 60, size: 0.16, alpha: 0.55, speed: 1.4, life: 6))
+        far.addParticleSystem(layer(birthRate: 200, box: 54, size: 0.15, alpha: 0.62, speed: 1.4, life: 5.5))
         node.addChildNode(far)
         return node
     }
@@ -1985,10 +1987,11 @@ final class World3D {
         }
         let node = SCNNode()
         node.position = SCNVector3(0, 13, -9)
-        node.addParticleSystem(layer(birthRate: 750, box: 22, size: 0.03, alpha: 0.32, speed: 28))
+        // About 700 streaks at once (was 1,300), a touch brighter
+        node.addParticleSystem(layer(birthRate: 440, box: 22, size: 0.03, alpha: 0.38, speed: 28))
         let far = SCNNode()
         far.position = SCNVector3(0, 4, -26)
-        far.addParticleSystem(layer(birthRate: 800, box: 60, size: 0.06, alpha: 0.14, speed: 24))
+        far.addParticleSystem(layer(birthRate: 380, box: 54, size: 0.06, alpha: 0.17, speed: 24))
         node.addChildNode(far)
         return node
     }
@@ -1996,7 +1999,7 @@ final class World3D {
     /// Small drops bouncing up where the rain lands, in front of the camera.
     private static func makeSplashes() -> SCNParticleSystem {
         let system = SCNParticleSystem()
-        system.birthRate = 260
+        system.birthRate = 150
         system.emitterShape = SCNPlane(width: 26, height: 26)
         system.particleLifeSpan = 0.22
         system.particleLifeSpanVariation = 0.08
