@@ -25,15 +25,21 @@ struct DailyView: View {
     var body: some View {
         ZStack {
             Neo.ink.ignoresSafeArea()
-            if let art = UIImage(named: "splash.jpg") {
-                Image(uiImage: art)
-                    .resizable()
-                    .scaledToFill()
-                    .blur(radius: 24)
-                    .opacity(0.3)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-            }
+            // The art as an overlay on a clear view: an image filling the screen on its own sizes
+            // the ZStack to the image (taller than the screen in landscape), which pushed the
+            // header off the top and the cards off the bottom. Pre-blurred, no live blur.
+            Color.clear
+                .overlay {
+                    if let art = UIImage(named: "splash_blur.jpg") ?? UIImage(named: "splash.jpg") {
+                        Image(uiImage: art)
+                            .resizable()
+                            .scaledToFill()
+                            .opacity(0.3)
+                    }
+                }
+                .clipped()
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             LinearGradient(colors: [Neo.ink.opacity(0.94), Neo.ink.opacity(0.72)], startPoint: .leading, endPoint: .trailing)
                 .ignoresSafeArea()
             // A soft colour bloom behind the gift
@@ -41,21 +47,26 @@ struct DailyView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            VStack(alignment: .leading, spacing: 10) {
-                header
-                HStack(alignment: .top, spacing: 18) {
-                    giftCard
-                        .frame(maxWidth: 360)
-                        .rise(shown, delay: 0.02)
-                    tasksColumn
-                        .rise(shown, delay: 0.1)
+            // Laid out from the space actually there (inside the safe area): the cards get the
+            // height left under the header, so nothing ever pushes the title off the top
+            GeometryReader { proxy in
+                VStack(alignment: .leading, spacing: 8) {
+                    header
+                        .frame(height: 40)
+                    HStack(alignment: .top, spacing: 14) {
+                        giftCard
+                            .frame(width: min(300, proxy.size.width * 0.38))
+                            .rise(shown, delay: 0.02)
+                        tasksColumn
+                            .rise(shown, delay: 0.1)
+                    }
+                    .frame(height: max(200, proxy.size.height - 48))
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             }
-            .padding(.horizontal, 26)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
-            // If anything is too tall it gives at the bottom, never cuts the title
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
         }
         .onAppear {
             shown = true
@@ -72,7 +83,7 @@ struct DailyView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(Strings.dailyTitle.uppercased()).font(.race(28)).foregroundStyle(.white)
+            Text(Strings.dailyTitle.uppercased()).font(.race(26)).foregroundStyle(.white)
             Spacer()
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 6) {
@@ -118,33 +129,34 @@ struct DailyView: View {
                 .background(Capsule().fill(Palette.goldDeep.opacity(0.16)))
             }
             // Today's reward, big
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 ZStack {
                     Circle()
                         .fill(RadialGradient(colors: [Palette.gold.opacity(pending != nil ? 0.55 : 0.18), .clear],
                                              center: .center, startRadius: 2, endRadius: 46))
-                        .frame(width: 78, height: 78)
+                        .frame(width: 66, height: 66)
                         .scaleEffect(pending != nil && pulse ? 1.08 : 0.96)
                         .animation(pending != nil ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : .default, value: pulse)
                     Circle()
                         .fill(LinearGradient(colors: [Color.white.opacity(0.12), Color.white.opacity(0.03)], startPoint: .top, endPoint: .bottom))
                         .overlay(Circle().strokeBorder(Palette.gold.opacity(0.5), lineWidth: 1.5))
-                        .frame(width: 56, height: 56)
+                        .frame(width: 50, height: 50)
                     Image(systemName: pending == nil ? "checkmark" : (shownDay == 7 ? "gift.fill" : "dollarsign"))
-                        .font(.system(size: 28, weight: .black))
+                        .font(.system(size: 24, weight: .black))
                         .foregroundStyle(pending == nil ? green : Palette.gold)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Strings.dayN(shownDay).uppercased())
                         .font(.kicker(9)).tracking(1.4).foregroundStyle(.white.opacity(0.55))
                     Text("+\(justCollected ?? reward)")
-                        .font(.race(36)).foregroundStyle(.white)
+                        .font(.race(32)).foregroundStyle(.white)
                         .contentTransition(.numericText())
                     Text(Strings.dailyGiftHint)
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.5))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.75)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.top, 8)
@@ -152,7 +164,7 @@ struct DailyView: View {
             streakTimeline(pending: pending, collected: collected)
                 .padding(.top, 8)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
             if let day = pending {
                 Button {
                     let amount = model.collectGift()
@@ -165,22 +177,22 @@ struct DailyView: View {
                         Text("\(Strings.collect.uppercased())  +\(Progression.streakRewards[day - 1])")
                     }
                 }
-                .buttonStyle(RaceButtonStyle(color: Palette.gold, textColor: Neo.ink, height: 48, fontSize: 20))
+                .buttonStyle(RaceButtonStyle(color: Palette.gold, textColor: Neo.ink, height: 44, fontSize: 18))
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(green)
                     Text((justCollected.map { "\(Strings.collected) +\($0)" } ?? Strings.comeBackTomorrow).uppercased())
                         .contentTransition(.numericText())
                 }
-                .font(.race(17))
+                .font(.race(15))
                 .foregroundStyle(.white.opacity(0.9))
                 .frame(maxWidth: .infinity)
-                .frame(height: 48)
+                .frame(height: 44)
                 .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(green.opacity(0.35), lineWidth: 1))
             }
         }
-        .padding(18)
+        .padding(16)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(glassCard(tint: Palette.gold))
     }
@@ -236,10 +248,17 @@ struct DailyView: View {
         let doneCount = tasks.filter(\.done).count
         let selected = mode ?? .park
         let group = tasks.filter { $0.kind.mode == selected }
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
-                Text(Strings.dailyTasks.uppercased()).font(.kicker(10)).tracking(1.6).foregroundStyle(Neo.cyan)
-                Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Strings.dailyTasks.uppercased()).font(.kicker(10)).tracking(1.6).foregroundStyle(Neo.cyan)
+                    Text(Strings.dailyTasksHint)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 8)
                 ZStack {
                     Circle().stroke(Color.white.opacity(0.1), lineWidth: 4)
                     Circle()
@@ -249,54 +268,70 @@ struct DailyView: View {
                     Text("\(doneCount)/\(tasks.count)").font(.system(size: 10, weight: .heavy)).monospacedDigit()
                         .foregroundStyle(.white)
                 }
-                .frame(width: 38, height: 38)
+                .frame(width: 36, height: 36)
             }
-            // One tab per mode, with how many of its tasks are done
-            HStack(spacing: 8) {
-                ForEach(Progression.TaskMode.allCases, id: \.rawValue) { m in
-                    let modeTasks = tasks.filter { $0.kind.mode == m }
-                    let isOn = m == selected
-                    Button {
-                        AudioManager.shared.play("click", volume: 0.4)
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { mode = m }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: m.icon).font(.system(size: 11, weight: .black))
-                            Text(m.short).font(.system(size: 11.5, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.7)
-                            Text("\(modeTasks.filter(\.done).count)/\(modeTasks.count)")
-                                .font(.system(size: 10, weight: .heavy)).monospacedDigit()
-                                .fixedSize()
-                                .opacity(0.7)
-                        }
-                        .foregroundStyle(isOn ? Neo.ink : .white.opacity(0.8))
-                        .padding(.horizontal, 6)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(Capsule().fill(isOn ? AnyShapeStyle(accent(m)) : AnyShapeStyle(Color.white.opacity(0.06))))
-                        .overlay(Capsule().strokeBorder(isOn ? Color.clear : Color.white.opacity(0.1), lineWidth: 1))
+            HStack(alignment: .top, spacing: 10) {
+                // Modes as a list: each with its full name, icon and how many of its tasks are done
+                VStack(spacing: 6) {
+                    ForEach(Progression.TaskMode.allCases, id: \.rawValue) { m in modeRow(m, tasks: tasks, selected: selected) }
+                    Spacer(minLength: 0)
+                }
+                .frame(width: 124)
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 8) {
+                        ForEach(group) { task in taskCard(task, accent: accent(selected)) }
                     }
-                    .buttonStyle(.plain)
+                    .id(selected)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
-            VStack(spacing: 10) {
-                ForEach(group) { task in taskCard(task, accent: accent(selected)) }
-            }
-            .id(selected)
-            .transition(.opacity.combined(with: .move(edge: .trailing)))
-            Spacer(minLength: 0)
-            Text(Strings.dailyTasksHint)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.45))
         }
-        .padding(18)
+        .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(glassCard(tint: Neo.cyan))
     }
 
+    private func modeRow(_ m: Progression.TaskMode, tasks: [Progression.DailyTask], selected: Progression.TaskMode) -> some View {
+        let modeTasks = tasks.filter { $0.kind.mode == m }
+        let done = modeTasks.filter(\.done).count
+        let isOn = m == selected
+        let complete = done == modeTasks.count && !modeTasks.isEmpty
+        return Button {
+            AudioManager.shared.play("click", volume: 0.4)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { mode = m }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: m.icon)
+                    .font(.system(size: 12, weight: .black))
+                    .frame(width: 18)
+                Text(m.short)
+                    .font(.system(size: 13, weight: .heavy))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 2)
+                if complete {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(isOn ? Neo.ink : green)
+                } else {
+                    Text("\(done)/\(modeTasks.count)")
+                        .font(.system(size: 11, weight: .heavy)).monospacedDigit()
+                        .opacity(0.75)
+                }
+            }
+            .foregroundStyle(isOn ? Neo.ink : .white.opacity(0.85))
+            .padding(.horizontal, 10)
+            .frame(height: 38)
+            .background(RoundedRectangle(cornerRadius: 12).fill(isOn ? AnyShapeStyle(accent(m)) : AnyShapeStyle(Color.white.opacity(0.06))))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(isOn ? Color.clear : Color.white.opacity(0.1), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A task: its progress ring and icon, the full title, and below it the count and reward.
     private func taskCard(_ task: Progression.DailyTask, accent: Color) -> some View {
         let value = Double(min(task.progress, task.kind.target)) / Double(max(1, task.kind.target))
         let tint = task.done ? green : accent
-        return HStack(spacing: 14) {
+        return HStack(spacing: 12) {
             ZStack {
                 Circle().stroke(Color.white.opacity(0.08), lineWidth: 4)
                 Circle()
@@ -304,33 +339,35 @@ struct DailyView: View {
                     .stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Image(systemName: task.done ? "checkmark" : task.kind.icon)
-                    .font(.system(size: 16, weight: .black))
+                    .font(.system(size: 15, weight: .black))
                     .foregroundStyle(task.done ? green : .white)
             }
-            .frame(width: 46, height: 46)
-            VStack(alignment: .leading, spacing: 4) {
+            .frame(width: 42, height: 42)
+            VStack(alignment: .leading, spacing: 6) {
                 Text(task.kind.title)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 13.5, weight: .bold))
                     .foregroundStyle(.white)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.75)
-                Text(task.done ? Strings.taskDone : "\(min(task.progress, task.kind.target)) / \(task.kind.target)")
-                    .font(.system(size: 11, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(task.done ? green : .white.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Text(task.done ? Strings.taskDone : "\(min(task.progress, task.kind.target)) / \(task.kind.target)")
+                        .font(.system(size: 11, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(task.done ? green : .white.opacity(0.55))
+                    Spacer(minLength: 4)
+                    HStack(spacing: 3) {
+                        Image(systemName: "dollarsign.circle.fill").font(.system(size: 11, weight: .bold))
+                        Text("+\(task.kind.reward)").font(.race(13))
+                    }
+                    .foregroundStyle(task.done ? .white.opacity(0.4) : Palette.gold)
+                    .padding(.horizontal, 8).frame(height: 22)
+                    .background(Capsule().fill(task.done ? Color.white.opacity(0.05) : Palette.gold.opacity(0.12)))
+                }
             }
-            Spacer(minLength: 6)
-            HStack(spacing: 4) {
-                Image(systemName: "dollarsign.circle.fill").font(.system(size: 13, weight: .bold))
-                Text("+\(task.kind.reward)").font(.race(15))
-            }
-            .foregroundStyle(task.done ? .white.opacity(0.4) : Palette.gold)
-            .padding(.horizontal, 10).frame(height: 30)
-            .background(Capsule().fill(task.done ? Color.white.opacity(0.05) : Palette.gold.opacity(0.12)))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(task.done ? 0.03 : 0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(tint.opacity(task.done ? 0.35 : 0.18), lineWidth: 1))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(task.done ? 0.03 : 0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(tint.opacity(task.done ? 0.35 : 0.18), lineWidth: 1))
     }
 
     /// Frosted dark card with a hairline edge and a faint tint along the top.

@@ -159,7 +159,9 @@ struct MenuView: View {
             .padding(.bottom, 10)
         }
         .sheet(isPresented: $showAbout) { AboutView() }
-        .sheet(isPresented: $showDaily) { DailyView().environmentObject(model) }
+        // Full screen, not a sheet: in landscape a sheet is taller than the screen, which cut
+        // off the title and the bottom of the cards
+        .fullScreenCover(isPresented: $showDaily) { DailyView().environmentObject(model) }
         .onAppear {
             if PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-staydaily") {
                 // Store and design screenshots of the daily screen
