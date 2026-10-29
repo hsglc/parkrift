@@ -6,8 +6,8 @@ Layout across the street (V, 0..200 units = 20 m), matching the game: gutter + p
 0-30, white edge line at 30, lanes, dashed yellow center line at 100, mirrored on the other side.
 
 Writes (all RGB; gray textures crash SceneKit on the simulator and Macs):
-  road_albedo.jpg 1024, road_normal.png 1024, road_rough.jpg 512
-  junction_albedo.jpg 512, junction_normal.png 512, junction_rough.jpg 256
+  road_albedo.jpg 2048, road_normal.png 2048, road_rough.jpg 1024
+  junction_albedo.jpg 1024, junction_normal.png 1024, junction_rough.jpg 512
   zebra_albedo.jpg 128x512, street_stains.jpg 512
 
 Usage: python3 make_road_textures.py <Hop/Textures>
@@ -115,7 +115,7 @@ def wear(n, m, seed, scale=1.0):
 
 
 # ---------------------------------------------------------------- street tile
-N = 1024
+N = 2048
 k = N / 200          # pixels per world unit (10 cm)
 rgb, height, rough = asphalt(N, N, 10)
 v = np.arange(N)[:, None] / k  # across (units)
@@ -181,9 +181,9 @@ ticks = ((u % 50) < 1.5) & ((v < 29) & (v > 4) | (v > 171) & (v < 196))
 center = (np.abs(v - 100) < 3) & ((u % 100) > 12) & ((u % 100) < 88)
 paint_w = (edge_lines | ticks).astype(float)
 paint_y = center.astype(float)
-w_mask = wear(N, N, 50)
+w_mask = wear(N, N, 50, 0.55)
 paint_w *= w_mask
-paint_y *= wear(N, N, 51, 0.8)
+paint_y *= wear(N, N, 51, 0.45)
 paint = np.clip(paint_w + paint_y, 0, 1)
 paint = ndimage.gaussian_filter(paint, 0.6, mode='wrap')
 pc = np.where(paint_y[..., None] > 0, yellow, white)
@@ -193,10 +193,10 @@ height = height + 0.35 * paint
 
 Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8)).save(os.path.join(OUT, 'road_albedo.jpg'), quality=88)
 normal_map(ndimage.gaussian_filter(height, 0.7, mode='wrap'), 2.2).save(os.path.join(OUT, 'road_normal.png'))
-save_gray(rough, os.path.join(OUT, 'road_rough.jpg'), (512, 512))
+save_gray(rough, os.path.join(OUT, 'road_rough.jpg'), (1024, 1024))
 
 # ---------------------------------------------------------------- intersection
-J = 512
+J = 1024
 jrgb, jh, jr = asphalt(J, J, 60)
 jpol = fractal(J, J, 2.4, 61)
 jrgb = jrgb * (1 - 0.12 * (jpol > 0.6)[..., None])
@@ -210,7 +210,7 @@ jrgb = jrgb * (1 - 0.22 * jseal[..., None])
 jr = jr - 0.35 * jseal
 Image.fromarray((np.clip(jrgb, 0, 1) * 255).astype(np.uint8)).save(os.path.join(OUT, 'junction_albedo.jpg'), quality=88)
 normal_map(ndimage.gaussian_filter(jh, 0.7, mode='wrap'), 2.2).save(os.path.join(OUT, 'junction_normal.png'))
-save_gray(jr, os.path.join(OUT, 'junction_rough.jpg'), (256, 256))
+save_gray(jr, os.path.join(OUT, 'junction_rough.jpg'), (512, 512))
 
 # ---------------------------------------------------------------- zebra stripe (worn white paint on asphalt)
 zr, _, _ = asphalt(512, 128, 70)

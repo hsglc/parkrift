@@ -1630,7 +1630,8 @@ final class World3D {
         for material in roadMaterials + lotMaterials {
             material.roughness.intensity = wet ? 0.5 : 1
             material.diffuse.intensity = wet ? 0.78 : 1
-            material.shaderModifiers = wet ? [.surface: World3D.wetRoadShader] : (snowy ? [.surface: World3D.snowRoadShader] : nil)
+            let detail = detailMaterials.contains(ObjectIdentifier(material))
+            material.shaderModifiers = World3D.groundShader(detail: detail, wet: wet, snowy: snowy).map { [.surface: $0] }
         }
         if wet {
             if rain == nil { rain = World3D.makeRain() }
@@ -1711,6 +1712,60 @@ final class World3D {
     _surface.roughness = mix(_surface.roughness, 0.04, puddle * 0.9);
     _surface.diffuse.rgb *= mix(1.0, 0.62, puddle);
     """
+
+    /// Asphalt materials that also get the close-up photo grain.
+    private var detailMaterials = Set<ObjectIdentifier>()
+    private static let detailMap: SCNMaterialProperty = {
+        let property = SCNMaterialProperty(contents: Scenery.image("ph_asphalt_detail.jpg") as Any)
+        property.mipFilter = .linear
+        property.wrapS = .repeat
+        property.wrapT = .repeat
+        return property
+    }()
+    private static let detailNormal: SCNMaterialProperty = {
+        let property = SCNMaterialProperty(contents: Scenery.image("ph_asphalt_nor.jpg") as Any)
+        property.mipFilter = .linear
+        property.wrapS = .repeat
+        property.wrapT = .repeat
+        return property
+    }()
+
+    /// Street asphalt gets Poly Haven's scanned asphalt as a second, fine layer in world space
+    /// (a tile every 2.4 m, about 4 px per centimetre): sharp stones and pores close to the
+    /// camera, fading out with distance where the street texture alone looks right.
+    private func addAsphaltDetail(_ material: SCNMaterial) {
+        material.setValue(World3D.detailMap, forKey: "detailMap")
+        material.setValue(World3D.detailNormal, forKey: "detailNormal")
+        detailMaterials.insert(ObjectIdentifier(material))
+    }
+
+    private static let detailBody = """
+    {
+        constexpr sampler ds(filter::linear, mip_filter::linear, address::repeat);
+        float3 dw = (scn_frame.inverseViewTransform * float4(_surface.position, 1.0)).xyz;
+        float fade = 1.0 - smoothstep(10.0, 42.0, length(_surface.position));
+        float2 duv = dw.xz * 0.42;
+        float grain = detailMap.sample(ds, duv).r;
+        _surface.diffuse.rgb *= mix(1.0, grain / 0.9, fade * 0.75);
+        float3 dn = detailNormal.sample(ds, duv).rgb * 2.0 - 1.0;
+        float3 bend = (scn_frame.viewTransform * float4(dn.x, 0.0, -dn.y, 0.0)).xyz;
+        _surface.normal = normalize(_surface.normal + bend * 0.45 * fade);
+    }
+    """
+
+    /// The ground's surface shader: the asphalt grain, then the wet or snowy look (each in its
+    /// own block so their variables never clash).
+    static func groundShader(detail: Bool, wet: Bool, snowy: Bool) -> String? {
+        func body(_ shader: String) -> String {
+            "{\n" + shader.replacingOccurrences(of: "#pragma body", with: "") + "\n}\n"
+        }
+        var text = ""
+        if detail { text += detailBody + "\n" }
+        if wet { text += body(wetRoadShader) } else if snowy { text += body(snowRoadShader) }
+        guard !text.isEmpty else { return nil }
+        let arguments = detail ? "#pragma arguments\ntexture2d<float> detailMap;\ntexture2d<float> detailNormal;\n" : ""
+        return arguments + "#pragma body\n" + text
+    }
 
     /// Snow on the ground: drifts in world space (whiter, rough, a soft sparkle), the tracks the
     /// traffic keeps clearer along the lanes.
@@ -1893,6 +1948,7 @@ final class World3D {
         cityMap = nil
         signalHeads.removeAll()
         roadMaterials.removeAll()
+        detailMaterials.removeAll()
         lampPools = nil
         if let city = level.city {
             buildCity(city, world: level.world)
@@ -2181,6 +2237,7 @@ final class World3D {
             material.multiply.wrapT = .repeat
             material.multiply.contentsTransform = SCNMatrix4MakeScale(Float(length / 1200), Float(roadWidth / 1200), 1)
             roadMaterials.append(material)
+            addAsphaltDetail(material)
             return material
         }
         let ground = SCNNode()
@@ -2209,6 +2266,7 @@ final class World3D {
         let junction = SCNPlane(width: roadWidth / 10, height: roadWidth / 10)
         let junctionMaterial = World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.jpg", rough: "junction_rough.jpg")
         roadMaterials.append(junctionMaterial)
+        addAsphaltDetail(junctionMaterial)
         junction.materials = [junctionMaterial]
         let stripe = SCNPlane(width: 0.5, height: 3.2)
         // Worn white paint on asphalt
@@ -2266,7 +2324,8 @@ final class World3D {
             node.position = World3D.vec(edge.0, y: 0.45)
             ground.addChildNode(node)
         }
-        levelRoot.addChildNode(ground.flattenedClone())
+        // Added as they are: flattenedClone dropped the street planes (the map showed bare ground)
+        levelRoot.addChildNode(ground)
         buildStreetFurniture(city, world: world)
     }
 
