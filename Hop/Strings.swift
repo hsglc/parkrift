@@ -100,6 +100,7 @@ enum Strings {
     static var statCrashes: String { t("KAZA", "CRASHES", "CHOQUES") }
     static var statRound: String { t("TUR", "ROUND", "RONDA") }
     static var statPlace: String { t("SIRA", "PLACE", "PUESTO") }
+    static var liveTag: String { t("CANLI", "LIVE", "EN VIVO") }
     static var spectatingFriend: String { t("Rakibini izliyorsun", "Watching your rival", "Viendo a tu rival") }
     static var waitingFriendPark: String { t("Arkadaşının park etmesi bekleniyor", "Waiting for your friend to park", "Esperando a que tu amigo aparque") }
     static var nextLevelSoon: String { t("Sıradaki bölüm geliyor…", "Next level coming up…", "Llega el siguiente nivel…") }

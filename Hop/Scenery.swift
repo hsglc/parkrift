@@ -128,6 +128,7 @@ enum Scenery {
         node.simdTransform = transform
         let holder = SCNNode()
         holder.addChildNode(node)
+        node.categoryBitMask = World3D.propCategory
         if let low = farGeometry?.copy() as? SCNGeometry {
             low.levelsOfDetail = nil
             low.materials = [shadowCaster]
@@ -136,6 +137,7 @@ enum Scenery {
             shadow.castsShadow = true
             // Drawn after the scene's solids, so its depth never hides the visible mesh
             shadow.renderingOrder = 50
+            shadow.categoryBitMask = World3D.propCategory
             node.castsShadow = false
             holder.addChildNode(shadow)
         } else {

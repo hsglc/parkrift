@@ -363,6 +363,11 @@ final class ParkingScene: SKScene {
     /// Seconds since we finished while the friend is still driving; after a moment the camera
     /// follows their car so we watch them instead of waiting.
     private var spectateClock: CGFloat = 0
+    /// The rival's speed (world units/s), from their position updates, for the TV cameras.
+    private var spectateSpeed: CGFloat = 0
+    private var spectateLast: CGPoint?
+    /// Broadcast look while spectating: letterbox bars, a live tag and a quick dip at each cut.
+    private var spectateOverlay: SKNode?
     private var remoteParked = false
     private var remoteTime: Double = 0
     private var remoteHits = 0
@@ -1976,10 +1981,17 @@ final class ParkingScene: SKScene {
         let spectating = online && friendPresent && localParked && !remoteParked && !resultsShown && localTime >= 0
         spectateClock = spectating ? spectateClock + dt : 0
         if spectateClock > 1.4 {
-            // Watching the friend: the chase camera rides behind their car
-            world?.follow(position: remotePosition, heading: remoteHeading, dt: dt)
-            if statusLabel.text != Strings.spectatingFriend { statusLabel.text = Strings.spectatingFriend }
+            // Watching the friend through TV-style cameras
+            if let last = spectateLast, dt > 0 {
+                spectateSpeed += (remotePosition.distance(to: last) / dt - spectateSpeed) * min(1, dt * 3)
+            }
+            spectateLast = remotePosition
+            if spectateOverlay == nil { showSpectateOverlay() }
+            let cut = world?.spectate(position: remotePosition, heading: remoteHeading, speed: spectateSpeed, dt: dt) ?? false
+            if cut { spectateCut() }
+            if statusLabel.text != "" { statusLabel.text = "" }
         } else {
+            if spectateOverlay != nil { hideSpectateOverlay() }
             world?.follow(position: carPosition, heading: cameraHeading, dt: dt)
         }
         updateCarNodes()
@@ -4209,6 +4221,77 @@ final class ParkingScene: SKScene {
     private var pedestrians: PedestrianSystem?
     private var pedestrianNodes: [SCNNode] = []
     private var pendingHorn: CGPoint?
+
+    // MARK: Spectating
+
+    private func showSpectateOverlay() {
+        world?.resetSpectate()
+        spectateLast = nil
+        let overlay = SKNode()
+        overlay.zPosition = 250
+        let barHeight = size.height * 0.085
+        for top in [true, false] {
+            let bar = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: barHeight))
+            bar.anchorPoint = CGPoint(x: 0.5, y: top ? 0 : 1)
+            let edge = top ? size.height : 0
+            bar.position = CGPoint(x: size.width / 2, y: edge)
+            overlay.addChild(bar)
+            let slide = SKAction.moveTo(y: top ? edge - barHeight : barHeight, duration: 0.4)
+            slide.timingMode = .easeOut
+            bar.run(slide)
+        }
+        // "LIVE · watching your rival" tag, top left inside the bar
+        let tag = SKNode()
+        tag.position = CGPoint(x: max(30, size.width * 0.05), y: size.height - barHeight / 2)
+        let dot = SKShapeNode(circleOfRadius: 4)
+        dot.fillColor = UIColor(red: 1, green: 0.22, blue: 0.25, alpha: 1)
+        dot.strokeColor = .clear
+        dot.run(.repeatForever(.sequence([.fadeAlpha(to: 0.25, duration: 0.6), .fadeAlpha(to: 1, duration: 0.6)])))
+        tag.addChild(dot)
+        let live = SKLabelNode(text: Strings.liveTag)
+        live.fontName = "AvenirNext-Heavy"
+        live.fontSize = 12
+        live.fontColor = .white
+        live.horizontalAlignmentMode = .left
+        live.verticalAlignmentMode = .center
+        live.position = CGPoint(x: 12, y: 0)
+        tag.addChild(live)
+        let what = SKLabelNode(text: Strings.spectatingFriend.uppercased())
+        what.fontName = "AvenirNext-DemiBold"
+        what.fontSize = 12
+        what.fontColor = UIColor.white.withAlphaComponent(0.7)
+        what.horizontalAlignmentMode = .left
+        what.verticalAlignmentMode = .center
+        what.position = CGPoint(x: 22 + live.frame.width, y: 0)
+        tag.addChild(what)
+        tag.alpha = 0
+        tag.run(.sequence([.wait(forDuration: 0.3), .fadeIn(withDuration: 0.3)]))
+        overlay.addChild(tag)
+        // Cut dip
+        let dip = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: size.height + 40))
+        dip.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        dip.alpha = 0
+        dip.name = "dip"
+        dip.zPosition = -1
+        overlay.addChild(dip)
+        addChild(overlay)
+        spectateOverlay = overlay
+        controlsLayer.run(.fadeAlpha(to: 0, duration: 0.3))
+    }
+
+    private func spectateCut() {
+        guard let dip = spectateOverlay?.childNode(withName: "dip") else { return }
+        dip.removeAllActions()
+        dip.alpha = 0.55
+        dip.run(.fadeOut(withDuration: 0.22))
+    }
+
+    private func hideSpectateOverlay() {
+        spectateOverlay?.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
+        spectateOverlay = nil
+        world?.endSpectate()
+        controlsLayer.run(.fadeAlpha(to: 1, duration: 0.3))
+    }
 
     /// Each person's state last frame and when it began (for the clips that play once).
     private var pedestrianStates: [PedestrianSystem.State] = []

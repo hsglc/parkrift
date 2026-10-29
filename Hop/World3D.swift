@@ -1228,6 +1228,121 @@ final class World3D {
         viewSize = size
     }
 
+    /// Node categories: everything is `solidCategory` by default; detailed props are `propCategory`
+    /// (skipped by camera hit tests).
+    static let solidCategory = 1
+    static let propCategory = 1 << 4
+
+    // MARK: Spectator camera
+
+    /// TV-style shots of the rival while we wait for them, cut every few seconds: a long-lens
+    /// chase, a tracking shot alongside, a trackside camera that pans and zooms as the car passes,
+    /// a low camera ahead looking back at the car, and a helicopter shot.
+    enum SpectateShot: Int, CaseIterable { case chase, tracking, trackside, front, helicopter }
+    private var spectateClock: Float = 0
+    private var spectateIndex = -1
+    private var spectateEye = SIMD3<Float>(0, 0, 0)
+    private var spectateLook = SIMD3<Float>(0, 0, 0)
+    private var spectateFixed = SIMD3<Float>(0, 0, 0)
+    private var spectateSide: Float = 1
+    private var spectateYaw: Float = 0
+
+    /// Starts over at the first shot (the next `spectate` call cuts to it).
+    func resetSpectate() {
+        spectateIndex = -1
+        spectateClock = 0
+    }
+
+    /// Frames the car at `position`; returns true on the frame a new shot starts (for a cut).
+    @discardableResult
+    func spectate(position: CGPoint, heading: CGFloat, speed: CGFloat, dt: CGFloat) -> Bool {
+        let p = World3D.vec(position)
+        let car = SIMD3<Float>(p.x, 0, p.z)
+        let yawTarget = Float(heading)
+        let forwardNow = SIMD3<Float>(cos(yawTarget), 0, -sin(yawTarget))
+        spectateClock += Float(dt)
+        let shots = SpectateShot.allCases
+        var cut = false
+        let length: Float = spectateIndex >= 0 && shots[spectateIndex] == .trackside ? 5.5 : 4.5
+        if spectateIndex < 0 || spectateClock > length {
+            spectateIndex = (spectateIndex + 1) % shots.count
+            spectateClock = 0
+            spectateYaw = yawTarget
+            cut = true
+            // The open side of the street for side shots
+            let side = SIMD3<Float>(sin(yawTarget), 0, cos(yawTarget))
+            let target = car + SIMD3<Float>(0, 1, 0)
+            spectateSide = lineIsClear(from: target, to: target + side * 7, margin: 0.8) ? 1 : -1
+            if shots[spectateIndex] == .trackside {
+                // A camera on the roadside ahead, on the open side
+                let ahead = car + forwardNow * max(16, min(30, Float(speed) / 10 * 1.6)) + side * spectateSide * 5.5
+                spectateFixed = ahead + SIMD3<Float>(0, 1.3, 0)
+                if !lineIsClear(from: target + forwardNow * 4, to: spectateFixed, margin: 0.5) {
+                    spectateFixed = car + forwardNow * 14 + SIMD3<Float>(0, 3.5, 0)
+                }
+            }
+        }
+        // Smooth the car's heading so the cameras glide
+        spectateYaw += Float(CGFloat.angleDelta(CGFloat(spectateYaw), CGFloat(yawTarget))) * (1 - exp(-Float(dt) * 3))
+        let forward = SIMD3<Float>(cos(spectateYaw), 0, -sin(spectateYaw))
+        let side = SIMD3<Float>(sin(spectateYaw), 0, cos(spectateYaw))
+        let t = spectateClock
+        var eye: SIMD3<Float>
+        var look = car + SIMD3<Float>(0, 0.8, 0)
+        var fov: Float
+        switch shots[spectateIndex] {
+        case .chase:
+            // Long lens from behind and above: the car big, the street compressed behind it
+            eye = car - forward * (11 - t * 0.4) + SIMD3<Float>(0, 3.0, 0) + side * 0.8 * sin(t * 0.6)
+            look = car + forward * 3 + SIMD3<Float>(0, 0.7, 0)
+            fov = 36
+        case .tracking:
+            // Alongside at door height, a step ahead, drifting slowly back along the car
+            eye = car + side * spectateSide * 6.5 + forward * (2.4 - t * 0.7) + SIMD3<Float>(0, 1.05, 0)
+            look = car + forward * 0.6 + SIMD3<Float>(0, 0.7, 0)
+            fov = 40
+        case .trackside:
+            // Fixed on the roadside: pans to follow and zooms in as the car comes closer
+            eye = spectateFixed
+            let distance = max(3, simd_distance(eye, car))
+            fov = max(18, min(55, 2 * atan(3.4 / distance) * 180 / .pi))
+        case .front:
+            // Low, ahead of the car and looking back at it as it rushes at the lens
+            eye = car + forward * (7.5 - t * 0.25) + side * spectateSide * 1.6 + SIMD3<Float>(0, 0.75, 0)
+            look = car + SIMD3<Float>(0, 0.75, 0)
+            fov = 46
+        case .helicopter:
+            // High and behind, slowly swinging round
+            let swing = t * 0.18
+            let dir = forward * cos(swing) + side * spectateSide * sin(swing)
+            eye = car - dir * 15 + SIMD3<Float>(0, 13 + t * 0.6, 0)
+            look = car + forward * 4
+            fov = 48
+        }
+        if cut {
+            spectateEye = eye
+            spectateLook = look
+        } else {
+            // Camera-operator smoothing (the fixed camera only pans)
+            let k = 1 - exp(-Float(dt) * 6)
+            spectateEye += (eye - spectateEye) * k
+            spectateLook += (look - spectateLook) * (1 - exp(-Float(dt) * 9))
+        }
+        cameraNode.simdPosition = spectateEye
+        cameraNode.simdLook(at: spectateLook, up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+        let current = Float(cameraNode.camera?.fieldOfView ?? CGFloat(fov))
+        cameraNode.camera?.fieldOfView = CGFloat(cut ? fov : current + (fov - current) * (1 - exp(-Float(dt) * 5)))
+        cameraNode.camera?.zFar = 260
+        cameraReady = false      // the chase camera snaps back when spectating ends
+        return cut
+    }
+
+    /// Back to the normal lens after spectating.
+    func endSpectate() {
+        cameraNode.camera?.fieldOfView = fieldOfView
+        spectateIndex = -1
+    }
+
     /// Third-person camera behind the car, looking the way the car points.
     // MARK: Finish cinematic
 
@@ -1286,8 +1401,11 @@ final class World3D {
         let length = simd_length(direction)
         guard length > 0.01 else { return nil }
         let far = start + direction / length * (length + margin)
+        // Detailed street props (trees, traffic lights) are left out: tens of thousands of
+        // triangles each, and the camera may pass through foliage anyway
         let options: [String: Any] = [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue,
                                       SCNHitTestOption.ignoreHiddenNodes.rawValue: true,
+                                      SCNHitTestOption.categoryBitMask.rawValue: World3D.solidCategory,
                                       SCNHitTestOption.backFaceCulling.rawValue: false]
         var nearest: Float?
         for root in [levelRoot, lotRoot] where !root.isHidden {
