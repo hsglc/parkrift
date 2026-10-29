@@ -92,7 +92,7 @@ enum Strings {
     static var friend: String { t("ARKADAŞ", "FRIEND", "AMIGO") }
     static var go: String { t("BAŞLA!", "GO!", "¡YA!") }
     static var parked: String { t("Park edildi!", "Parked!", "¡Aparcado!") }
-    static var hold: String { t("Bekle…", "Hold…", "Quieto…") }
+    static var hold: String { t("Kıpırdama", "Hold still", "No te muevas") }
     static var waitingFriendPark: String { t("Arkadaşının park etmesi bekleniyor", "Waiting for your friend to park", "Esperando a que tu amigo aparque") }
     static var nextLevelSoon: String { t("Sıradaki bölüm geliyor…", "Next level coming up…", "Llega el siguiente nivel…") }
     static var allDone: String { t("Tüm bölümler bitti!", "All levels complete!", "¡Todos los niveles completados!") }

@@ -1054,12 +1054,12 @@ final class World3D {
         skidMaterial.writesToDepthBuffer = false
         skidGeometry.materials = [skidMaterial]
 
-        scene.background.contents = CityArt.sky
+        scene.background.contents = Scenery.daySky
         scene.fogColor = UIColor(red: 0.84, green: 0.90, blue: 0.97, alpha: 1)
         scene.fogStartDistance = 70
         scene.fogEndDistance = 200
-        scene.lightingEnvironment.contents = CityArt.sky
-        scene.lightingEnvironment.intensity = 1.1
+        scene.lightingEnvironment.contents = Scenery.daySky
+        scene.lightingEnvironment.intensity = 1.0
         buildLights()
         scene.rootNode.addChildNode(lotRoot)
         buildGround()
@@ -1107,8 +1107,6 @@ final class World3D {
     private var snow: SCNNode?
     /// The parking lot's ground materials (wet or snowy with the weather, like the streets).
     var lotMaterials: [SCNMaterial] = []
-    /// Grass round the lot (white under snow).
-    private var grassMaterials: [SCNMaterial] = []
     private(set) var weather: Weather = .day
 
     private func buildLights() {
@@ -1147,28 +1145,29 @@ final class World3D {
     }
 
     private func buildGround() {
-        // Grass all around
-        let grass = SCNPlane(width: 600, height: 600)
-        let grassMaterial = Mat.pbr(.white, metal: 0, rough: 1)
-        grassMaterial.diffuse.contents = CarArt.grassImage(size: CGSize(width: 128, height: 128))
-        grassMaterial.diffuse.wrapS = .repeat
-        grassMaterial.diffuse.wrapT = .repeat
-        grassMaterial.diffuse.contentsTransform = SCNMatrix4MakeScale(120, 120, 1)
-        grass.materials = [grassMaterial]
-        grassMaterials = [grassMaterial]
-        scene.rootNode.addChildNode(flat(grass, y: -0.06))
+        // Paving all around (Poly Haven slabs), under the town that rings the lot
+        let apronSize = CGSize(width: 400, height: 400)
+        let apron = SCNPlane(width: apronSize.width, height: apronSize.height)
+        let apronMaterial = Scenery.surface("pavement", tile: 2.5, size: apronSize, normal: 0.8)
+        apron.materials = [apronMaterial]
+        scene.rootNode.addChildNode(flat(apron, y: -0.06))
 
-        // Asphalt lot
-        let lot = SCNPlane(width: 100, height: 50)
-        // Physically based (not Lambert) so it can turn wet and glossy, or snowy, with the weather
-        let lotMaterial = Mat.pbr(.white, metal: 0, rough: 0.92)
-        lotMaterial.diffuse.contents = CarArt.asphaltImage(size: Levels.world)
+        // Asphalt lot: photo-scanned asphalt every 3.5 m, a large stain map over it breaks the repeat
+        let lotSize = CGSize(width: 100, height: 50)
+        let lot = SCNPlane(width: lotSize.width, height: lotSize.height)
+        let lotMaterial = Scenery.surface("asphalt", tile: 3.5, size: lotSize)
+        lotMaterial.multiply.contents = UIImage(named: "street_stains.jpg")
+        lotMaterial.multiply.contentsTransform = SCNMatrix4MakeScale(2, 1, 1)
+        lotMaterial.multiply.wrapS = .repeat
+        lotMaterial.multiply.wrapT = .repeat
         lot.materials = [lotMaterial]
-        lotMaterials = [lotMaterial]
+        lotMaterials = [lotMaterial, apronMaterial]
         lotRoot.addChildNode(flat(lot, y: 0))
+        // The town round the lot (shared meshes, one copy per scene)
+        lotRoot.addChildNode(CityDecor.lotSurroundings.clone())
 
         // Raised curbs
-        let concrete = Mat.pbr(UIColor(red: 0.78, green: 0.78, blue: 0.80, alpha: 1), rough: 0.9)
+        let concrete = Scenery.shared("concrete", tile: 2, size: CGSize(width: 100, height: 1))
         let curbs: [(CGFloat, CGFloat, Float, Float)] = [(101, 1.0, 0, -24.6), (101, 1.0, 0, 24.6), (1.0, 50, -49.6, 0), (1.0, 50, 49.6, 0)]
         for curb in curbs {
             let geometry = SCNBox(width: curb.0, height: 0.22, length: curb.1, chamferRadius: 0.06)
@@ -1180,43 +1179,6 @@ final class World3D {
     }
 
     private func buildScenery() {
-        let trees = SCNNode()
-        let trunk = SCNCylinder(radius: 0.22, height: 1.6)
-        trunk.radialSegmentCount = 5
-        trunk.materials = [Mat.lambert(UIColor(red: 0.42, green: 0.28, blue: 0.17, alpha: 1))]
-        let crownA = SCNSphere(radius: 1.7)
-        crownA.segmentCount = 5
-        crownA.materials = [Mat.lambert(UIColor(red: 0.24, green: 0.55, blue: 0.27, alpha: 1))]
-        let crownB = SCNSphere(radius: 1.2)
-        crownB.segmentCount = 4
-        crownB.materials = [Mat.lambert(UIColor(red: 0.36, green: 0.66, blue: 0.32, alpha: 1))]
-
-        var generator = SystemRandomNumberGenerator()
-        var placed = 0
-        var attempts = 0
-        while placed < 90 && attempts < 1500 {
-            attempts += 1
-            let x = Float.random(in: -95...95, using: &generator)
-            let z = Float.random(in: -70...70, using: &generator)
-            if abs(x) < 62 && abs(z) < 37 { continue }
-            let tree = SCNNode()
-            tree.position = SCNVector3(x, 0, z)
-            let scale = Float.random(in: 0.8...1.4, using: &generator)
-            tree.scale = SCNVector3(scale, scale, scale)
-            let trunkNode = SCNNode(geometry: trunk)
-            trunkNode.position.y = 0.8
-            tree.addChildNode(trunkNode)
-            let crown = SCNNode(geometry: crownA)
-            crown.position.y = 2.6
-            tree.addChildNode(crown)
-            let top = SCNNode(geometry: crownB)
-            top.position = SCNVector3(0.5, 3.6, -0.3)
-            tree.addChildNode(top)
-            trees.addChildNode(tree)
-            placed += 1
-        }
-        lotRoot.addChildNode(trees.flattenedClone())
-
         // Light poles at the lot corners
         let pole = SCNCylinder(radius: 0.12, height: 6)
         pole.radialSegmentCount = 6
@@ -1617,10 +1579,10 @@ final class World3D {
         let snowy = newWeather == .snow
         switch newWeather {
         case .day:
-            scene.background.contents = CityArt.sky
-            scene.lightingEnvironment.contents = CityArt.sky
-            scene.lightingEnvironment.intensity = 1.1
-            scene.fogColor = UIColor(red: 0.84, green: 0.90, blue: 0.97, alpha: 1)
+            scene.background.contents = Scenery.daySky
+            scene.lightingEnvironment.contents = Scenery.daySky
+            scene.lightingEnvironment.intensity = 1.0
+            scene.fogColor = UIColor(red: 0.80, green: 0.86, blue: 0.94, alpha: 1)
             scene.fogStartDistance = 70
             scene.fogEndDistance = 200
             sunLight.intensity = 1150
@@ -1640,8 +1602,8 @@ final class World3D {
             ambientLight.color = UIColor(red: 0.45, green: 0.52, blue: 0.80, alpha: 1)
         case .rain:
             // Overcast and soft: a grey day, light mist, the wet street catches the lights
-            scene.background.contents = CityArt.rainSky
-            scene.lightingEnvironment.contents = CityArt.rainSky
+            scene.background.contents = Scenery.overcastSky
+            scene.lightingEnvironment.contents = Scenery.overcastSky
             scene.lightingEnvironment.intensity = 1.2
             scene.fogColor = UIColor(red: 0.46, green: 0.50, blue: 0.56, alpha: 1)
             scene.fogStartDistance = 32
@@ -1652,8 +1614,8 @@ final class World3D {
             ambientLight.color = UIColor(red: 0.68, green: 0.74, blue: 0.84, alpha: 1)
         case .snow:
             // Bright white overcast: soft shadows, pale blue mist, snow on the ground
-            scene.background.contents = CityArt.rainSky
-            scene.lightingEnvironment.contents = CityArt.rainSky
+            scene.background.contents = Scenery.overcastSky
+            scene.lightingEnvironment.contents = Scenery.overcastSky
             scene.lightingEnvironment.intensity = 1.55
             scene.fogColor = UIColor(red: 0.80, green: 0.84, blue: 0.90, alpha: 1)
             scene.fogStartDistance = 26
@@ -1669,9 +1631,6 @@ final class World3D {
             material.roughness.intensity = wet ? 0.5 : 1
             material.diffuse.intensity = wet ? 0.78 : 1
             material.shaderModifiers = wet ? [.surface: World3D.wetRoadShader] : (snowy ? [.surface: World3D.snowRoadShader] : nil)
-        }
-        for material in grassMaterials {
-            material.shaderModifiers = snowy ? [.surface: World3D.snowRoadShader] : nil
         }
         if wet {
             if rain == nil { rain = World3D.makeRain() }
@@ -1942,6 +1901,9 @@ final class World3D {
         // City rounds have their weather; a parking lot can be wet (a harder level)
         setWeather(level.city != nil || level.weather == .rain || level.weather == .snow ? level.weather : .day)
 
+        if level.city == nil {
+            levelRoot.addChildNode(Scenery.markingsNode(for: level))
+        }
         if level.race {
             buildFinish(level.spots[0])
             finishPoint = World3D.vec(level.spots[0].center, y: 6.4)
@@ -1974,6 +1936,10 @@ final class World3D {
             if spotSlot == mySlot {
                 neon.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.35, duration: 0.7), .fadeOpacity(to: 1.0, duration: 0.7)])))
                 myNeon = neon
+                myNeonHolding = false
+                let outlineSize = CGSize(width: def.size.width + 3, height: def.size.height + 3)
+                myNeonImages = (CarArt.spotOutlineImage(size: outlineSize, color: color),
+                                CarArt.spotOutlineImage(size: outlineSize, color: UIColor(red: 0.3, green: 1.0, blue: 0.5, alpha: 1)))
             } else {
                 neon.opacity = 0.5
             }
@@ -2097,8 +2063,12 @@ final class World3D {
                 let geometry = SCNBox(width: obstacle.size.width / 10, height: 1.1,
                                       length: obstacle.size.height / 10, chamferRadius: 0.06)
                 geometry.chamferSegmentCount = 1
-                let top = Mat.lambert(CarArt.wallImage(size: obstacle.size))
-                geometry.materials = [concrete, concrete, concrete, concrete, top, concrete]
+                let long = Scenery.shared("concrete", tile: 2, size: CGSize(width: max(obstacle.size.width, obstacle.size.height) / 10, height: 1.1))
+                let short = Scenery.shared("concrete", tile: 2, size: CGSize(width: min(obstacle.size.width, obstacle.size.height) / 10, height: 1.1))
+                let top = Scenery.shared("concrete", tile: 2, size: CGSize(width: obstacle.size.width / 10, height: obstacle.size.height / 10))
+                let alongX = obstacle.size.width >= obstacle.size.height
+                // SCNBox faces: front, right, back, left, top, bottom
+                geometry.materials = alongX ? [long, short, long, short, top, concrete] : [short, long, short, long, top, concrete]
                 let node = SCNNode(geometry: geometry)
                 node.position = World3D.vec(obstacle.center, y: 0.55)
                 node.eulerAngles.y = Float(obstacle.angle)
@@ -2200,7 +2170,7 @@ final class World3D {
         // Realistic asphalt (tools/make_road_textures.py): albedo, normal and roughness maps for
         // a 20 m tile repeated along the street, and a large stain map that hides the repeat
         func roadMaterial(length: CGFloat) -> SCNMaterial {
-            let material = World3D.asphaltMaterial(albedo: "road_albedo.jpg", normal: "road_normal.png", rough: "road_rough.jpg")
+            let material = World3D.asphaltMaterial(albedo: "road_albedo.jpg", normal: "road_normal.jpg", rough: "road_rough.jpg")
             let repeatAlong = SCNMatrix4MakeScale(Float(length / roadWidth), 1, 1)
             for property in [material.diffuse, material.normal, material.roughness] {
                 property.wrapS = .repeat
@@ -2237,7 +2207,7 @@ final class World3D {
             ground.addChildNode(holder)
         }
         let junction = SCNPlane(width: roadWidth / 10, height: roadWidth / 10)
-        let junctionMaterial = World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.png", rough: "junction_rough.jpg")
+        let junctionMaterial = World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.jpg", rough: "junction_rough.jpg")
         roadMaterials.append(junctionMaterial)
         junction.materials = [junctionMaterial]
         let stripe = SCNPlane(width: 0.5, height: 3.2)
@@ -2684,6 +2654,24 @@ final class World3D {
         }
         return changed
     }
+
+    /// The floating marker hides while the car is in its bay, and the bay's glowing outline turns
+    /// from the player's colour to green as the hold fills.
+    func setTargetMarker(hidden: Bool, progress: CGFloat) {
+        if let arrow = arrowNode, arrow.isHidden != hidden {
+            arrow.isHidden = hidden
+        }
+        guard let neon = myNeon, let material = neon.geometry?.firstMaterial, let images = myNeonImages else { return }
+        let p = max(0, min(1, progress))
+        let holding = p > 0
+        if holding != myNeonHolding {
+            myNeonHolding = holding
+            material.diffuse.contents = holding ? images.green : images.normal
+        }
+        neon.scale = SCNVector3(1 + 0.05 * Float(p), 1 + 0.05 * Float(p), 1)
+    }
+    private var myNeonImages: (normal: UIImage, green: UIImage)?
+    private var myNeonHolding = false
 
     func markParked() {
         arrowNode?.isHidden = true
