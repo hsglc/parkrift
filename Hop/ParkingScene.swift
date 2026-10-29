@@ -1026,6 +1026,9 @@ final class ParkingScene: SKScene {
         remotePolice = nil
         remotePoliceTarget = nil
         policeCooldownUntil = 0
+        busted = false
+        bustedNode?.removeFromParent()
+        bustedNode = nil
         if policeBanner.parent != nil {
             policeBanner.alpha = 0.002
             policeEdges.forEach { $0.alpha = 0.002 }
@@ -1801,7 +1804,9 @@ final class ParkingScene: SKScene {
     }
 
     private func isPressed(_ control: Control) -> Bool {
-        autoControls.contains(control) || activeTouches.values.contains(control)
+        // Pulled over by the police: hands off until let go
+        if busted { return false }
+        return autoControls.contains(control) || activeTouches.values.contains(control)
     }
 
     private func refreshPedals() {
@@ -2036,7 +2041,11 @@ final class ParkingScene: SKScene {
                 }
                 updatePedestrianNodes()
             }
-            traffic.step(dt, blockers: blockers)
+            traffic.step(dt, blockers: blockers, playerCars: friendPresent && remoteTarget != nil ? 2 : 1)
+            // A driver stuck behind us honks (heard within about 40 m)
+            for honk in traffic.honks where honk.distance(to: carPosition) < 400 {
+                audio.play("horn", volume: Float(max(0.15, 0.55 - honk.distance(to: carPosition) / 900)))
+            }
             world?.updateSignals(time: traffic.clock)
             updateArcade(dt, traffic: traffic)
             let detailRange = PerfSettings.carDetailDistance * 10
@@ -2088,7 +2097,9 @@ final class ParkingScene: SKScene {
         let cameraHeading = drifting ? travelHeading + CGFloat.angleDelta(travelHeading, heading) * 0.35 : heading
         let spectating = online && friendPresent && localParked && !remoteParked && !resultsShown && localTime >= 0
         spectateClock = spectating ? spectateClock + dt : 0
-        if spectateClock > 1.4 {
+        if busted {
+            world?.bustedShot(position: carPosition, heading: heading, t: bustedClock)
+        } else if spectateClock > 1.4 {
             // Watching the friend through TV-style cameras
             if let last = spectateLast, dt > 0 {
                 spectateSpeed += (remotePosition.distance(to: last) / dt - spectateSpeed) * min(1, dt * 3)
@@ -3470,18 +3481,20 @@ final class ParkingScene: SKScene {
             removeRemotePolice()
         }
         if let chase = police, driving {
-            let outcome = chase.step(dt, player: carPosition, playerSpeed: abs(velocity), trail: trail)
+            let moving = drifting ? travelHeading : heading
+            let outcome = chase.step(dt, player: carPosition, playerSpeed: abs(velocity),
+                                     playerVelocity: CGVector(dx: cos(moving) * velocity, dy: sin(moving) * velocity), trail: trail)
             // The siren gets louder as the police closes in
             siren = max(siren, max(0.12, min(0.8, 0.85 - chase.distance / 1600)))
-            updatePoliceWarning(chase)
+            if chase.mode == .chasing { updatePoliceWarning(chase) }
+            if busted { siren = 0.9; updateBusted(dt, chase) }
+            if chase.mode == .leaving {
+                siren = max(0, 0.5 - chase.distance / 900)
+                if chase.finished { endPoliceChase() }
+            }
             switch outcome {
             case .caught:
-                hits += 2
-                hitsLabel.text = "\(hits)"
-                velocity *= 0.3
-                flashBonus(Strings.policeCaught)
-                notifyHaptic.notificationOccurred(.error)
-                endPoliceChase()
+                startBusted(chase)
             case .escaped:
                 runEscapes += 1
                 nitro = 1
@@ -3548,8 +3561,93 @@ final class ParkingScene: SKScene {
         lap("police-haptic")
     }
 
+    // MARK: Busted
+
+    /// Caught by the police: the cruiser boxes the car in, the camera circles it, and after a few
+    /// seconds (the time lost is part of the penalty, with two crashes on the count) it lets go.
+    private var busted = false
+    private var bustedClock: CGFloat = 0
+    private let bustedDuration: CGFloat = 3.4
+    private var bustedNode: SKNode?
+    private var bustedBar = SKSpriteNode()
+
+    private func startBusted(_ chase: PoliceChase) {
+        busted = true
+        bustedClock = 0
+        hits += 2
+        hitsLabel.text = "\(hits)"
+        failDrift()
+        boostTime = 0
+        chase.pullOver(player: carPosition, heading: heading)
+        notifyHaptic.notificationOccurred(.error)
+        bumpHaptic.impactOccurred(intensity: 0.7)
+        audio.play("horn", volume: 0.5)
+        hidePoliceWarning()
+        world?.resetSpectate()
+
+        bustedNode?.removeFromParent()
+        let node = SKNode()
+        node.position = CGPoint(x: size.width / 2 + 40, y: size.height * 0.64)
+        node.zPosition = 30
+        let width: CGFloat = 330
+        let back = SKShapeNode(rect: CGRect(x: -width / 2, y: -38, width: width, height: 76), cornerRadius: 18)
+        back.fillColor = UIColor(red: 0.08, green: 0.02, blue: 0.05, alpha: 0.88)
+        back.strokeColor = UIColor(red: 1, green: 0.22, blue: 0.22, alpha: 1)
+        back.lineWidth = 3
+        back.name = "back"
+        node.addChild(back)
+        let title = makeLabel(Strings.bustedTitle, size: 30, color: .white, font: "AvenirNext-Heavy")
+        title.position = CGPoint(x: 0, y: 8)
+        node.addChild(title)
+        let detail = makeLabel(Strings.bustedPenalty, size: 12, color: UIColor(white: 1, alpha: 0.85))
+        detail.position = CGPoint(x: 0, y: -16)
+        node.addChild(detail)
+        // The time left until the police lets go, as a bar along the bottom
+        bustedBar = SKSpriteNode(color: UIColor(red: 1, green: 0.3, blue: 0.3, alpha: 1), size: CGSize(width: width - 36, height: 4))
+        bustedBar.anchorPoint = CGPoint(x: 0, y: 0.5)
+        bustedBar.position = CGPoint(x: -(width - 36) / 2, y: -30)
+        node.addChild(bustedBar)
+        node.setScale(0.6)
+        node.alpha = 0
+        node.run(.group([.fadeIn(withDuration: 0.15), .sequence([.scale(to: 1.08, duration: 0.15), .scale(to: 1.0, duration: 0.1)])]))
+        hud.addChild(node)
+        bustedNode = node
+    }
+
+    private func updateBusted(_ dt: CGFloat, _ chase: PoliceChase) {
+        bustedClock += dt
+        // The car rolls to a stop
+        velocity *= exp(-dt * 4)
+        bustedBar.xScale = max(0, 1 - bustedClock / bustedDuration)
+        // Red and blue fill the screen edges, in time with the light bar
+        let flash = Int(lastUpdate * 6) % 2 == 0
+        if policeEdges.count == 2 {
+            policeEdges[0].alpha = flash ? 0.85 : 0.15
+            policeEdges[1].alpha = flash ? 0.15 : 0.85
+        }
+        if let back = bustedNode?.childNode(withName: "back") as? SKShapeNode {
+            back.strokeColor = flash ? UIColor(red: 1, green: 0.22, blue: 0.22, alpha: 1) : UIColor(red: 0.25, green: 0.5, blue: 1, alpha: 1)
+        }
+        guard bustedClock >= bustedDuration else { return }
+        // Let go: the cruiser drives off, the camera comes back behind the car
+        busted = false
+        chase.driveOff(from: carPosition)
+        world?.endSpectate()
+        policeEdges.forEach { $0.run(.fadeAlpha(to: 0.002, duration: 0.3)) }
+        bustedNode?.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
+        bustedNode = nil
+        flashBonus(Strings.bustedReleased)
+        notifyHaptic.notificationOccurred(.success)
+    }
+
     private func endPoliceChase() {
         guard let chase = police else { return }
+        if busted {
+            busted = false
+            world?.endSpectate()
+            bustedNode?.removeFromParent()
+            bustedNode = nil
+        }
         police = nil
         policeCooldownUntil = lastUpdate + 10
         audio.setLoop("siren", volume: 0)
@@ -3750,6 +3848,8 @@ final class ParkingScene: SKScene {
         sparks(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
         dust(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
         lap("sparks")
+        // People nearby jump at the bang, turn to look, then get angry
+        pendingHorn = CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2)
     }
 
     /// The friend drove into us (their game saw the hit): our car takes the shove and the spin they

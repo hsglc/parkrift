@@ -318,6 +318,9 @@ enum Strings {
     static var crimeDrift: String { t("Yasadışı drift", "Illegal drifting", "Derrape ilegal") }
     static func crimeSpeeding(_ speed: String) -> String { t("Hız ihlali: \(speed)", "Speeding: \(speed)", "Exceso de velocidad: \(speed)") }
     static var policeCaught: String { t("YAKALANDIN! +2 KAZA", "BUSTED! +2 CRASHES", "¡TE PILLARON! +2 CHOQUES") }
+    static var bustedTitle: String { t("YAKALANDIN!", "BUSTED!", "¡TE PILLARON!") }
+    static var bustedPenalty: String { t("Ceza: +2 kaza · polis seni durdurdu", "Penalty: +2 crashes · pulled over", "Multa: +2 choques · te pararon") }
+    static var bustedReleased: String { t("SERBESTSİN, DEVAM!", "YOU'RE FREE, GO!", "¡LIBRE, SIGUE!") }
     static var policeEscaped: String { t("KAÇTIN! NİTRO DOLU", "ESCAPED! FULL NITRO", "¡ESCAPASTE! NITRO LLENO") }
     static var nightDrive: String { t("Gece", "Night", "Noche") }
     static var rainyDrive: String { t("Yağmurlu", "Rain", "Lluvia") }

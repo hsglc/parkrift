@@ -587,12 +587,24 @@ struct Bot {
     var shove = CGVector.zero
     var spin: CGFloat = 0
     let tint: Int
+    /// The driver: how fast they like to go (share of the speed limit) and how much room they
+    /// leave to the car ahead (seconds), so the traffic does not move as one block.
+    var pace: CGFloat = 1
+    var headway: CGFloat = 1.3
+    /// The street it takes at the end of this one (chosen early, so it slows for the turn).
+    var next: Int = -1
+    /// Sideways shift from its lane while going round a car stopped in it (+ = left).
+    var offset: CGFloat = 0
+    var passing = false
+    var honkedAt: CGFloat = -10
 
     var box: OBB { OBB(center: position, size: Levels.carSize, angle: heading) }
 }
 
-/// Simple lane-following traffic: drive the right-hand lane, pick a random street at each
-/// intersection, stop for anything ahead.
+/// Lane-following traffic with drivers of their own: each keeps a following distance to the car
+/// ahead (slowing smoothly rather than stopping dead), slows down before a turn, stops at red
+/// lights and for people on the road, honks at a car blocking its lane and, after a while, pulls
+/// out round it when the oncoming lane is clear.
 final class Traffic {
     let map: CityMap
     private(set) var bots: [Bot] = []
@@ -601,7 +613,9 @@ final class Traffic {
     private let cruise: CGFloat = 78
     /// Seconds since the level started; drives the traffic lights.
     private(set) var clock: CGFloat = 0
-    private let cornerSpeed: CGFloat = 42
+    private let cornerSpeed: CGFloat = 40
+    /// Where bots honked this step (the scene plays the horns it can hear).
+    private(set) var honks: [CGPoint] = []
 
     init(map: CityMap, starts: [BotStart], seed: UInt64) {
         self.map = map
@@ -610,8 +624,12 @@ final class Traffic {
             let lane = map.lane(from: start.from, to: start.to)
             let p = CGPoint(x: lane.start.x + (lane.end.x - lane.start.x) * start.progress,
                             y: lane.start.y + (lane.end.y - lane.start.y) * start.progress)
-            bots.append(Bot(position: p, heading: lane.heading, speed: cruise, from: start.from, to: start.to,
-                            waypoints: [lane.end], tint: start.tint))
+            var bot = Bot(position: p, heading: lane.heading, speed: cruise, from: start.from, to: start.to,
+                          waypoints: [lane.end], tint: start.tint)
+            bot.pace = rng.range(0.82, 1.14)
+            bot.headway = rng.range(1.0, 1.8)
+            bot.speed = cruise * bot.pace
+            bots.append(bot)
         }
     }
 
@@ -624,9 +642,27 @@ final class Traffic {
         bots[index].speed = 0
     }
 
-    /// `blockers`: player car centers the bots must not drive into.
-    func step(_ dt: CGFloat, blockers: [CGPoint]) {
+    /// Picks the street after this one (not straight back), once.
+    private func planNext(_ bot: inout Bot) {
+        guard bot.next < 0 else { return }
+        var options = map.neighbors(bot.to).filter { $0 != bot.from }
+        if options.isEmpty { options = map.neighbors(bot.to) }
+        bot.next = options[rng.int(options.count)]
+    }
+
+    /// Whether the turn into `next` is a real turn (not straight on).
+    private func turns(_ bot: Bot) -> Bool {
+        guard bot.next >= 0 else { return false }
+        let a = map.lane(from: bot.from, to: bot.to).heading
+        let b = map.lane(from: bot.to, to: bot.next).heading
+        return abs(CGFloat.angleDelta(a, b)) > 0.4
+    }
+
+    /// `blockers`: player cars (the first `playerCars`) and people on the road the bots must not
+    /// drive into. Bots honk at and pass round player cars only, never people.
+    func step(_ dt: CGFloat, blockers: [CGPoint], playerCars: Int = 1) {
         clock += dt
+        honks.removeAll()
         for index in bots.indices {
             var bot = bots[index]
             if bot.stunned > 0 {
@@ -644,30 +680,35 @@ final class Traffic {
                 continue
             }
             if bot.waypoints.isEmpty {
-                var options = map.neighbors(bot.to).filter { $0 != bot.from }
-                if options.isEmpty { options = map.neighbors(bot.to) }
-                let next = options[rng.int(options.count)]
+                planNext(&bot)
                 bot.from = bot.to
-                bot.to = next
+                bot.to = bot.next
+                bot.next = -1
                 let lane = map.lane(from: bot.from, to: bot.to)
                 bot.waypoints = [lane.start, lane.end]
             }
-            let target = bot.waypoints[0]
+            let goal = bot.waypoints[0]
+            let lastLeg = bot.waypoints.count == 1
+            let distanceToGoal = goal.distance(to: bot.position)
+            if lastLeg && distanceToGoal < 160 { planNext(&bot) }
+            // Steer for the lane point, shifted sideways while passing a stopped car
+            let laneHeading = atan2(goal.y - bot.position.y, goal.x - bot.position.x)
+            let target = CGPoint(x: goal.x - sin(laneHeading) * bot.offset, y: goal.y + cos(laneHeading) * bot.offset)
             let dx = target.x - bot.position.x
             let dy = target.y - bot.position.y
             let distance = hypot(dx, dy)
             let ahead = dx * cos(bot.heading) + dy * sin(bot.heading)
             // Approaching the stop line (end of the lane) on a red or late yellow light?
-            var mustStop = false
-            if bot.waypoints.count == 1 && distance < 90 {
+            var stopLine: CGFloat?
+            if lastLeg && distance < 110 {
                 let horizontal = bot.from / map.cols == bot.to / map.cols
                 switch map.signal(at: bot.to, horizontal: horizontal, time: clock) {
-                case .green: mustStop = false
-                case .yellow: mustStop = distance > 40 || bot.speed < 20
-                case .red: mustStop = true
+                case .green: break
+                case .yellow: if distance > 40 || bot.speed < 20 { stopLine = distance - 10 }
+                case .red: stopLine = distance - 10
                 }
             }
-            if !mustStop && (distance < 24 || (distance < 70 && ahead < 0)) {
+            if stopLine == nil && (distance < 24 || (distance < 70 && ahead < 0)) {
                 bot.waypoints.removeFirst()
                 bots[index] = bot
                 continue
@@ -677,52 +718,109 @@ final class Traffic {
             let maxTurn = 2.4 * dt
             bot.heading += max(-maxTurn, min(maxTurn, error))
 
-            var targetSpeed = abs(error) > 0.35 ? cornerSpeed : cruise
-            if mustStop {
-                // Ease to a stop just before the line
-                targetSpeed = min(targetSpeed, max(0, (distance - 10) * 1.4))
-                bot.braking = true
+            // The speed it wants: its own pace, slower in a bend and before a turn
+            var v0 = cruise * bot.pace
+            if abs(error) > 0.35 { v0 = min(v0, cornerSpeed) }
+            if lastLeg && turns(bot) && distance < 140 {
+                v0 = min(v0, cornerSpeed + (distance / 140) * (v0 - cornerSpeed))
             }
-            var blockedByBot = false
-            var blocked = false
-            func check(_ point: CGPoint) -> Bool {
-                let vx = point.x - bot.position.x
-                let vy = point.y - bot.position.y
+            if bot.passing { v0 = min(v0, 55) }
+
+            // The nearest thing ahead in its path: a car, a player, a person or the stop line
+            var gap = CGFloat.greatestFiniteMagnitude
+            var leaderSpeed: CGFloat = 0
+            var blockedByPlayer = false
+            func inPath(_ point: CGPoint) -> CGFloat? {
+                let vx = point.x - bot.position.x, vy = point.y - bot.position.y
                 let forward = vx * cos(bot.heading) + vy * sin(bot.heading)
                 let lateral = abs(-vx * sin(bot.heading) + vy * cos(bot.heading))
-                return forward > 0 && forward < 82 && lateral < 26
+                return forward > 0 && forward < 200 && lateral < 24 ? forward : nil
             }
-            for point in blockers where check(point) { blocked = true }
-            if !blocked && bot.ignoreBots <= 0 {
-                for other in bots.indices where other != index && check(bots[other].position) {
-                    blocked = true
-                    blockedByBot = true
-                    break
+            for (k, point) in blockers.enumerated() {
+                if let f = inPath(point), f - 46 < gap {
+                    gap = f - 46
+                    leaderSpeed = 0
+                    blockedByPlayer = k < playerCars
                 }
             }
-            if blocked {
-                targetSpeed = 0
+            if bot.ignoreBots <= 0 {
+                for other in bots.indices where other != index {
+                    if let f = inPath(bots[other].position), f - 46 < gap {
+                        gap = f - 46
+                        // Only the part of its speed along our way
+                        leaderSpeed = max(0, bots[other].speed * cos(CGFloat.angleDelta(bot.heading, bots[other].heading)))
+                        blockedByPlayer = false
+                    }
+                }
+            }
+            if let line = stopLine, line < gap {
+                gap = max(0, line)
+                leaderSpeed = 0
+                blockedByPlayer = false
+            }
+
+            // Intelligent-driver following: free road acceleration, braking to keep the gap
+            let aMax: CGFloat = 95, comfortable: CGFloat = 210
+            let v = bot.speed
+            var accel = aMax * (1 - pow(min(v / max(v0, 1), 1.5), 4))
+            if gap < CGFloat.greatestFiniteMagnitude {
+                let wanted = 22 + v * bot.headway + v * (v - leaderSpeed) / (2 * sqrt(aMax * comfortable))
+                let s = max(gap, 1)
+                accel -= aMax * (wanted / s) * (wanted / s)
+            }
+            accel = max(-420, accel)
+            bot.speed = max(0, min(v0 * 1.05, v + accel * dt))
+            if gap < 6 { bot.speed = min(bot.speed, 0) }
+            bot.braking = accel < -40 || bot.speed < 2
+
+            // Stuck behind something: other bots squeeze past each other after a while; a
+            // player's car standing in the lane gets a honk, then the bot pulls out round it
+            if bot.speed < 4 && gap < 60 && stopLine == nil {
                 bot.waiting += dt
-                if blockedByBot && bot.waiting > 2.5 {
+                if blockedByPlayer && bot.waiting > 1.2 && clock - bot.honkedAt > 3.5 {
+                    bot.honkedAt = clock
+                    honks.append(bot.position)
+                }
+                if !blockedByPlayer && bot.waiting > 2.5 {
                     bot.ignoreBots = 1.6
                     bot.waiting = 0
                 }
-            } else {
+                if blockedByPlayer && bot.waiting > 2.5 && !bot.passing && oncomingClear(bot) {
+                    bot.passing = true
+                }
+            } else if gap > 120 || stopLine != nil {
                 bot.waiting = 0
+            }
+            if bot.passing {
+                bot.offset = min(68, bot.offset + 40 * dt)
+                // Back into the lane once the way ahead in it is clear
+                var clearInLane = true
+                for point in blockers.prefix(playerCars) {
+                    let vx = point.x - bot.position.x, vy = point.y - bot.position.y
+                    let forward = vx * cos(laneHeading) + vy * sin(laneHeading)
+                    if forward > -30 && forward < 80 && abs(-vx * sin(laneHeading) + vy * cos(laneHeading)) < 40 { clearInLane = false }
+                }
+                if clearInLane && bot.offset >= 60 { bot.passing = false; bot.waiting = 0 }
+            } else {
+                bot.offset = max(0, bot.offset - 30 * dt)
             }
             bot.ignoreBots = max(0, bot.ignoreBots - dt)
 
-            let accel: CGFloat = bot.speed < targetSpeed ? 90 : 280
-            if bot.speed < targetSpeed {
-                bot.speed = min(targetSpeed, bot.speed + accel * dt)
-            } else {
-                bot.speed = max(targetSpeed, bot.speed - accel * dt)
-            }
-            bot.braking = targetSpeed < bot.speed - 1 || (targetSpeed == 0)
             bot.position.x += cos(bot.heading) * bot.speed * dt
             bot.position.y += sin(bot.heading) * bot.speed * dt
             bots[index] = bot
         }
+    }
+
+    /// Nothing coming the other way in the next 25 m of the oncoming lane.
+    private func oncomingClear(_ bot: Bot) -> Bool {
+        for other in bots {
+            let vx = other.position.x - bot.position.x, vy = other.position.y - bot.position.y
+            let forward = vx * cos(bot.heading) + vy * sin(bot.heading)
+            let left = -vx * sin(bot.heading) + vy * cos(bot.heading)
+            if forward > -20 && forward < 250 && left > 30 && left < 110 { return false }
+        }
+        return true
     }
 
     /// Compact state for the network: x, y, heading*100, from, to, speed per bot.

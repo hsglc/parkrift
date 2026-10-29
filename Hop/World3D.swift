@@ -1348,6 +1348,18 @@ final class World3D {
     }
 
     /// Back to the normal lens after spectating.
+    /// Pulled over by the police: a slow, low orbit round the stopped car, starting from its front
+    /// quarter (where the cruiser stands) and swinging round its side.
+    func bustedShot(position: CGPoint, heading: CGFloat, t: CGFloat) {
+        let p = World3D.vec(position)
+        let car = SIMD3<Float>(p.x, 0, p.z)
+        let angle = Float(heading) + 0.75 + Float(t) * 0.3
+        let distance: Float = 9 - min(1.5, Float(t) * 0.5)
+        cameraNode.simdPosition = car + SIMD3<Float>(cos(angle) * distance, 2.4 + Float(t) * 0.25, -sin(angle) * distance)
+        cameraNode.simdLook(at: car + SIMD3<Float>(0, 0.9, 0), up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+        cameraNode.camera?.fieldOfView = 48
+    }
+
     func endSpectate() {
         cameraNode.camera?.fieldOfView = fieldOfView
         spectateIndex = -1
