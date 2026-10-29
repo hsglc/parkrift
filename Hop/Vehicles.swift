@@ -195,7 +195,11 @@ enum TrafficVehicles {
             holder.addChildNode(copy)
         }
         let set = SCNNode()
-        if let merged = MeshMerge.merge(holder, material: wheelMaterial(model)) {
+        // No normal map on the merged wheels: SceneKit crashed building tangents for a mesh made
+        // in code (and the tyres' fine relief is not seen on parked cars anyway)
+        let flatWheels = wheelMaterial(model).copy() as! SCNMaterial
+        flatWheels.normal.contents = nil
+        if let merged = MeshMerge.merge(holder, material: flatWheels) {
             set.geometry = merged
         } else {
             // Could not merge: the four wheels as they are
