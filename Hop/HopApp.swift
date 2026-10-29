@@ -359,7 +359,7 @@ final class AppModel: ObservableObject {
     /// (caches filled once), not climb round after round.
     func runLeakTest() {
         var steps: [(TimeInterval, String, () -> Void)] = []
-        var t: TimeInterval = 2.0
+        var t: TimeInterval = 8.0   // after the launch has settled
         func add(_ wait: TimeInterval, _ name: String, _ action: @escaping () -> Void) {
             t += wait
             steps.append((t, name, action))
