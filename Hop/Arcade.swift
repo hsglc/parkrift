@@ -212,7 +212,7 @@ extension Array {
 /// and drives the streets to the player with its siren on; once close it sticks to the player's
 /// own path (so it does not cut through buildings), a bit faster than the player can drive without
 /// nitro. It catches the player when close enough and gives up after a while or when far behind.
-/// The model is Polyfork's police cruiser; its light bar flashes and its wheels turn.
+/// The model is the Meshy police car (TrafficVehicles); its light bar flashes and its wheels turn.
 final class PoliceChase {
     enum Outcome { case none, caught, escaped }
 

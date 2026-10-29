@@ -793,24 +793,23 @@ final class Car3D {
         carSpec = spec
         paintColor = color
 
-        // Traffic and parked cars: Kenney vehicles
+        // Traffic, parked and patrol cars: the Meshy traffic cars, each in a paint of its own
         if style != .racer, PerfSettings.optimized,
-           let vehicle = forcedVehicle.flatMap({ KenneyCatalog.all[$0] }) ?? TrafficVehicles.pick(variety &* 31 &+ style.rawValue),
-           let template = TrafficVehicles.body(vehicle.id) {
+           let vehicle = forcedVehicle.flatMap({ TrafficVehicles.models[$0] }) ?? TrafficVehicles.pick(variety &* 31 &+ style.rawValue) {
+            let paint = TrafficVehicles.paint(variety &* 7 &+ style.rawValue &* 131)
             if parked {
-                if let flat = TrafficVehicles.parked(vehicle) { body.addChildNode(flat.clone()) }
+                if let template = TrafficVehicles.parked(vehicle, paint: paint) { body.addChildNode(template.clone()) }
                 return
             }
-            body.addChildNode(template.clone())
-            var lights: [SCNNode] = []
-            let tailX = vehicle.rear - 0.01
-            for z in [vehicle.width * 0.3, -vehicle.width * 0.3] {
-                lights.append(CarFactory.box(0.05, 0.14, 0.3, 0.02, brakeMaterial, at: SCNVector3(tailX, 0.72, z), to: body))
+            guard let template = TrafficVehicles.body(vehicle, paint: paint) else { return }
+            let car = template.clone()
+            // Its tail lamps glow when it brakes (a material of this car's own)
+            if let tail = car.childNode(withName: "taillight", recursively: true) {
+                tail.geometry = tail.geometry?.copy() as? SCNGeometry
+                tail.geometry?.materials = [brakeMaterial]
             }
-            lights.append(CarFactory.box(0.05, 0.08, 0.22, 0.02, reverseMaterial, at: SCNVector3(tailX, 0.55, 0), to: body))
-            for light in lights { light.castsShadow = false }
-            detailNodes += lights
-            if let wheelModel = TrafficVehicles.wheel(vehicle.id) {
+            body.addChildNode(car)
+            if let wheelModel = TrafficVehicles.wheel(vehicle) {
                 wheelRadius = CGFloat(vehicle.wheelRadius)
                 for spot in vehicle.wheels {
                     let pivot = SCNNode()
@@ -1811,24 +1810,12 @@ final class World3D {
         return system
     }
 
-    /// Polyfork's police cruiser (front along +z in the file), turned to face +x like every car.
+    /// The police car (Meshy, its own livery): every chase shares its meshes and materials.
     static let policeTemplate: SCNNode? = {
-        guard let url = Bundle.main.url(forResource: "pf_police", withExtension: "usdz"),
-              let scene = try? SCNScene(url: url, options: nil) else { return nil }
-        let model = SCNNode()
-        for child in scene.rootNode.childNodes { model.addChildNode(child) }
-        model.eulerAngles.y = Float.pi / 2
-        model.enumerateHierarchy { node, _ in
+        guard let holder = TrafficVehicles.policeTemplate() else { return nil }
+        holder.enumerateHierarchy { node, _ in
             node.castsShadow = node.name?.hasPrefix("wheel") == false
-            for material in node.geometry?.materials ?? [] {
-                material.lightingModel = .physicallyBased
-                // The light bar flashes through its emission: set one now so the shader compiled
-                // ahead of time is the one the chase uses
-                material.emission.contents = UIColor.black
-            }
         }
-        let holder = SCNNode()
-        holder.addChildNode(model)
         return holder
     }()
 
@@ -1844,7 +1831,7 @@ final class World3D {
             // Every police car's light bar therefore flashes in step.
             node = template.clone()
         } else {
-            node = Car3D(color: .white, style: .sedan, vehicle: "police").node
+            node = Car3D(color: .white, style: .sedan, vehicle: "sedan").node
         }
         levelRoot.addChildNode(node)
         return node

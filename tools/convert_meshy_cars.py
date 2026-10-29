@@ -34,10 +34,25 @@ CARS = [
     dict(id='classico', length=4.4),
 ]
 
-BASE_SIZE = 4096
-MASK_SIZE = 2048
-NORMAL_SIZE = 2048
-ROUGH_SIZE = 1024
+# Traffic and parked cars (NPC=1): Meshy cars of their own, generated the same way. Saved as
+# npc_<id>_*; the police car keeps its own livery (no paint mask) and its light bar lenses become
+# "lamp_red" / "lamp_blue" meshes that the chase flashes.
+NPC_CARS = [
+    dict(id='npc_hatch', src='hatch', length=4.0),
+    dict(id='npc_sedan', src='sedan', length=4.7),
+    dict(id='npc_suv', src='suv', length=4.6),
+    dict(id='npc_pickup', src='pickup', length=5.3),
+    dict(id='npc_police', src='police', length=4.9, livery=True),
+]
+NPC = bool(os.environ.get('NPC'))
+if NPC:
+    CARS = NPC_CARS
+
+# Traffic cars are seen smaller and many at a time: their maps are half the garage cars' size
+BASE_SIZE = 2048 if NPC else 4096
+MASK_SIZE = 1024 if NPC else 2048
+NORMAL_SIZE = 1024 if NPC else 2048
+ROUGH_SIZE = 512 if NPC else 1024
 TEXELS = {}
 # Off by default: the model is used exactly as Meshy made it (its geometry, normals and UVs, so its
 # normal map lines up) and only the paint mask, wheels and lamps are split out. REWORK=1 turns on
@@ -223,11 +238,14 @@ def texture(obj, car, out):
     chroma = g - np.maximum(r, b)
     # Green by ratio, not by amount: paint in deep shadow (dark lime) is still paint
     painted = (g > 0.03) & (g > r * 1.12) & (g > b * 1.35)
-    strong = painted & (chroma > np.percentile(chroma[painted], 60))
-    lime_g = np.median(g[strong])
-    # Its shading kept, a little softened (a gloss coat shows baked shadows harder than matte)
-    level = np.clip(g / lime_g, 0, 1.1) ** 0.7 * 0.86
-    a[painted] = np.clip(level[painted], 0, 1)[:, None]
+    if car.get('livery'):
+        painted[:] = False
+    else:
+        strong = painted & (chroma > np.percentile(chroma[painted], 60))
+        lime_g = np.median(g[strong])
+        # Its shading kept, a little softened (a gloss coat shows baked shadows harder than matte)
+        level = np.clip(g / lime_g, 0, 1.1) ** 0.7 * 0.86
+        a[painted] = np.clip(level[painted], 0, 1)[:, None]
 
     size = min(w, BASE_SIZE)
     base = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
@@ -240,7 +258,8 @@ def texture(obj, car, out):
     m = m.resize((MASK_SIZE, MASK_SIZE), Image.BOX)
     # RGB, not grayscale: SceneKit turns 8-bit gray images into an R8 sRGB texture, a format the
     # simulator and Macs do not have (the app crashed there)
-    m.convert('RGB').save(os.path.join(out, car['id'] + '_mask.png'))
+    if not car.get('livery'):
+        m.convert('RGB').save(os.path.join(out, car['id'] + '_mask.png'))
 
     normal = linked_image(['Normal'])
     if normal is not None:
@@ -360,6 +379,27 @@ def refine(obj, levels=1, crease_angle=38, small_faces=0, small_size=0.0, fold_a
         bpy.context.view_layer.objects.active = obj
         bpy.ops.object.join()
     return sharp, len(small)
+
+
+def lightbar(obj, car):
+    """Red and blue lens faces of a roof light bar (saturated texels on the roof)."""
+    texels = TEXELS[car['id']][0]
+    h, w = texels.shape[:2]
+    mesh = obj.data
+    uv = mesh.uv_layers[0].data
+    lo, hi = bounds([v.co for v in mesh.vertices])
+    found = {'lamp_red': set(), 'lamp_blue': set()}
+    for poly in mesh.polygons:
+        if poly.center.z < hi.z - 0.14:
+            continue
+        u = sum(uv[i].uv[0] for i in poly.loop_indices) / poly.loop_total
+        v = sum(uv[i].uv[1] for i in poly.loop_indices) / poly.loop_total
+        r, g, b = texels[min(h - 1, max(0, int((1 - v) * h))), min(w - 1, max(0, int(u * w)))]
+        if r > 0.35 and r > g * 2.2 and r > b * 2.2:
+            found['lamp_red'].add(poly.index)
+        elif b > 0.3 and b > r * 1.8 and b > g * 1.3:
+            found['lamp_blue'].add(poly.index)
+    return found
 
 
 def export(objects, path):
@@ -545,9 +585,30 @@ def classify_faces(obj, car):
         if bright < 0.16 and spread < 0.06 and height > 0.5 and poly.normal.z > -0.2:
             glass.add(poly.index)
         # Head lamps: bright and pale, at the very front, facing forward
-        elif bright > 0.62 and spread < 0.2 and c.x > hi.x - 0.45 and poly.normal.x > 0.3 and height < 0.75:
+        elif bright > 0.62 and spread < 0.2 and c.x > hi.x - 0.45 and poly.normal.x > 0.3 \
+                and height < (0.4 if car.get('livery') else 0.75):
             head.add(poly.index)
     return glass, head
+
+
+def tail_faces(obj, car):
+    """Traffic cars: the red tail lamps Meshy painted at the back (they glow when braking)."""
+    texels = TEXELS[car['id']][0]
+    h, w = texels.shape[:2]
+    mesh = obj.data
+    uv = mesh.uv_layers[0].data
+    lo, hi = bounds([v.co for v in mesh.vertices])
+    faces = set()
+    for poly in mesh.polygons:
+        c = poly.center
+        if c.x > lo.x + 0.5 or poly.normal.x > -0.2 or (c.z - lo.z) / (hi.z - lo.z) < 0.25:
+            continue
+        u = sum(uv[i].uv[0] for i in poly.loop_indices) / poly.loop_total
+        v = sum(uv[i].uv[1] for i in poly.loop_indices) / poly.loop_total
+        r, g, b = texels[min(h - 1, max(0, int((1 - v) * h))), min(w - 1, max(0, int(u * w)))]
+        if r > 0.3 and r > g * 2 and r > b * 2:
+            faces.add(poly.index)
+    return faces
 
 
 def clean_glass(obj, car, glass_faces, out):
@@ -676,7 +737,7 @@ def tris(o):
 
 def convert(car, src, out):
     reset()
-    obj = load(os.path.join(src, car['id'], 'model.glb'))
+    obj = load(os.path.join(src, car.get('src', car['id']), 'model.glb'))
     obj.name = 'textured'
     orient(obj, car)
     paint_share = texture(obj, car, out)
@@ -736,6 +797,15 @@ def convert(car, src, out):
         cleaned = clean_glass(obj, car, glass_faces, out)
         print(f"  {car['id']}: {len(glass_faces)} window faces, {cleaned} paint texels removed from glass")
     extra = []
+    if car.get('livery'):
+        # One at a time: each split renumbers the faces left in the body
+        for name in ('lamp_red', 'lamp_blue'):
+            faces = lightbar(obj, car)[name]
+            if faces:
+                extra.append(split(obj, faces, name))
+                print(f"  {car['id']}: {name} {len(faces)} faces")
+        # Picked again: the splits renumbered the faces
+        glass_faces, head_faces = classify_faces(obj, car)
     if head_faces:
         extra.append(split(obj, head_faces, 'headlight'))
     if REWORK and not os.environ.get('NOREFINE'):
@@ -749,7 +819,12 @@ def convert(car, src, out):
     if REWORK:
         panes, points = flatten_glass(obj, car)
         print(f"  {car['id']}: {panes} window faces ironed flat ({points} points)")
-    light = taillights(obj)
+    if NPC:
+        faces = tail_faces(obj, car)
+        light = split(obj, faces, 'taillight') if faces else None
+        print(f"  {car['id']}: tail lamps {len(faces)} faces")
+    else:
+        light = taillights(obj)
     if REWORK and not os.environ.get("NOIRON"):
         iron(obj)
     # Windows stay in Meshy's texture (pixel for pixel): splitting them by faces gave jagged edges

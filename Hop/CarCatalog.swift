@@ -492,6 +492,13 @@ enum CarModels {
         return material
     }
 
+    /// Paints a textured material through its mask on the GPU (traffic cars).
+    static func applyPaintShader(_ material: SCNMaterial, mask: UIImage, color: UIColor) {
+        material.shaderModifiers = [.surface: paintShader]
+        material.setValue(SCNMaterialProperty(contents: mask), forKey: "paintMask")
+        setPaint(material, color)
+    }
+
     /// Changes a textured car material's paint (a shader value only).
     static func setPaint(_ material: SCNMaterial, _ color: UIColor) {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0

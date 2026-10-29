@@ -631,13 +631,14 @@ struct AboutView: View {
     }
 
     private var credits: [Credit] { [
-        Credit(what: Strings.pick("Garaj arabaları ve menü görselleri", "Garage cars and menu art", "Coches del garaje e imágenes del menú"),
+        Credit(what: Strings.pick("Garaj arabaları, trafik araçları, polis arabası ve menü görselleri",
+                                  "Garage cars, traffic cars, police car and menu art",
+                                  "Coches del garaje, coches del tráfico, coche de policía e imágenes del menú"),
                author: Strings.pick("Özgün, Meshy AI ile üretildi", "Original, made with Meshy AI", "Originales, hechos con Meshy AI"),
                license: Strings.pick("Özgün tasarım", "Original design", "Diseño original"), link: "https://www.meshy.ai"),
-        Credit(what: Strings.pick("Trafik araçları", "Traffic vehicles", "Vehículos del tráfico"), author: "Kenney (Car Kit)", license: "CC0", link: "https://kenney.nl/assets/car-kit"),
-        Credit(what: Strings.pick("Yayalar ve animasyonları, koniler, variller, bariyer, polis arabası",
-                                  "Pedestrians and their animations, cones, drums, barricade, police car",
-                                  "Peatones y sus animaciones, conos, bidones, valla, coche de policía"),
+        Credit(what: Strings.pick("Yayalar ve animasyonları, koniler, variller, bariyer",
+                                  "Pedestrians and their animations, cones, drums, barricade",
+                                  "Peatones y sus animaciones, conos, bidones, valla"),
                author: "Polyfork", license: Strings.pick("Ticari kullanım", "Commercial use", "Uso comercial"), link: "https://polyfork.dev"),
         Credit(what: Strings.pick("Lastik, rüzgâr, çarpma ve bitiş sesleri", "Tyre, wind, crash and finish sounds", "Sonidos de neumáticos, viento, choques y meta"),
                author: "Stunt Rally / VDrift, Halleck, nathanshadow", license: "CC BY-SA 3.0", link: "https://opengameart.org/content/stunt-rally-sounds"),
