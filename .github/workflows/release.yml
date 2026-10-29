@@ -15,6 +15,9 @@ on:
       shots:
         description: Take new screenshots (0 = keep the ones already uploaded)
         default: "1"
+      notes_only:
+        description: Only update the App Review notes (1 = leave build, texts and screenshots alone)
+        default: "0"
   push:
     branches: [release]
 
@@ -27,6 +30,7 @@ jobs:
       ASC_ISSUER_ID: 1e043955-17da-4831-838a-b4e2d593d0b5
       BUNDLE_ID: com.huseyingulcu.hop
       SUBMIT: ${{ inputs.submit || '1' }}
+      NOTES_ONLY: ${{ inputs.notes_only || '0' }}
       REVIEW_PHONE: ${{ secrets.REVIEW_PHONE || inputs.phone }}
     steps:
       - uses: actions/checkout@v4

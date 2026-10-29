@@ -117,12 +117,21 @@ def main():
     app_id = app['id']
     print('App', app_id, app['attributes'].get('name'))
 
-    game_center(app_id)
-    app_info(app_id)
+    if os.environ.get('NOTES_ONLY') != '1':
+        game_center(app_id)
+        app_info(app_id)
     version = ensure_version(app_id)
     if not version:
         left('App Store version could not be created'); return finish()
     vid = version['id']
+    if os.environ.get('NOTES_ONLY') == '1':
+        # Only the App Review notes and contact: the attached build and everything else stay as they are
+        current = call('GET', f'/v1/appStoreVersions/{vid}/build', quiet=True)
+        if current and current.get('data'):
+            print('attached build stays', current['data']['attributes'].get('version'))
+        review_details(vid)
+        print('review notes updated')
+        return finish()
     texts(vid)
     # Copyright line is required before the version can go to review
     call('PATCH', f'/v1/appStoreVersions/{vid}', {'data': {'type': 'appStoreVersions', 'id': vid,
@@ -344,7 +353,7 @@ def attach_build(app_id, vid):
 
 
 # App Review Information > Notes (Apple asked for these six points on the first submission)
-REVIEW_NOTES = """1. Screen recording: attached to our reply in App Store Connect; captured on a physical iPhone with the latest iOS, from launch through the menu, garage, a parking level, a city race and creating an online room. The app has no account registration, login, user-generated content or paid content.
+REVIEW_NOTES = """1. Screen recording: attached to our reply in App Store Connect; captured on a physical iPhone with the latest iOS, from launch through the menu, garage, a parking level, a city race and joining an online room created on a second device. The app has no account registration, login, user-generated content or paid content.
 2. Purpose and audience: a casual 3D car game for players 9+ who enjoy short driving challenges: 50 parking levels that get harder one by one, city races and parking races through traffic, and an online mode to play the same level against a friend. Quick skill-based sessions of one to three minutes.
 3. How to use: no setup, account or login; everything works right after launch. Solo: Park Master > choose a level > pick a car > start. City works the same way. Neither needs a network. Coins are earned only by playing and unlock cars and upgrades; there are no in-app purchases or ads. Online: Create Room on one device, Join Room with the 4-letter code on a second device, or Quick Match on two devices at about the same time (if nobody is found within a minute it starts a solo race against the traffic). Game Center leaderboards are optional.
 4. External services: Cloudflare Workers (a relay that passes car positions between the two phones in a room and hosts the privacy and support pages; it stores nothing) and Apple Game Center (optional leaderboards). No analytics, ads, payments, authentication or AI services at runtime. Car models were made in advance with Meshy AI (original designs) and are bundled; other assets are CC0 or commercially licensed and credited in the app (the (i) button on the main menu).
