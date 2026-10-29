@@ -2299,8 +2299,9 @@ final class World3D {
         // Sidewalks / plazas on each block
         for block in city.blocks {
             let plane = SCNPlane(width: block.width / 10, height: block.height / 10)
-            // Photo-scanned paving slabs (Poly Haven), a tile every 2.5 m; wet or snowy with the weather
-            let sidewalk = Scenery.surface("pavement", tile: 2.5, size: CGSize(width: block.width / 10, height: block.height / 10), normal: 0.8)
+            // Interlocking herringbone pavers (Poly Haven scan), a tile every 1.4 m with full relief;
+            // wet or snowy with the weather
+            let sidewalk = Scenery.surface("sidewalk", tile: 1.4, size: CGSize(width: block.width / 10, height: block.height / 10), normal: 1.2)
             roadMaterials.append(sidewalk)
             plane.materials = [sidewalk]
             let node = flat(plane, y: 0.08)
@@ -2408,7 +2409,7 @@ final class World3D {
         let poleMaterial = Mat.pbr(UIColor(white: 0.22, alpha: 1), metal: 0.6, rough: 0.45)
         let headMaterial = Mat.pbr(UIColor(white: 0.08, alpha: 1), metal: 0.2, rough: 0.6)
         // Kerbs: textured concrete (repeated along their length below), not flat white
-        let curbMaterial = Scenery.shared("concrete", tile: 1, size: CGSize(width: 1, height: 1))
+        let curbMaterial = Scenery.shared("curb", tile: 1, size: CGSize(width: 1, height: 1))
         let lampGlow = Mat.glow(UIColor(red: 1.0, green: 0.92, blue: 0.75, alpha: 1))
         lampGlow.diffuse.intensity = 1.4
         // Worn road paint (the zebra stripe's texture), not a flat white that glowed at night
@@ -2515,16 +2516,17 @@ final class World3D {
         // Raised curbs around every block
         for block in city.blocks {
             let edges: [(CGPoint, Float, Float)] = [
-                (CGPoint(x: block.midX, y: block.minY), Float(block.width / 10), 0.3),
-                (CGPoint(x: block.midX, y: block.maxY), Float(block.width / 10), 0.3),
-                (CGPoint(x: block.minX, y: block.midY), 0.3, Float(block.height / 10)),
-                (CGPoint(x: block.maxX, y: block.midY), 0.3, Float(block.height / 10))
+                (CGPoint(x: block.midX, y: block.minY), Float(block.width / 10) + 0.45, 0.45),
+                (CGPoint(x: block.midX, y: block.maxY), Float(block.width / 10) + 0.45, 0.45),
+                (CGPoint(x: block.minX, y: block.midY), 0.45, Float(block.height / 10)),
+                (CGPoint(x: block.maxX, y: block.midY), 0.45, Float(block.height / 10))
             ]
             for (point, w, l) in edges {
                 let c = World3D.vec(point)
-                mesh.addBox(center: SIMD3(c.x, c.y, c.z), width: w, height: 0.16, length: l, angle: 0, wall: curbMaterial, roof: curbMaterial,
+                // Light granite-grey kerb stones, 45 cm wide and 18 cm high: a clear edge to the street
+                mesh.addBox(center: SIMD3(c.x, c.y, c.z), width: w, height: 0.18, length: l, angle: 0, wall: curbMaterial, roof: curbMaterial,
                             wallRepeats: { span in SIMD2(max(1, span / 1.5), 1) },
-                            roofRepeats: SIMD2(max(1, w / 1.5), max(1, l / 1.5)))
+                            roofRepeats: SIMD2(max(1, w / 1.0), max(1, l / 1.0)))
             }
         }
         if let geometry = mesh.build() {
