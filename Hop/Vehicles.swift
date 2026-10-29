@@ -1,5 +1,6 @@
 import SceneKit
 import UIKit
+import simd
 
 /// A traffic car: model files, wheel spots and size (meters, +x forward). Numbers from
 /// tools/convert_meshy_cars.py (NPC=1).
@@ -156,6 +157,14 @@ enum TrafficVehicles {
         return body
     }
 
+    private static var wheelMaterials: [String: SCNMaterial] = [:]
+    private static func wheelMaterial(_ model: TrafficModel) -> SCNMaterial {
+        if let cached = wheelMaterials[model.id] { return cached }
+        let made = material(model, paint: nil)
+        wheelMaterials[model.id] = made
+        return made
+    }
+
     /// One wheel (tyre and rim) with the car's texture.
     static func wheel(_ model: TrafficModel) -> SCNNode? {
         lock.lock()
@@ -163,7 +172,7 @@ enum TrafficVehicles {
         if let cached = wheels[model.id] { return cached }
         guard let source = wheelMesh(model) else { return nil }
         let wheel = source.clone()
-        let shared = material(model, paint: nil)
+        let shared = wheelMaterial(model)
         wheel.enumerateHierarchy { node, _ in
             node.castsShadow = false
             guard let geometry = node.geometry?.copy() as? SCNGeometry else { return }
@@ -185,10 +194,16 @@ enum TrafficVehicles {
             if (spot.2 > 0) != (model.wheelModelSide > 0) { copy.eulerAngles.y = Float.pi }
             holder.addChildNode(copy)
         }
-        let flat = holder.flattenedClone()
-        flat.castsShadow = false
-        wheelSets[model.id] = flat
-        return flat
+        let set = SCNNode()
+        if let merged = MeshMerge.merge(holder, material: wheelMaterial(model)) {
+            set.geometry = merged
+        } else {
+            // Could not merge: the four wheels as they are
+            set.addChildNode(holder)
+        }
+        set.castsShadow = false
+        wheelSets[model.id] = set
+        return set
     }
 
     /// A parked car: its body and one merged wheel mesh.
@@ -247,5 +262,84 @@ enum TrafficVehicles {
             }
         }
         return result
+    }
+}
+
+/// Merges the meshes under some nodes into one triangle mesh (positions, normals and the first
+/// UV set, in the holder's space) with one material. SceneKit's flattenedClone dropped the
+/// traffic cars' wheels (parked cars stood on bare wheel arches), so the four wheels are joined
+/// here by hand: one draw call per parked car instead of eight.
+enum MeshMerge {
+    private static func floats(_ source: SCNGeometrySource, components: Int) -> [[Float]] {
+        guard source.usesFloatComponents, source.bytesPerComponent == 4 else { return [] }
+        var result: [[Float]] = []
+        result.reserveCapacity(source.vectorCount)
+        source.data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            for i in 0..<source.vectorCount {
+                let base = source.dataOffset + i * source.dataStride
+                var v = [Float](repeating: 0, count: components)
+                for c in 0..<min(components, source.componentsPerVector) {
+                    v[c] = raw.load(fromByteOffset: base + c * 4, as: Float.self)
+                }
+                result.append(v)
+            }
+        }
+        return result
+    }
+
+    private static func indices(_ element: SCNGeometryElement) -> [UInt32] {
+        guard element.primitiveType == .triangles else { return [] }
+        let count = element.primitiveCount * 3
+        var out: [UInt32] = []
+        out.reserveCapacity(count)
+        element.data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            for i in 0..<count {
+                switch element.bytesPerIndex {
+                case 1: out.append(UInt32(raw.load(fromByteOffset: i, as: UInt8.self)))
+                case 2: out.append(UInt32(raw.load(fromByteOffset: i * 2, as: UInt16.self)))
+                default: out.append(raw.load(fromByteOffset: i * 4, as: UInt32.self))
+                }
+            }
+        }
+        return out
+    }
+
+    static func merge(_ holder: SCNNode, material: SCNMaterial) -> SCNGeometry? {
+        var positions: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        var uvs: [CGPoint] = []
+        var all: [UInt32] = []
+        holder.enumerateHierarchy { node, _ in
+            guard let geometry = node.geometry,
+                  let vertexSource = geometry.sources(for: .vertex).first else { return }
+            let transform = node.simdConvertTransform(matrix_identity_float4x4, to: holder)
+            let normalMatrix = simd_float3x3(SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
+                                             SIMD3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
+                                             SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z))
+            let p = floats(vertexSource, components: 3)
+            let n = geometry.sources(for: .normal).first.map { floats($0, components: 3) } ?? []
+            let t = geometry.sources(for: .texcoord).first.map { floats($0, components: 2) } ?? []
+            let base = UInt32(positions.count)
+            for i in 0..<p.count {
+                let w = transform * SIMD4<Float>(p[i][0], p[i][1], p[i][2], 1)
+                positions.append(SCNVector3(w.x, w.y, w.z))
+                if i < n.count {
+                    let nn = simd_normalize(normalMatrix * SIMD3<Float>(n[i][0], n[i][1], n[i][2]))
+                    normals.append(SCNVector3(nn.x, nn.y, nn.z))
+                } else {
+                    normals.append(SCNVector3(0, 1, 0))
+                }
+                uvs.append(i < t.count ? CGPoint(x: CGFloat(t[i][0]), y: CGFloat(t[i][1])) : .zero)
+            }
+            for element in geometry.elements {
+                all += indices(element).map { $0 + base }
+            }
+        }
+        guard !positions.isEmpty, !all.isEmpty else { return nil }
+        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals),
+                                             SCNGeometrySource(textureCoordinates: uvs)],
+                                   elements: [SCNGeometryElement(indices: all, primitiveType: .triangles)])
+        geometry.materials = [material]
+        return geometry
     }
 }
