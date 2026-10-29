@@ -333,6 +333,77 @@ enum CarArt {
         }
     }
 
+    /// One stat of the finish panel: icon, small label, big value and its unit.
+    struct FinishStat {
+        let icon: String
+        let label: String
+        let value: String
+        let unit: String
+    }
+
+    /// The finish stats as one dark glass panel: per stat a small label with its icon over a big
+    /// number (with its unit smaller beside it), hairline dividers between, an accent edge on the
+    /// left.
+    static func finishStats(_ stats: [FinishStat], accent: UIColor) -> SKTexture {
+        let labelFont = UIFont.systemFont(ofSize: 10, weight: .heavy)
+        let valueFont = UIFont.monospacedDigitSystemFont(ofSize: 26, weight: .heavy)
+        let unitFont = UIFont.systemFont(ofSize: 13, weight: .bold)
+        let labelAttr: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: UIColor.white.withAlphaComponent(0.55), .kern: 1.4]
+        let valueAttr: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: UIColor.white]
+        let unitAttr: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: UIColor.white.withAlphaComponent(0.6)]
+        let columns: [CGFloat] = stats.map { stat in
+            let label = (stat.label as NSString).size(withAttributes: labelAttr).width + 16
+            let value = (stat.value as NSString).size(withAttributes: valueAttr).width + (stat.unit as NSString).size(withAttributes: unitAttr).width + 3
+            return max(label, value) + 36
+        }
+        let height: CGFloat = 70
+        let size = CGSize(width: ceil(columns.reduce(0, +) + 10), height: height)
+        return render(size, scale: 2) { context, s in
+            let rect = CGRect(origin: .zero, size: s).insetBy(dx: 1, dy: 1)
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: 14)
+            context.setFillColor(UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.78).cgColor)
+            context.addPath(path.cgPath)
+            context.fillPath()
+            context.setStrokeColor(UIColor.white.withAlphaComponent(0.12).cgColor)
+            context.setLineWidth(1)
+            context.addPath(path.cgPath)
+            context.strokePath()
+            // Accent edge
+            context.saveGState()
+            context.addPath(path.cgPath)
+            context.clip()
+            context.setFillColor(accent.cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: s.height))
+            context.restoreGState()
+            var x: CGFloat = 10
+            for (index, stat) in stats.enumerated() {
+                let left = x + 18
+                if let symbol = UIImage(systemName: stat.icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .bold))?
+                    .withTintColor(accent, renderingMode: .alwaysOriginal) {
+                    symbol.draw(at: CGPoint(x: left, y: 14))
+                }
+                (stat.label as NSString).draw(at: CGPoint(x: left + 15, y: 12), withAttributes: labelAttr)
+                let valueSize = (stat.value as NSString).size(withAttributes: valueAttr)
+                (stat.value as NSString).draw(at: CGPoint(x: left, y: 28), withAttributes: valueAttr)
+                (stat.unit as NSString).draw(at: CGPoint(x: left + valueSize.width + 3, y: 28 + valueSize.height - 22), withAttributes: unitAttr)
+                x += columns[index]
+                if index < stats.count - 1 {
+                    context.setFillColor(UIColor.white.withAlphaComponent(0.1).cgColor)
+                    context.fill(CGRect(x: x, y: 14, width: 1, height: s.height - 28))
+                }
+            }
+        }
+    }
+
+    /// Dark on the left, clear to the right: the finish text sits on it, the car stays in view.
+    static let finishScrim: SKTexture = render(CGSize(width: 256, height: 64), scale: 1) { context, s in
+        let colors = [UIColor.black.withAlphaComponent(0.72).cgColor, UIColor.black.withAlphaComponent(0.45).cgColor,
+                      UIColor.black.withAlphaComponent(0).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.45, 1]) {
+            context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: s.width, y: 0), options: [])
+        }
+    }
+
     /// Dark edges, clear middle: focuses the finish title.
     static let finishVignette: SKTexture = render(CGSize(width: 256, height: 128), scale: 1) { context, s in
         let colors = [UIColor.black.withAlphaComponent(0).cgColor, UIColor.black.withAlphaComponent(0.25).cgColor,

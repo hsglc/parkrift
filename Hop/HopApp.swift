@@ -666,7 +666,7 @@ struct RootView: View {
             }
             // Store screenshots (simulator, taken from outside with simctl): stay on a screen
             let args = ProcessInfo.processInfo.arguments
-            if PerfSettings.benchmark && args.contains("-staymenu") {
+            if PerfSettings.benchmark && (args.contains("-staymenu") || args.contains("-staydaily")) {
                 AudioManager.shared.isMuted = true
                 return
             }
