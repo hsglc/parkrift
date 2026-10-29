@@ -949,6 +949,24 @@ final class ParkingScene: SKScene {
             }
             updatePedestrianNodes()
         }
+        // Benchmark: a line-up of both people in every clip in front of the car (to check them)
+        if PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-pedtest") && level.city != nil {
+            let start = level.starts[slot]
+            let ahead = CGVector(dx: cos(start.heading), dy: sin(start.heading))
+            let side = CGVector(dx: -ahead.dy, dy: ahead.dx)
+            for (k, clip) in PedestrianModels.Clip.allCases.enumerated() {
+                for character in 0..<2 {
+                    let node = world.addPedestrianNode()
+                    node.geometry = PedestrianModels.geometry(character: character, clip: clip, time: 0.45)
+                    let along = 75 + CGFloat(character) * 22
+                    let across = (CGFloat(k) - 3) * 15
+                    let p = CGPoint(x: start.position.x + ahead.dx * along + side.dx * across,
+                                    y: start.position.y + ahead.dy * along + side.dy * across)
+                    node.position = World3D.vec(p)
+                    node.eulerAngles.y = Float(start.heading + .pi)
+                }
+            }
+        }
         lap("pedestrians")
         // Arcade extras of the level
         streetProps = level.city != nil ? world.addProps(level.props) : nil

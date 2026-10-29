@@ -2420,7 +2420,7 @@ final class World3D {
     /// The two traffic lights (Meshy from the reference sheet, tools/convert_meshy_street.py):
     /// a plain post and one with a pedestrian signal, lenses facing +x, post on the origin. Read
     /// once (in the background at launch, see CarModels.preload).
-    static let signalTemplates: [SCNNode] = ["signal_pole", "signal_ped"].compactMap { Scenery.prop($0, lodDistance: 32) }
+    static let signalTemplates: [SCNNode] = ["signal_pole", "signal_ped"].compactMap { Scenery.prop($0, near: 14, far: 36) }
     static var signalTemplate: SCNNode? { signalTemplates.first }
     /// The mast's offset from the model's origin along the lenses' facing (the head sits on it).
     static let signalMastOffset: Float = 0

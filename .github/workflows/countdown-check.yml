@@ -56,8 +56,8 @@ jobs:
               xcrun simctl io "$UDID" screenshot shots/daily.png || true
               continue
             elif [ "$RUN" = "streets" ]; then
-              xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playcity -dayweather -AppleLanguages "(tr)" > shots/streets-console.log 2>&1 &
-              sleep 14
+              xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playcity -pedtest -dayweather -AppleLanguages "(tr)" > shots/streets-console.log 2>&1 &
+              sleep 11
               xcrun simctl io "$UDID" screenshot shots/streets-1.png || true
               sleep 8
               xcrun simctl io "$UDID" screenshot shots/streets-2.png || true

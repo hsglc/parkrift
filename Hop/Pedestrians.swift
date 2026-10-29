@@ -409,7 +409,18 @@ enum PedestrianModels {
     static func geometry(character index: Int, clip: Clip, time: CGFloat) -> SCNGeometry? {
         guard let c = character(index), let frames = c.frames[clip], !frames.isEmpty else { return nil }
         let raw = Int(floor(time * CGFloat(c.fps[clip] ?? 12)))
-        let frame = (c.loops[clip] ?? true) ? ((raw % frames.count) + frames.count) % frames.count : max(0, min(frames.count - 1, raw))
+        let n = frames.count
+        let frame: Int
+        if clip == .idle || clip == .phone {
+            // A stretch of a long clip, played back and forth so it never jumps
+            let period = max(1, 2 * n - 2)
+            let k = ((raw % period) + period) % period
+            frame = k < n ? k : period - k
+        } else if c.loops[clip] ?? true {
+            frame = ((raw % n) + n) % n
+        } else {
+            frame = max(0, min(n - 1, raw))
+        }
         return frames[frame]
     }
 
@@ -436,15 +447,7 @@ enum PedestrianModels {
         let uvSource = SCNGeometrySource(data: uvData, semantic: .texcoord, vectorCount: vertexCount, usesFloatComponents: true,
                                          componentsPerVector: 2, bytesPerComponent: 4, dataOffset: 0, dataStride: 8)
         let element = SCNGeometryElement(data: indexData, primitiveType: .triangles, primitiveCount: indexCount / 3, bytesPerIndex: 4)
-        let material = SCNMaterial()
-        material.lightingModel = .physicallyBased
-        material.diffuse.contents = UIImage(named: "ped_\(name)_diff.jpg")
-        material.normal.contents = UIImage(named: "ped_\(name)_nor.jpg")
-        material.roughness.contents = UIImage(named: "ped_\(name)_rough.jpg")
-        material.metalness.contents = NSNumber(value: 0)
-        for property in [material.diffuse, material.normal, material.roughness] {
-            property.mipFilter = .linear
-        }
+        let material = Scenery.modelMaterial("ped_\(name)")
         let frameBytes = vertexCount * 6
         for _ in 0..<clipCount {
             guard o < data.count else { break }
@@ -456,17 +459,19 @@ enum PedestrianModels {
             var frames: [SCNGeometry] = []
             for _ in 0..<frameCount {
                 guard o + frameBytes * 2 <= data.count else { break }
-                // Half floats, converted once: positions and normals as float32 for SceneKit
-                let positions = halfToFloat(data, offset: o, count: vertexCount * 3); o += frameBytes
-                let normals = halfToFloat(data, offset: o, count: vertexCount * 3); o += frameBytes
+                // Half floats straight to the GPU: half the memory of float32 frames
+                let positions = data.subdata(in: o..<(o + frameBytes)); o += frameBytes
+                let normals = data.subdata(in: o..<(o + frameBytes)); o += frameBytes
                 let vertexSource = SCNGeometrySource(data: positions, semantic: .vertex, vectorCount: vertexCount,
-                                                     usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: 4,
-                                                     dataOffset: 0, dataStride: 12)
+                                                     usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: 2,
+                                                     dataOffset: 0, dataStride: 6)
                 let normalSource = SCNGeometrySource(data: normals, semantic: .normal, vectorCount: vertexCount,
-                                                     usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: 4,
-                                                     dataOffset: 0, dataStride: 12)
+                                                     usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: 2,
+                                                     dataOffset: 0, dataStride: 6)
                 let geometry = SCNGeometry(sources: [vertexSource, normalSource, uvSource], elements: [element])
                 geometry.materials = [material]
+                // Bounds for culling, wide enough for a fall (the clip carries the body back)
+                geometry.boundingBox = (SCNVector3(-3.5, -0.2, -3.5), SCNVector3(3.5, 2.1, 3.5))
                 frames.append(geometry)
             }
             if let clip = Clip(rawValue: clipName) {
@@ -478,37 +483,6 @@ enum PedestrianModels {
         return result
     }
 
-    private static func halfToFloat(_ data: Data, offset: Int, count: Int) -> Data {
-        var out = [Float](repeating: 0, count: count)
-        data.withUnsafeBytes { raw in
-            let base = raw.baseAddress!.advanced(by: offset)
-            for i in 0..<count {
-                let h = UInt32(base.loadUnaligned(fromByteOffset: i * 2, as: UInt16.self))
-                // IEEE half to float (no Float16, so it builds for every architecture)
-                let sign = (h & 0x8000) << 16
-                var exponent = (h >> 10) & 0x1F
-                var mantissa = h & 0x3FF
-                let bits: UInt32
-                if exponent == 0 {
-                    if mantissa == 0 {
-                        bits = sign
-                    } else {
-                        exponent = 1
-                        while mantissa & 0x400 == 0 { mantissa <<= 1; exponent -= 1 }
-                        mantissa &= 0x3FF
-                        bits = sign | ((exponent &+ 112) << 23) | (mantissa << 13)
-                    }
-                } else if exponent == 31 {
-                    bits = sign | 0x7F80_0000 | (mantissa << 13)
-                } else {
-                    bits = sign | ((exponent + 112) << 23) | (mantissa << 13)
-                }
-                out[i] = Float(bitPattern: bits)
-            }
-        }
-        return out.withUnsafeBufferPointer { Data(buffer: $0) }
-    }
-
     /// Loads both characters on a background thread (called at launch).
     static func preload() {
         DispatchQueue.global(qos: .utility).async {
@@ -516,10 +490,11 @@ enum PedestrianModels {
         }
     }
 
+    /// One frame of each character, for the loading warm-up (they share one material, so one
+    /// compiles the shader; the other frames upload on first sight, a few hundred KB each).
     static var all: [SCNGeometry] {
-        characters.indices.flatMap { index -> [SCNGeometry] in
-            guard let c = character(index) else { return [] }
-            return Clip.allCases.flatMap { c.frames[$0] ?? [] }
+        characters.indices.compactMap { index -> SCNGeometry? in
+            character(index)?.frames[.walk]?.first
         }
     }
 }

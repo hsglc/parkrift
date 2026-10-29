@@ -26,7 +26,7 @@ SRC, MODELS, TEXTURES = sys.argv[-3:]
 TRIANGLES = 14000
 # clip: (frames, loop, root motion: 'cycle' removes it every frame, 'start' keeps the travel)
 # Longest stretch of a clip used (seconds): the angry clip runs on for 20 s of talking
-LIMIT = {'angry': 3.6, 'phone': 4.8, 'idle': 4.0}
+LIMIT = {'angry': 2.6, 'phone': 3.0, 'idle': 3.0}   # idle and phone play back and forth in the game
 CLIPS = {
     'walk': (16, True, 'cycle'),
     'run': (12, True, 'cycle'),

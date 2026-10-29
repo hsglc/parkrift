@@ -1,0 +1,15 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "level-mode": "all"
+  },
+  "levels": [
+    {
+      "filename": "ped_woman_diff.jpg",
+      "mipmap-level": "base"
+    }
+  ]
+}
