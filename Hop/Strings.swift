@@ -104,6 +104,13 @@ enum Strings {
     static var tabCity: String { t("Şehir", "City", "Ciudad") }
     static var tabRace: String { t("Yarış", "Race", "Carrera") }
     static var tabOnline: String { t("Online", "Online", "Online") }
+    static var curtainGarage: String { t("Arabanı seç, rengini ayarla", "Pick your car and its colour", "Elige tu coche y su color") }
+    static var curtainSearching: String { t("Seninle aynı anda oynamak isteyen biri aranıyor", "Looking for someone to play with right now", "Buscando a alguien para jugar ahora") }
+    static func curtainConnecting(_ code: String) -> String {
+        code.isEmpty ? t("Sunucuya bağlanılıyor", "Reaching the server", "Conectando con el servidor")
+                     : t("Oda \(code)", "Room \(code)", "Sala \(code)")
+    }
+    static var cancelAction: String { t("Vazgeç", "Cancel", "Cancelar") }
     static var liveTag: String { t("CANLI", "LIVE", "EN VIVO") }
     static var spectatingFriend: String { t("Rakibini izliyorsun", "Watching your rival", "Viendo a tu rival") }
     static var waitingFriendPark: String { t("Arkadaşının park etmesi bekleniyor", "Waiting for your friend to park", "Esperando a que tu amigo aparque") }

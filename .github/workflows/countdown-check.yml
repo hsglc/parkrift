@@ -51,8 +51,10 @@ jobs:
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
             if [ "$RUN" = "daily" ]; then
-              xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -staydaily -AppleLanguages "(tr)" > /dev/null 2>&1
-              sleep 9
+              xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -staydaily -showsplash -AppleLanguages "(tr)" > /dev/null 2>&1
+              sleep 1.4
+              xcrun simctl io "$UDID" screenshot shots/splash.png || true
+              sleep 7.6
               xcrun simctl io "$UDID" screenshot shots/daily.png || true
               continue
             elif [ "$RUN" = "streets" ]; then

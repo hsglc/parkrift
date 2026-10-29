@@ -1181,3 +1181,128 @@ struct DriftingImage: UIViewRepresentable {
         view.subviews.first?.frame = view.bounds
     }
 }
+
+
+/// The loading page for page changes, connecting and searching: the art dimmed behind, the
+/// wordmark, an icon and a big title, a light sweeping along a bar (Core Animation, so it keeps
+/// moving while the app is busy), and a cancel button when the wait can be stopped.
+struct CurtainView: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let onCancel: (() -> Void)?
+    @State private var shown = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottomLeading) {
+                Neo.ink
+                if let image = UIImage(named: "menu_city.jpg") {
+                    DriftingImage(image: image)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
+                        .opacity(0.55)
+                        .allowsHitTesting(false)
+                }
+                LinearGradient(colors: [Neo.ink.opacity(0.95), Neo.ink.opacity(0.6), Neo.ink.opacity(0.3)],
+                               startPoint: .leading, endPoint: .trailing)
+                LinearGradient(colors: [.clear, Neo.ink.opacity(0.85)], startPoint: .center, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 0) {
+                    Wordmark(size: 22)
+                    Spacer()
+                    HStack(spacing: 12) {
+                        Image(systemName: icon)
+                            .font(.system(size: 20, weight: .black))
+                            .foregroundStyle(Neo.cyan)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(Neo.cyan.opacity(0.14)))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(title.uppercased())
+                                .font(.race(38))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                            if !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        }
+                    }
+                    SweepBar(color: UIColor(Neo.cyan))
+                        .frame(width: 260, height: 5)
+                        .padding(.top, 16)
+                    if let onCancel = onCancel {
+                        Button {
+                            AudioManager.shared.play("click", volume: 0.5)
+                            onCancel()
+                        } label: {
+                            Label(Strings.cancelAction, systemImage: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .padding(.horizontal, 16)
+                                .frame(height: 38)
+                                .background(Capsule().fill(Color.white.opacity(0.1)))
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 18)
+                    }
+                }
+                .padding(.horizontal, max(32, proxy.size.width * 0.06))
+                .padding(.vertical, 26)
+                .opacity(shown ? 1 : 0)
+                .offset(x: shown ? 0 : -16)
+                .animation(.easeOut(duration: 0.3), value: shown)
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear { shown = true }
+    }
+}
+
+/// An endless loading bar: a light runs along the track (Core Animation, render server).
+struct SweepBar: UIViewRepresentable {
+    let color: UIColor
+
+    func makeUIView(context: Context) -> SweepBarView {
+        let view = SweepBarView()
+        view.configure(color: color)
+        return view
+    }
+
+    func updateUIView(_ view: SweepBarView, context: Context) {}
+}
+
+final class SweepBarView: UIView {
+    private let track = CALayer()
+    private let light = CAGradientLayer()
+
+    func configure(color: UIColor) {
+        backgroundColor = .clear
+        track.backgroundColor = UIColor.white.withAlphaComponent(0.12).cgColor
+        layer.addSublayer(track)
+        light.colors = [color.withAlphaComponent(0).cgColor, color.cgColor, color.withAlphaComponent(0).cgColor]
+        light.startPoint = CGPoint(x: 0, y: 0.5)
+        light.endPoint = CGPoint(x: 1, y: 0.5)
+        layer.addSublayer(light)
+        layer.masksToBounds = true
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        track.frame = bounds
+        track.cornerRadius = bounds.height / 2
+        layer.cornerRadius = bounds.height / 2
+        let width = bounds.width * 0.4
+        light.frame = CGRect(x: 0, y: 0, width: width, height: bounds.height)
+        light.removeAllAnimations()
+        let run = CABasicAnimation(keyPath: "position.x")
+        run.fromValue = -width / 2
+        run.toValue = bounds.width + width / 2
+        run.duration = 1.1
+        run.repeatCount = .infinity
+        run.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        light.add(run, forKey: "run")
+    }
+}

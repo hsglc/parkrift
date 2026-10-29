@@ -119,22 +119,68 @@ final class AppModel: ObservableObject {
 
     func playRace() { openGarage(.play(level: Levels.raceBase)) }
 
+    // MARK: Page curtain
+
+    /// The loading page shown over a change of page (menu, garage, lobby, back from a game):
+    /// it covers the switch, then lifts.
+    struct Curtain: Equatable {
+        let title: String
+        let subtitle: String
+        let icon: String
+    }
+    @Published var curtain: Curtain?
+    /// Bumped by every page change: a change still waiting under its curtain is dropped when a
+    /// newer one (or the start of a game) came first.
+    private var navigation = 0
+
+    /// Covers the screen, makes the change under it, and lifts again.
+    func pageCurtain(_ curtain: Curtain, then change: @escaping () -> Void) {
+        navigation += 1
+        let ticket = navigation
+        withAnimation(.easeIn(duration: 0.2)) { self.curtain = curtain }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self] in
+            guard let self = self, self.navigation == ticket else { return }
+            change()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.62) { [weak self] in
+                guard let self = self, self.curtain == curtain else { return }
+                withAnimation(.easeOut(duration: 0.3)) { self.curtain = nil }
+            }
+        }
+    }
+
+    /// Stops connecting or searching and goes back to the menu (the curtain's cancel button).
+    func cancelOnline() {
+        matchmaking = false
+        matchTimeout?.cancel()
+        matchTimeout = nil
+        net.disconnect()
+        connecting = false
+        online = false
+        friendHere = false
+        pageCurtain(Curtain(title: Strings.menu, subtitle: "", icon: "house.fill")) { [weak self] in self?.screen = .menu }
+    }
+
     /// Mode chosen: pick the car first.
     func openGarage(_ exit: GarageExit) {
         garageExit = exit
-        screen = .garage
+        pageCurtain(Curtain(title: Strings.garage, subtitle: Strings.curtainGarage, icon: "car.side.fill")) { [weak self] in
+            self?.screen = .garage
+        }
     }
 
     /// Garage confirmed: start the chosen level, or go back to the lobby.
     func leaveGarage(confirmed: Bool) {
         switch garageExit {
         case .lobby:
-            screen = online ? .lobby : .menu
+            let target: Screen = online ? .lobby : .menu
+            pageCurtain(Curtain(title: online ? Strings.modeOnlineTitle : Strings.menu, subtitle: "", icon: online ? "person.2.fill" : "house.fill")) { [weak self] in
+                self?.screen = target
+            }
         case .menu:
-            screen = .menu
+            pageCurtain(Curtain(title: Strings.menu, subtitle: "", icon: "house.fill")) { [weak self] in self?.screen = .menu }
         case .play(let level):
             guard confirmed else {
-                screen = .menu
+                pageCurtain(Curtain(title: Strings.menu, subtitle: "", icon: "house.fill")) { [weak self] in self?.screen = .menu }
                 return
             }
             online = false
@@ -308,21 +354,28 @@ final class AppModel: ObservableObject {
     func leaveToMenu() {
         matchmaking = false
         matchTimeout?.cancel()
-        results = nil
-        loading = false
         Task { @MainActor in AudioManager.shared.stopLoops() }
         net.disconnect()
         online = false
         connecting = false
         friendHere = false
-        scene = nil
-        world = nil
-        screen = .menu
+        // The curtain covers the game while it is taken down
+        pageCurtain(Curtain(title: Strings.menu, subtitle: "", icon: "house.fill")) { [weak self] in
+            guard let self = self else { return }
+            self.results = nil
+            self.loading = false
+            self.scene = nil
+            self.world = nil
+            self.screen = .menu
+        }
     }
 
     // MARK: Game
 
     private func beginGame(level: Int) {
+        // A game starting overrides any page change still under its curtain
+        navigation += 1
+        curtain = nil
         // Show the loading screen first, then build the world on the next turn of the main loop
         // (building it blocks the main thread, which used to leave a black screen).
         loadingLevel = level
@@ -592,7 +645,7 @@ final class AppModel: ObservableObject {
 
 struct RootView: View {
     @EnvironmentObject var model: AppModel
-    @State private var splash = !PerfSettings.benchmark
+    @State private var splash = !PerfSettings.benchmark || ProcessInfo.processInfo.arguments.contains("-showsplash")
     @State private var splashTimeUp = false
 
     private func hideSplash() {
@@ -637,6 +690,19 @@ struct RootView: View {
                 }
                 .transition(.opacity)
             }
+            // Page changes, connecting and searching: the loading page
+            if let curtain = model.curtain {
+                CurtainView(title: curtain.title, subtitle: curtain.subtitle, icon: curtain.icon, onCancel: nil)
+                    .transition(.opacity)
+                    .zIndex(5)
+            } else if model.connecting || model.matchmaking {
+                CurtainView(title: model.matchmaking ? Strings.searching : Strings.connecting,
+                            subtitle: model.matchmaking ? Strings.curtainSearching : Strings.curtainConnecting(model.roomCode),
+                            icon: model.matchmaking ? "magnifyingglass" : "antenna.radiowaves.left.and.right",
+                            onCancel: { model.cancelOnline() })
+                    .transition(.opacity)
+                    .zIndex(5)
+            }
             if splash {
                 SplashView()
                     .transition(.opacity.combined(with: .scale(scale: 1.03)))
@@ -644,6 +710,7 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.35), value: model.screen)
+        .animation(.easeInOut(duration: 0.25), value: model.connecting || model.matchmaking)
         .onChange(of: model.bootReady) { _, ready in
             if ready && splashTimeUp { hideSplash() }
         }

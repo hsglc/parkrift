@@ -272,6 +272,7 @@ enum TrafficVehicles {
         for model in models.values {
             _ = mesh(model)
             _ = wheelMesh(model)
+            _ = lodShell(model)
         }
     }
 
