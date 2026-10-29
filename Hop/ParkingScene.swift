@@ -182,6 +182,9 @@ final class ParkingScene: SKScene {
     private let ghostStep: TimeInterval = 0.1
 
     static let slowCountdown = ProcessInfo.processInfo.arguments.contains("-slowcountdown")
+    static let failTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-failtest")
+    static let policeTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-policetest")
+    private var policeTestDone = false
 
     /// Best-run ghost car on solo parking levels (turned off).
     static let ghostEnabled = false
@@ -588,6 +591,7 @@ final class ParkingScene: SKScene {
         codeLabel.position = CGPoint(x: size.width - right - 46, y: top - 30)
         hud.addChild(codeLabel)
 
+        hudTop = top
         statusLabel = makeLabel("", size: 16, color: .white)
         statusLabel.position = CGPoint(x: size.width / 2 + 40, y: top - 86)
         hud.addChild(statusLabel)
@@ -984,6 +988,8 @@ final class ParkingScene: SKScene {
             policeBanner.alpha = 0.002
             policeEdges.forEach { $0.alpha = 0.002 }
         }
+        policeWarningShown = false
+        placeStatus()
         trail.removeAll()
         nearMissAt.removeAll()
         setupGhost()
@@ -998,7 +1004,8 @@ final class ParkingScene: SKScene {
         airTime = 0
         shownDriftPoints = -1
         driftLabel.alpha = 0.002
-        localCar?.setHeadlights((level.city != nil && level.weather == .night) || isRaining || isSnowing)
+        // Beams at night only (rain and snow levels are daytime)
+        localCar?.setHeadlights(level.city != nil && level.weather == .night)
         audio.setLoop("rain", volume: isRaining ? 0.3 : 0)
         audio.setLoop("snow", volume: isSnowing ? 0.32 : 0)
         // Spray particles exist from the start (no first-use hitch), idle until the car moves
@@ -2037,6 +2044,20 @@ final class ParkingScene: SKScene {
                     audio.play("horn", volume: 0.45)
                 }
             }
+        }
+        // Benchmark builds (-policetest): the police called a few seconds in, with a status line
+        // and a bonus text up at the same time, for a screenshot of the stacked HUD
+        if benchmark && ParkingScene.policeTest && !policeTestDone && phase == .driving && level.city != nil && elapsed > 4 {
+            policeTestDone = true
+            dispatchPolice(Strings.crimeCrash)
+            statusLabel.text = Strings.friendParkedHurry(18)
+            flashBonus(Strings.crimeCrash)
+        }
+        // Benchmark builds (-failtest): a level failed two seconds in, for a screenshot of the card
+        if benchmark && ParkingScene.failTest && phase == .driving && !localParked && !level.race && elapsed > 2 {
+            fail(Strings.tooManyHits)
+            run(.wait(forDuration: 1.5)) { Task { @MainActor in saveWindowSnapshot(named: "shot-fail") } }
+            return
         }
         guard phase == .driving, !localParked, !benchmark, !level.race else { return }
         if let maxHits = challenge.maxHits {
@@ -3434,7 +3455,9 @@ final class ParkingScene: SKScene {
         policeEdges.forEach { $0.removeFromParent() }
         policeEdges.removeAll()
         policeBanner = SKNode()
-        policeBanner.position = CGPoint(x: size.width / 2, y: size.height * 0.80)
+        // Stacked under the top bar and the turn pill (it sat on the pill and the timer before);
+        // the status line and bonus texts move below it while it shows
+        policeBanner.position = CGPoint(x: size.width / 2 + 40, y: hudTop - 98)
         policeBanner.zPosition = 22
         // Not 0: SpriteKit skips fully transparent nodes, so the label's text would be laid out
         // only on the first chase
@@ -3466,8 +3489,19 @@ final class ParkingScene: SKScene {
         }
     }
 
+    /// The HUD's top line (the level/timer bar); the turn pill, police banner and status line stack under it.
+    private var hudTop: CGFloat = 0
+    private var policeWarningShown = false
+
+    /// The status line (and bonus texts) under the police banner while it shows, under the turn pill otherwise.
+    private func placeStatus() {
+        statusLabel.position = CGPoint(x: size.width / 2 + 40, y: hudTop - (policeWarningShown ? 150 : 86))
+    }
+
     private func showPoliceWarning(_ reason: String) {
         if policeBanner.parent == nil { setupPoliceWarning() }
+        policeWarningShown = true
+        placeStatus()
         policeReason = reason
         policeBanner.removeAllActions()
         policeBanner.alpha = 1
@@ -3477,6 +3511,8 @@ final class ParkingScene: SKScene {
     }
 
     private func hidePoliceWarning() {
+        policeWarningShown = false
+        placeStatus()
         policeBanner.removeAllActions()
         policeBanner.run(.fadeAlpha(to: 0.002, duration: 0.3))
         policeEdges.forEach { $0.run(.fadeAlpha(to: 0.002, duration: 0.3)) }
@@ -4570,7 +4606,8 @@ final class ParkingScene: SKScene {
     private func flashBonus(_ text: String) {
         bonusLabel.removeAllActions()
         bonusLabel.text = text
-        bonusLabel.position = CGPoint(x: size.width / 2, y: size.height * 0.7)
+        bonusLabel.position = policeWarningShown ? CGPoint(x: size.width / 2 + 40, y: hudTop - 178)
+                                                 : CGPoint(x: size.width / 2, y: size.height * 0.7)
         bonusLabel.setScale(0.6)
         bonusLabel.alpha = 1
         bonusLabel.run(.sequence([.scale(to: 1.1, duration: 0.12), .scale(to: 1.0, duration: 0.08), .wait(forDuration: 0.9),

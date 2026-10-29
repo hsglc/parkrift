@@ -35,7 +35,8 @@ struct ResultsInfo: Identifiable {
     var me: ResultEntry? { entries.first { $0.isMe } }
 }
 
-/// The "parked!" card shown over the game when a level is finished.
+/// The card shown over the game when a level ends: "parked!" in green, or in red when the
+/// player did not park (too many hits, time up), with trying again as the main button.
 struct ResultsOverlay: View {
     @EnvironmentObject var model: AppModel
     let info: ResultsInfo
@@ -49,6 +50,12 @@ struct ResultsOverlay: View {
         if case .final = info.footer { return true }
         return false
     }
+
+    /// The player did not park (or finish): too many hits, time up, gave up.
+    private var failed: Bool { info.me?.time == nil }
+
+    /// Failed with the next level not open yet: no way forward but trying again.
+    private var nextOpen: Bool { model.unlockedLevels > info.levelIndex + 1 }
 
     var body: some View {
         ZStack {
@@ -85,7 +92,8 @@ struct ResultsOverlay: View {
 
     private var heroBackground: some View {
         ZStack {
-            LinearGradient(colors: [Color(red: 0.16, green: 0.62, blue: 0.40), Color(red: 0.06, green: 0.32, blue: 0.24)],
+            LinearGradient(colors: failed ? [Color(red: 0.74, green: 0.20, blue: 0.24), Color(red: 0.34, green: 0.07, blue: 0.12)]
+                                          : [Color(red: 0.16, green: 0.62, blue: 0.40), Color(red: 0.06, green: 0.32, blue: 0.24)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             // Soft light rays
             ForEach(0..<8, id: \.self) { index in
@@ -106,20 +114,21 @@ struct ResultsOverlay: View {
                     .fill(Color.white.opacity(0.18))
                     .frame(width: 74, height: 74)
                 Circle()
-                    .fill(LinearGradient(colors: isFinal ? [Palette.gold, Palette.goldDeep]
-                                                         : [Color(red: 0.55, green: 1.0, blue: 0.62), Color(red: 0.18, green: 0.78, blue: 0.42)],
+                    .fill(LinearGradient(colors: failed ? [Color(red: 1.0, green: 0.48, blue: 0.44), Color(red: 0.86, green: 0.16, blue: 0.20)]
+                                                        : isFinal ? [Palette.gold, Palette.goldDeep]
+                                                                  : [Color(red: 0.55, green: 1.0, blue: 0.62), Color(red: 0.18, green: 0.78, blue: 0.42)],
                                          startPoint: .top, endPoint: .bottom))
                     .frame(width: 60, height: 60)
                     .shadow(color: .black.opacity(0.25), radius: 0, y: 3)
-                Image(systemName: isFinal ? "trophy.fill" : "checkmark")
+                Image(systemName: failed ? "xmark" : (isFinal ? "trophy.fill" : "checkmark"))
                     .font(.system(size: 28, weight: .black))
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.25), radius: 0, y: 2)
             }
             .scaleEffect(appeared ? 1 : 0.3)
 
-            Text(info.headline ?? (isFinal ? Strings.allDone : Strings.parkedTitle))
-                .font(.system(size: isFinal ? 20 : 26, weight: .black, design: .rounded))
+            Text(info.headline ?? (failed ? Strings.notParkedTitle : (isFinal ? Strings.allDone : Strings.parkedTitle)))
+                .font(.system(size: isFinal && !failed ? 20 : 26, weight: .black, design: .rounded))
                 .italic()
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -250,6 +259,37 @@ struct ResultsOverlay: View {
 
     @ViewBuilder
     private var footer: some View {
+        if failed, info.entries.count == 1, !isAutoNext {
+            // Did not park: trying again is the way forward (the next level only if already open)
+            HStack(spacing: 8) {
+                Button { model.leaveToMenu() } label: { Image(systemName: "house.fill") }
+                    .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 46, fontSize: 17))
+                    .frame(width: 56)
+                Button { model.retryLevel() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.counterclockwise")
+                        Text(Strings.tryAgain)
+                    }
+                }
+                .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 46))
+                if !isFinal && nextOpen {
+                    Button { model.nextLevel() } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 46, fontSize: 17))
+                        .frame(width: 56)
+                }
+            }
+        } else {
+            footerButtons
+        }
+    }
+
+    private var isAutoNext: Bool {
+        if case .autoNext = info.footer { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var footerButtons: some View {
         switch info.footer {
         case .solo(let hasNext):
             HStack(spacing: 8) {

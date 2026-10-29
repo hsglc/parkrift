@@ -125,6 +125,8 @@ enum Strings {
     static var resetHint: String { t("↻ arabayı başa alır", "↻ puts your car back at the start", "↻ devuelve tu coche a la salida") }
 
     static var parkedTitle: String { t("PARK ETTİN!", "PARKED!", "¡APARCADO!") }
+    static var notParkedTitle: String { t("PARK EDEMEDİN", "NOT PARKED", "SIN APARCAR") }
+    static var tryAgain: String { t("Tekrar dene", "Try again", "Reintentar") }
     static var timeLabel: String { t("SÜRE", "TIME", "TIEMPO") }
     static var bumpsLabel: String { t("ÇARPMA", "BUMPS", "GOLPES") }
     static var bestLabel: String { t("EN İYİ", "BEST", "MEJOR") }
