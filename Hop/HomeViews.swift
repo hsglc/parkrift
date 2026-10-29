@@ -169,6 +169,7 @@ struct HomeScreen: View {
                 .padding(.bottom, 16)
             }
             .clipShape(SlantedShape(skew: 22))
+            .contentShape(SlantedShape(skew: 22))
             .overlay(SlantedShape(skew: 22).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1))
             .overlay(alignment: .topLeading) { AccentStripe(color: Palette.gold).offset(x: 34, y: 0) }
             .shadow(color: .black.opacity(0.45), radius: 18, y: 10)
@@ -233,6 +234,7 @@ private struct ModeArtTile: View {
                 }
             }
             .clipShape(SlantedShape(skew: 16))
+            .contentShape(SlantedShape(skew: 16))
             .overlay(SlantedShape(skew: 16).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1))
             .overlay(alignment: .topLeading) { AccentStripe(color: accent).offset(x: 24, y: 0) }
             .shadow(color: .black.opacity(0.4), radius: 14, y: 8)
@@ -262,6 +264,9 @@ struct ArtBackground: View {
                 LinearGradient(colors: [Neo.ink.opacity(0.5), .clear], startPoint: .leading, endPoint: UnitPoint(x: 0.6, y: 0.5))
             }
         }
+        // A fill-scaled image is still touchable outside its clipped frame: without this the art of
+        // one tile sat over the button of the tile beside it and swallowed taps.
+        .allowsHitTesting(false)
     }
 }
 
@@ -419,8 +424,9 @@ struct ArtActionTile: View {
             .padding(.bottom, 16)
         }
         .clipShape(SlantedShape(skew: skew))
-        .overlay(SlantedShape(skew: skew).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1))
-        .overlay(alignment: .topLeading) { AccentStripe(color: accent).offset(x: skew + 12, y: 0) }
+        .contentShape(SlantedShape(skew: skew))
+        .overlay(SlantedShape(skew: skew).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1).allowsHitTesting(false))
+        .overlay(alignment: .topLeading) { AccentStripe(color: accent).offset(x: skew + 12, y: 0).allowsHitTesting(false) }
         .shadow(color: .black.opacity(0.45), radius: 16, y: 10)
     }
 }

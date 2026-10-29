@@ -21,6 +21,7 @@ struct DailyView: View {
                     .blur(radius: 18)
                     .opacity(0.35)
                     .ignoresSafeArea()
+                    .allowsHitTesting(false)
             }
             LinearGradient(colors: [Neo.ink.opacity(0.9), Neo.ink.opacity(0.6)], startPoint: .leading, endPoint: .trailing)
                 .ignoresSafeArea()

@@ -978,6 +978,7 @@ struct LoadingView: View {
                         .scaleEffect(shown ? 1.06 : 1.0)
                         .clipped()
                         .animation(.easeOut(duration: 3), value: shown)
+                        .allowsHitTesting(false)
                 }
                 LinearGradient(colors: [Neo.ink.opacity(0.92), Neo.ink.opacity(0.55), Neo.ink.opacity(0.2)],
                                startPoint: .leading, endPoint: .trailing)
