@@ -2047,6 +2047,8 @@ final class World3D {
         let coneWhite = Mat.pbr(UIColor(white: 0.95, alpha: 1), rough: 0.5)
         let coneBase = Mat.pbr(UIColor(white: 0.1, alpha: 1), rough: 0.8)
 
+        lap("spots")
+        defer { lap("obstacles (parked cars)") }
         let parkedCars = SCNNode()
         var roofCache: [Int: SCNMaterial] = [:]
         // Optimized: all buildings become one geometry with one facade/roof material per color

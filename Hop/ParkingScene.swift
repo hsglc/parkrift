@@ -876,9 +876,18 @@ final class ParkingScene: SKScene {
         finalButton = nil
         obstacleBoxes = level.obstacles.map { $0.box }
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
+        var lapClock = CACurrentMediaTime()
+        func lap(_ what: String) {
+            guard PerfSettings.benchmark else { return }
+            let now = CACurrentMediaTime()
+            stage(String(format: "lap %@ %.0f ms", what, (now - lapClock) * 1000))
+            lapClock = now
+        }
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
+        lap("world.load")
         setupPatrols(world)
         setupBonuses()
+        lap("patrols+bonuses")
         // Only under the loading screen (later rounds load in view)
         if level.city != nil && !ready { world.beginWarmupSweep() }
         if level.race {
@@ -930,6 +939,7 @@ final class ParkingScene: SKScene {
                                              style: CarStyle(rawValue: index % 3) ?? .sedan, variety: index &* 7 &+ bot.tint))
             }
         }
+        lap("traffic cars")
         // People on the sidewalks (each player simulates their own: they are scenery that reacts)
         pedestrians = nil
         pedestrianNodes.removeAll()
@@ -943,8 +953,10 @@ final class ParkingScene: SKScene {
             }
             updatePedestrianNodes()
         }
+        lap("pedestrians")
         // Arcade extras of the level
         streetProps = level.city != nil ? world.addProps(level.props) : nil
+        lap("props")
         police = nil
         remotePolice = nil
         remotePoliceTarget = nil
@@ -956,6 +968,7 @@ final class ParkingScene: SKScene {
         trail.removeAll()
         nearMissAt.removeAll()
         setupGhost()
+        lap("ghost")
         runDriftPoints = 0
         runNearMisses = 0
         runEscapes = 0
@@ -974,6 +987,7 @@ final class ParkingScene: SKScene {
         // The horn matters in traffic only: parking levels keep fewer buttons
         hornButton.isHidden = !isCity
         setupRainLayers()
+        lap("headlights+rain")
         audio.setLoop("siren", volume: 0)
         audio.setLoop("skid", volume: 0)
         route = []
@@ -1044,7 +1058,9 @@ final class ParkingScene: SKScene {
         remoteCheck.isHidden = true
         holdRing.path = nil
         world.follow(position: carPosition, heading: heading, dt: 0, snap: true)
+        lap("reset+follow")
         buildMinimap()
+        lap("minimap")
         updateCarNodes()
         countdownNode.isHidden = !ready
         if ready {
