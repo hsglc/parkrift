@@ -1950,12 +1950,22 @@ final class World3D {
         roadMaterials.removeAll()
         detailMaterials.removeAll()
         lampPools = nil
+        var clock = CACurrentMediaTime()
+        func lap(_ what: String) {
+            guard PerfSettings.benchmark else { return }
+            let now = CACurrentMediaTime()
+            FileHandle.standardError.write(String(format: "PPTIME %@ %.0f ms\n", what, (now - clock) * 1000).data(using: .utf8)!)
+            clock = now
+        }
         if let city = level.city {
             buildCity(city, world: level.world)
+            lap("buildCity")
             levelRoot.addChildNode(CityDecor.build(level: level, city: city))
+            lap("cityDecor")
         }
         // City rounds have their weather; a parking lot can be wet (a harder level)
         setWeather(level.city != nil || level.weather == .rain || level.weather == .snow ? level.weather : .day)
+        lap("weather")
 
         if level.city == nil {
             levelRoot.addChildNode(Scenery.markingsNode(for: level))
@@ -2037,6 +2047,8 @@ final class World3D {
         let coneWhite = Mat.pbr(UIColor(white: 0.95, alpha: 1), rough: 0.5)
         let coneBase = Mat.pbr(UIColor(white: 0.1, alpha: 1), rough: 0.8)
 
+        lap("spots")
+        defer { lap("obstacles (parked cars)") }
         let parkedCars = SCNNode()
         var roofCache: [Int: SCNMaterial] = [:]
         // Optimized: all buildings become one geometry with one facade/roof material per color
@@ -2304,7 +2316,8 @@ final class World3D {
             let sidewalk = Scenery.surface("sidewalk", tile: 1.4, size: CGSize(width: block.width / 10, height: block.height / 10), normal: 1.2)
             roadMaterials.append(sidewalk)
             plane.materials = [sidewalk]
-            let node = flat(plane, y: 0.08)
+            // Raised to the kerb's top: driving onto it is a real step up
+            let node = flat(plane, y: Float(CityMap.kerbTop))
             let p = World3D.vec(CGPoint(x: block.midX, y: block.midY))
             node.position.x = p.x
             node.position.z = p.z
@@ -2508,7 +2521,7 @@ final class World3D {
                     let mast = World3D.signalMastOffset
                     let mastScene = SIMD3<Float>(base.x + mast * cos(yaw), 0, base.z - mast * sin(yaw))
                     let pivot = SCNNode()
-                    pivot.simdPosition = mastScene
+                    pivot.simdPosition = mastScene + SIMD3(0, Float(CityMap.kerbTop), 0)
                     let holder = SCNNode()
                     holder.eulerAngles.y = yaw
                     holder.simdPosition = SIMD3(-mast * cos(yaw), 0, mast * sin(yaw))
@@ -2582,15 +2595,18 @@ final class World3D {
         }
 
 
-        // Kerb stones around every block: 45 cm wide, a rounded edge to the street side (5 cm
-        // radius) and a step down to the pavement behind
-        let r: Float = 0.05
-        var kerb: [(Float, Float, Float, Float)] = [(-0.225, 0, -1, 0), (-0.225, 0.18 - r, -1, 0)]
-        for k in 1...4 {
-            let t = Float(k) / 4 * (.pi / 2)
-            kerb.append((-0.225 + r - r * cos(t), 0.18 - r + r * sin(t), -cos(t), sin(t)))
+        // Kerb stones around every block, flush with the raised pavement: 45 cm wide, a face to
+        // the street that leans back a little, a smoothly rounded top edge (6 cm radius, ten
+        // segments), a fine chamfer on the pavement side, and a shallow concrete gutter in front
+        let top = Float(CityMap.kerbTop)
+        let r: Float = 0.06
+        var kerb: [(Float, Float, Float, Float)] = [(-0.55, 0.03, 0, 1), (-0.24, 0.024, 0, 1), (-0.235, 0.024, -0.995, 0.1),
+                                                    (-0.225, top - r, -0.99, 0.12)]
+        for k in 1...10 {
+            let t = Float(k) / 10 * (.pi / 2)
+            kerb.append((-0.225 + r - r * cos(t), top - r + r * sin(t), -cos(t), sin(t)))
         }
-        kerb += [(0.225, 0.18, 0, 1), (0.225, 0.18, 1, 0), (0.225, 0.07, 1, 0)]
+        kerb += [(0.205, top, 0, 1), (0.225, top - 0.012, 0.7, 0.7), (0.23, top - 0.02, 1, 0), (0.23, 0.0, 1, 0)]
         let paintedKerb = curbMaterial.copy() as! SCNMaterial
         paintedKerb.multiply.contents = UIColor(red: 1.0, green: 0.78, blue: 0.12, alpha: 1)
         paintedKerb.roughness.intensity = 0.8
@@ -2677,6 +2693,14 @@ final class World3D {
         }
         var objects: [Any] = [scene.rootNode] + World3D.signalMaterials
         if PerfSettings.optimized { objects += CarFactory.allGeometries + CarModels.allGeometries + TrafficVehicles.allGeometries }
+        // Street trees and traffic lights, near and far meshes (their textures upload now too)
+        for prop in Scenery.trees + World3D.signalTemplates {
+            prop.enumerateHierarchy { node, _ in
+                guard let geometry = node.geometry else { return }
+                objects.append(geometry)
+                objects += (geometry.levelsOfDetail ?? []).compactMap { $0.geometry }
+            }
+        }
         if cityMap != nil {
             objects += PedestrianModels.all + StreetProps.allGeometries
             World3D.policeTemplate?.enumerateHierarchy { node, _ in

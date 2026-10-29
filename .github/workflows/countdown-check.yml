@@ -47,10 +47,16 @@ jobs:
           mkdir -p shots
           rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
           DATA=""
-          for RUN in "-parklevel 2" "-parklevel 23" "city"; do
+          for RUN in "-parklevel 2" "streets" "city"; do
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
-            if [ "$RUN" = "city" ]; then
+            if [ "$RUN" = "streets" ]; then
+              xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playcity -dayweather -AppleLanguages "(tr)" > shots/streets-console.log 2>&1 &
+              sleep 14
+              xcrun simctl io "$UDID" screenshot shots/streets-1.png || true
+              sleep 8
+              xcrun simctl io "$UDID" screenshot shots/streets-2.png || true
+            elif [ "$RUN" = "city" ]; then
               xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -dayweather -AppleLanguages "(tr)" > shots/city-console.log 2>&1 &
             else
               xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -playpark $RUN -slowcountdown -AppleLanguages "(tr)" > /dev/null 2>&1

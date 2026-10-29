@@ -333,7 +333,8 @@ final class AppModel: ObservableObject {
         scene = nil
         world = nil
         screen = .game
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+        // After the loading screen's entrance has played (building blocks the main thread)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self = self, self.screen == .game, self.scene == nil else { return }
             let newWorld = World3D()
             let newScene = ParkingScene(size: CGSize(width: 852, height: 393))
@@ -683,6 +684,13 @@ struct RootView: View {
                     model.selectedLevel = 2
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.playSolo() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { model.leaveGarage(confirmed: true) }
+                return
+            }
+            if PerfSettings.benchmark && args.contains("-playcity") {
+                // City mode on the streets (traffic lights, trees, kerbs)
+                AudioManager.shared.isMuted = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.playCity() }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { model.leaveGarage(confirmed: true) }
                 return
             }

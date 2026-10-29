@@ -255,6 +255,17 @@ final class ParkingScene: SKScene {
     private var lateralGrip: CGFloat = 420
     /// How far the tyres are past their grip in a corner (0...1).
     private var understeer: CGFloat = 0
+    /// On a wet or snowy road at speed the body slides out of line: the angle between where the
+    /// car points and where it travels (0 on a dry road and in a drift, which has its own).
+    private var skid: CGFloat = 0
+    /// Kerbs: the body's height on its springs (metres) and how fast it moves, and its tilt
+    /// from the wheels standing at different heights.
+    private var kerbLift: CGFloat = 0
+    private var kerbLiftSpeed: CGFloat = 0
+    private var kerbPitch: CGFloat = 0
+    private var kerbRoll: CGFloat = 0
+    private var frontKerb: CGFloat = 0
+    private var rearKerb: CGFloat = 0
 
     private var carPosition = CGPoint.zero
     private var heading: CGFloat = 0
@@ -352,6 +363,9 @@ final class ParkingScene: SKScene {
     private var parkHold: CGFloat = 0
     private var localParked = false
     private var localTime: Double = 0
+    /// Seconds since we finished while the friend is still driving; after a moment the camera
+    /// follows their car so we watch them instead of waiting.
+    private var spectateClock: CGFloat = 0
     private var remoteParked = false
     private var remoteTime: Double = 0
     private var remoteHits = 0
@@ -862,9 +876,18 @@ final class ParkingScene: SKScene {
         finalButton = nil
         obstacleBoxes = level.obstacles.map { $0.box }
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
+        var lapClock = CACurrentMediaTime()
+        func lap(_ what: String) {
+            guard PerfSettings.benchmark else { return }
+            let now = CACurrentMediaTime()
+            stage(String(format: "lap %@ %.0f ms", what, (now - lapClock) * 1000))
+            lapClock = now
+        }
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
+        lap("world.load")
         setupPatrols(world)
         setupBonuses()
+        lap("patrols+bonuses")
         // Only under the loading screen (later rounds load in view)
         if level.city != nil && !ready { world.beginWarmupSweep() }
         if level.race {
@@ -891,7 +914,7 @@ final class ParkingScene: SKScene {
             warmCrop.run(.sequence([.wait(forDuration: 0.5), .removeFromParent()]))
         }
         defer {
-            stage("level loaded")
+            stage(String(format: "level loaded in %.0f ms", (CACurrentMediaTime() - loadStarted) * 1000))
             world.warmUp { [weak self] in
                 self?.stage("warm-up done")
                 self?.becomeReady()
@@ -916,6 +939,7 @@ final class ParkingScene: SKScene {
                                              style: CarStyle(rawValue: index % 3) ?? .sedan, variety: index &* 7 &+ bot.tint))
             }
         }
+        lap("traffic cars")
         // People on the sidewalks (each player simulates their own: they are scenery that reacts)
         pedestrians = nil
         pedestrianNodes.removeAll()
@@ -929,8 +953,10 @@ final class ParkingScene: SKScene {
             }
             updatePedestrianNodes()
         }
+        lap("pedestrians")
         // Arcade extras of the level
         streetProps = level.city != nil ? world.addProps(level.props) : nil
+        lap("props")
         police = nil
         remotePolice = nil
         remotePoliceTarget = nil
@@ -942,6 +968,7 @@ final class ParkingScene: SKScene {
         trail.removeAll()
         nearMissAt.removeAll()
         setupGhost()
+        lap("ghost")
         runDriftPoints = 0
         runNearMisses = 0
         runEscapes = 0
@@ -960,6 +987,7 @@ final class ParkingScene: SKScene {
         // The horn matters in traffic only: parking levels keep fewer buttons
         hornButton.isHidden = !isCity
         setupRainLayers()
+        lap("headlights+rain")
         audio.setLoop("siren", volume: 0)
         audio.setLoop("skid", volume: 0)
         route = []
@@ -1030,7 +1058,9 @@ final class ParkingScene: SKScene {
         remoteCheck.isHidden = true
         holdRing.path = nil
         world.follow(position: carPosition, heading: heading, dt: 0, snap: true)
+        lap("reset+follow")
         buildMinimap()
+        lap("minimap")
         updateCarNodes()
         countdownNode.isHidden = !ready
         if ready {
@@ -1900,7 +1930,7 @@ final class ParkingScene: SKScene {
         detailClock -= dt
         if detailClock <= 0 {
             detailClock = 0.2
-            let parkedChanges = world?.updateDetail(around: carPosition) ?? 0
+            let parkedChanges = world?.updateDetail(around: spectateClock > 1.4 ? remotePosition : carPosition) ?? 0
             if benchmark && parkedChanges > 0 { FrameMonitor.shared.mark("parkedDetail\(parkedChanges)") }
         }
 
@@ -1926,7 +1956,15 @@ final class ParkingScene: SKScene {
         }
         // While drifting the camera looks between where the car points and where it goes
         let cameraHeading = drifting ? travelHeading + CGFloat.angleDelta(travelHeading, heading) * 0.35 : heading
-        world?.follow(position: carPosition, heading: cameraHeading, dt: dt)
+        let spectating = online && friendPresent && localParked && !remoteParked && !resultsShown && localTime >= 0
+        spectateClock = spectating ? spectateClock + dt : 0
+        if spectateClock > 1.4 {
+            // Watching the friend: the chase camera rides behind their car
+            world?.follow(position: remotePosition, heading: remoteHeading, dt: dt)
+            if statusLabel.text != Strings.spectatingFriend { statusLabel.text = Strings.spectatingFriend }
+        } else {
+            world?.follow(position: carPosition, heading: cameraHeading, dt: dt)
+        }
         updateCarNodes()
         updateSteerGauge()
         updateRain(dt)
@@ -2555,7 +2593,8 @@ final class ParkingScene: SKScene {
         let reversing = gear == .reverse && velocity < -1
         let (lift, airPitch) = carLift()
         localCar?.update(position: carPosition, heading: heading, steer: steer,
-                         pitch: pitch + airPitch, roll: roll, braking: braking, reversing: reversing, lift: lift)
+                         pitch: pitch + airPitch + kerbPitch, roll: roll + kerbRoll, braking: braking, reversing: reversing,
+                         lift: lift + Float(kerbLift))
         localTag.position = world.project(carPosition, height: 2.6)
 
         let showRemote = friendPresent
@@ -2649,11 +2688,33 @@ final class ParkingScene: SKScene {
         let floating = isRaining ? max(0, abs(velocity) / maxForward - 0.7) * 1.2 : 0
         let maxLateral = lateralGrip * surface.grip * (1 - min(0.35, floating))
         understeer = 0
-        if !drifting && abs(velocity * steerYaw) > maxLateral {
-            understeer = min(1, (abs(velocity * steerYaw) - maxLateral) / 300)
+        let demand = velocity * steerYaw          // the sideways pull the steering asks for
+        if !drifting && abs(demand) > maxLateral {
+            understeer = min(1, (abs(demand) - maxLateral) / 300)
             steerYaw = (steerYaw > 0 ? 1 : -1) * maxLateral / max(abs(velocity), 1)
         }
-        var newHeading = heading + steerYaw * dt
+        // Slippery road: past the grip the tail steps out and the car slides on its line, more
+        // the faster it goes and the harder it is steered (snow far more than rain); even
+        // straight on, a fast car on snow wanders a little. Easing off lets the tyres bite again.
+        let slippery: CGFloat = isSnowing ? 1 : (isRaining ? 0.6 : 0)
+        var line = heading - skid
+        if drifting || airTime > 0 || slippery == 0 || velocity < 0 {
+            skid += (0 - skid) * min(1, dt * 6)
+            line = heading - skid
+        } else {
+            let fast = max(0, min(1, (abs(velocity) / maxForward - 0.3) / 0.6))
+            let excess = max(0, abs(demand) / max(maxLateral, 1) - 0.55)
+            var target = (demand >= 0 ? 1 : -1) * min(0.55, excess * 0.32) * slippery * fast
+            target += sin(CGFloat(elapsed) * 1.7) * 0.035 * slippery * fast * fast
+            if gasDown && fast > 0.4 { target *= 1.25 }                      // power oversteer
+            let rate: CGFloat = abs(target) > abs(skid) ? 2.6 : 1.4 + 2.2 * surface.grip
+            skid += (target - skid) * min(1, dt * rate)
+            // Sliding scrubs speed and squeals
+            velocity -= velocity * abs(skid) * 0.22 * dt
+            understeer = max(understeer, min(1, abs(skid) * 2.2))
+        }
+        line += steerYaw * dt
+        var newHeading = line + skid
         if drifting && airTime <= 0 {
             // Arcade drift: the car slides at a held angle to its line and carves the corner
             // faster than grip allows, keeping almost all its speed. Steering into the drift
@@ -2691,7 +2752,7 @@ final class ParkingScene: SKScene {
         }
         if airTime > 0 { newHeading = heading }   // no steering in the air
         let yawRate = (newHeading - heading) / max(dt, 0.0001)
-        let moveHeading = drifting ? travelHeading : newHeading
+        let moveHeading = drifting ? travelHeading : newHeading - skid
         let newPosition = CGPoint(x: carPosition.x + cos(moveHeading) * velocity * dt,
                                   y: carPosition.y + sin(moveHeading) * velocity * dt)
 
@@ -2729,7 +2790,7 @@ final class ParkingScene: SKScene {
             let dir = CGVector(dx: cos(moveHeading) * sign, dy: sin(moveHeading) * sign)
             let dot = dir.dx * normal.dx + dir.dy * normal.dy
             let into = max(0, -dot)                         // 0: along the wall, 1: straight at it
-            if into < 0.8 {
+            if into < 0.92 {
                 var tangent = CGVector(dx: dir.dx - normal.dx * dot, dy: dir.dy - normal.dy * dot)
                 let length = max(0.001, hypot(tangent.dx, tangent.dy))
                 tangent = CGVector(dx: tangent.dx / length, dy: tangent.dy / length)
@@ -2803,14 +2864,21 @@ final class ParkingScene: SKScene {
                     world?.shake(strength: min(6, impact / 20))
                 }
             }
-            velocity = abs(velocity) < 6 ? 0 : -velocity * (crashed ? 0.12 : 0.22)
-            longitudinalAccel = -longitudinalAccel
+            // Asphalt: with the throttle held and the wheel turned, the car swings its nose off the
+            // wall and drives away instead of bouncing against it
+            if !crashed && (gasDown || reverseDown) && abs(wheelInput) > 0.15 && pivotOffWall(dt, reverse: reverseDown && !gasDown) {
+                velocity = (gasDown ? 1 : -1) * min(abs(velocity), 30)
+            } else {
+                velocity = abs(velocity) < 6 ? 0 : -velocity * (crashed ? 0.12 : 0.22)
+                longitudinalAccel = -longitudinalAccel
+            }
         } else {
             carPosition = newPosition
             heading = newHeading
         }
 
         applyCrashMotion(dt)
+        updateKerb(dt)
         updateJump(dt)
         updateDriftDisplay(dt)
 
@@ -2987,6 +3055,54 @@ final class ParkingScene: SKScene {
     }
 
     /// The car's height above the ground (on a ramp or in the air) and its pitch in the air.
+    /// Up and down kerbs: each wheel finds the ground under it (road or raised pavement), the body
+    /// follows on springs (a jolt and a bounce as the front wheels climb, again for the rear), it
+    /// tilts with the wheels, and climbing at speed costs speed with a thud.
+    private func updateKerb(_ dt: CGFloat) {
+        guard let city = level.city, dt > 0 else {
+            kerbLift = 0; kerbLiftSpeed = 0; kerbPitch = 0; kerbRoll = 0
+            return
+        }
+        let c = cos(heading), s = sin(heading)
+        func ground(_ along: CGFloat, _ across: CGFloat) -> CGFloat {
+            city.kerbHeight(at: CGPoint(x: carPosition.x + c * along - s * across, y: carPosition.y + s * along + c * across))
+        }
+        let fl = ground(13.5, 8.2), fr = ground(13.5, -8.2), rl = ground(-13.5, 8.2), rr = ground(-13.5, -8.2)
+        let front = (fl + fr) / 2, rear = (rl + rr) / 2
+        let top = CityMap.kerbTop
+        let speed = abs(velocity)
+        // A wheel pair climbing (or dropping) the kerb: a jolt to the springs
+        func hit(_ before: CGFloat, _ now: CGFloat, strength: CGFloat) {
+            let climbed = before < top * 0.45 && now >= top * 0.45
+            let dropped = before > top * 0.55 && now <= top * 0.55
+            guard (climbed || dropped) && speed > 6 else { return }
+            let force = min(1, speed / 120)
+            if climbed {
+                kerbLiftSpeed += (0.35 + 0.9 * force) * strength
+                velocity *= 1 - (0.05 + 0.13 * force) * strength
+                bumpHaptic.impactOccurred(intensity: 0.35 + 0.5 * force * strength)
+                audio.play("bump", volume: Float(0.18 + 0.3 * force * strength))
+                if force > 0.4 { world?.shake(strength: 0.6 + 1.6 * force * strength) }
+            } else {
+                kerbLiftSpeed -= (0.25 + 0.5 * force) * strength
+                tickHaptic.impactOccurred(intensity: 0.3 + 0.4 * force)
+            }
+        }
+        hit(frontKerb, velocity >= 0 ? front : rear, strength: 1)
+        hit(rearKerb, velocity >= 0 ? rear : front, strength: 0.7)
+        frontKerb = velocity >= 0 ? front : rear
+        rearKerb = velocity >= 0 ? rear : front
+        // Springs and dampers
+        let target = (front + rear) / 2
+        kerbLiftSpeed += ((target - kerbLift) * 260 - kerbLiftSpeed * 18) * dt
+        kerbLift += kerbLiftSpeed * dt
+        kerbLift = max(-0.05, min(top + 0.12, kerbLift))
+        let pitchTarget = atan2(front - rear, 2.7) - kerbLiftSpeed * 0.02
+        let rollTarget = atan2((fl + rl) / 2 - (fr + rr) / 2, 1.64)
+        kerbPitch += (pitchTarget - kerbPitch) * min(1, dt * 16)
+        kerbRoll += (rollTarget - kerbRoll) * min(1, dt * 16)
+    }
+
     private func carLift() -> (Float, CGFloat) {
         if airTime > 0, airDuration > 0 {
             let t = 1 - airTime / airDuration
@@ -3447,6 +3563,28 @@ final class ParkingScene: SKScene {
 
     /// Which way the wall the car is touching faces (level units, pointing away from it): probes
     /// a car-sized box a little way out in sixteen directions and averages the blocked ones.
+    /// Turns the car on the spot the way the wheel points (and eases it off the wall), so a car
+    /// pressed against a wall can steer away under throttle. Returns whether it could turn.
+    private func pivotOffWall(_ dt: CGFloat, reverse: Bool) -> Bool {
+        let normal = wallNormal() ?? .zero
+        let turn = (wheelInput > 0 ? 1 : -1) * (reverse ? -1 : 1) * (1.6 + 1.2 * abs(wheelInput)) * dt
+        for (push, factor) in [(CGFloat(0.6), CGFloat(1)), (1.4, 1), (0.6, 0.5), (2.2, 1)] {
+            let h = heading + turn * factor
+            let candidate = CGPoint(x: carPosition.x + normal.dx * push, y: carPosition.y + normal.dy * push)
+            if !blocked(moving: OBB(center: candidate, size: Levels.carSize, angle: h), to: candidate) {
+                carPosition = candidate
+                heading = h
+                if drifting { travelHeading = h - driftSlip }
+                // Once the nose points away from the wall, the car rolls off along its heading
+                let step = CGPoint(x: candidate.x + cos(h) * (reverse ? -1 : 1) * 30 * dt,
+                                   y: candidate.y + sin(h) * (reverse ? -1 : 1) * 30 * dt)
+                if !blocked(moving: OBB(center: step, size: Levels.carSize, angle: h), to: step) { carPosition = step }
+                return true
+            }
+        }
+        return false
+    }
+
     private func wallNormal() -> CGVector? {
         var sum = CGVector.zero
         var found = 0
@@ -4101,7 +4239,7 @@ final class ParkingScene: SKScene {
                 node.geometry = PedestrianModels.geometry(pose: pose, outfit: person.outfit)
             }
             var p = World3D.vec(person.position)
-            p.y = lift
+            p.y = lift + Float(level.city?.kerbHeight(at: person.position) ?? 0)
             node.position = p
             node.eulerAngles = SCNVector3(0, Float(person.heading), tilt)
         }
