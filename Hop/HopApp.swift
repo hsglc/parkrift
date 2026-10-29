@@ -686,6 +686,13 @@ struct RootView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { model.leaveGarage(confirmed: true) }
                 return
             }
+            if PerfSettings.benchmark && args.contains("-playcity") {
+                // City mode on the streets (traffic lights, trees, kerbs)
+                AudioManager.shared.isMuted = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.playCity() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { model.leaveGarage(confirmed: true) }
+                return
+            }
             if PerfSettings.benchmark && args.contains("-staylevels") {
                 AudioManager.shared.isMuted = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
