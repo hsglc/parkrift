@@ -950,13 +950,28 @@ final class Car3D {
         }
     }
 
+    /// Each wheel's pivot with its corner (0 front left, 1 front right, 2 rear left, 3 rear
+    /// right) and resting height, for the suspension.
+    private lazy var wheelCorners: [(node: SCNNode, corner: Int, rest: Float)] = spinNodes.compactMap { spinner in
+        guard let pivot = spinner.parent else { return nil }
+        let front = pivot.position.x > 0, left = pivot.position.z < 0
+        return (pivot, (front ? 0 : 2) + (left ? 0 : 1), pivot.position.y)
+    }
+
+    /// `heave` lifts the body on its springs; `wheelLift` (per corner) moves each wheel up or
+    /// down on its own (over a kerb, onto a ramp, hanging in the air).
     func update(position: CGPoint, heading: CGFloat, steer: CGFloat,
-                pitch: CGFloat = 0, roll: CGFloat = 0, braking: Bool = false, reversing: Bool = false, lift: Float = 0) {
+                pitch: CGFloat = 0, roll: CGFloat = 0, braking: Bool = false, reversing: Bool = false, lift: Float = 0,
+                heave: Float = 0, wheelLift: [Float]? = nil) {
         node.position = World3D.vec(position)
         node.position.y = lift
         node.eulerAngles = SCNVector3(0, Float(heading), 0)
         for pivot in steerPivots { pivot.eulerAngles.y = Float(steer) }
         body.eulerAngles = SCNVector3(Float(roll), 0, Float(pitch))
+        body.position.y = heave
+        if let wheels = wheelLift, wheels.count == 4 {
+            for wheel in wheelCorners { wheel.node.position.y = wheel.rest + wheels[wheel.corner] }
+        }
 
         if let last = lastPosition {
             let dx = position.x - last.x
