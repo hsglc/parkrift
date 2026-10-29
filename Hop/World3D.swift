@@ -2324,7 +2324,8 @@ final class World3D {
             node.position = World3D.vec(edge.0, y: 0.45)
             ground.addChildNode(node)
         }
-        levelRoot.addChildNode(ground.flattenedClone())
+        // Added as they are: flattenedClone dropped the street planes (the map showed bare ground)
+        levelRoot.addChildNode(ground)
         buildStreetFurniture(city, world: world)
     }
 

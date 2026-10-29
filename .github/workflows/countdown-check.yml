@@ -51,7 +51,7 @@ jobs:
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
             if [ "$RUN" = "city" ]; then
-              xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -dayweather -AppleLanguages "(tr)" > /dev/null 2>&1
+              xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -dayweather -AppleLanguages "(tr)" > shots/city-console.log 2>&1 &
             else
               xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -playpark $RUN -slowcountdown -AppleLanguages "(tr)" > /dev/null 2>&1
             fi
