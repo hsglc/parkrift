@@ -278,6 +278,9 @@ enum CarModels {
             TrafficVehicles.preload()
             _ = World3D.signalTemplates
             _ = Scenery.trees
+            // People and street props too: built on first use they held up the city's loading
+            _ = PedestrianModels.all
+            _ = StreetProps.allGeometries
             DispatchQueue.main.async { completion() }
         }
     }
