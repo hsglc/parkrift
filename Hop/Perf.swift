@@ -22,6 +22,53 @@ enum PerfSettings {
     static let carDetailDistance: CGFloat = 38
 }
 
+// MARK: - Leak test
+
+/// For the leak test (benchmark builds only): weak references to the big objects of a game, so
+/// the test can count how many are still alive after it is back on the menu (anything above zero
+/// is held by something it should not be), plus the app's memory footprint (what iOS counts
+/// against the app and kills it for).
+enum LeakWatch {
+    #if BENCHMARK
+    private final class Box {
+        weak var object: AnyObject?
+        let name: String
+        init(_ object: AnyObject, _ name: String) { self.object = object; self.name = name }
+    }
+    private static var boxes: [Box] = []
+    private static let lock = NSLock()
+
+    static func track(_ object: AnyObject, _ name: String) {
+        lock.lock(); defer { lock.unlock() }
+        boxes.removeAll { $0.object == nil }
+        boxes.append(Box(object, name))
+    }
+
+    /// Live objects by kind, e.g. "Car3D=0 ParkingScene=0 World3D=0".
+    static var live: String {
+        lock.lock(); defer { lock.unlock() }
+        var counts: [String: Int] = [:]
+        for box in boxes { counts[box.name, default: 0] += box.object == nil ? 0 : 1 }
+        return counts.keys.sorted().map { "\($0)=\(counts[$0]!)" }.joined(separator: " ")
+    }
+    #else
+    @inline(__always) static func track(_ object: AnyObject, _ name: String) {}
+    static var live: String { "" }
+    #endif
+
+    /// The app's physical footprint in MB.
+    static var footprintMB: Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+}
+
 // MARK: - Mesh building
 
 /// Builds one geometry from boxes written vertex by vertex (SceneKit's own primitives do not expose

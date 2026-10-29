@@ -77,7 +77,7 @@ final class GarageStage {
         turntable.addChildNode(shadowNode)
         let saved = CarChoice.saved
         for id in CarModelID.allCases {
-            let car = Car3D(color: saved.color, style: .racer, model: id)
+            let car = Car3D(color: saved.color, style: .racer, model: id, textures: id == saved.model)
             car.update(position: .zero, heading: 0, steer: 0)
             car.node.position = SCNVector3(0, 0.1, 0)
             car.node.eulerAngles.y = 0

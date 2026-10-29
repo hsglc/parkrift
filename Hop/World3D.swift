@@ -781,8 +781,10 @@ final class Car3D {
     private var carSpec: CarSpec?
 
     /// `model`: which garage car a player's racer uses.
+    /// `textures: false` builds a Meshy car without reading its big maps (a garage car that is
+    /// not on the platform; `setTexturesLoaded` puts them on later).
     init(color: UIColor, style: CarStyle = .sedan, parked: Bool = false, model carModel: CarModelID = .italia,
-         variety: Int = 0, vehicle forcedVehicle: String? = nil) {
+         variety: Int = 0, vehicle forcedVehicle: String? = nil, textures: Bool = true) {
         brakeMaterial = Mat.glow(UIColor(red: 0.55, green: 0.04, blue: 0.05, alpha: 1))
         // Thin tail light strips: lit from both sides whatever their winding
         brakeMaterial.isDoubleSided = true
@@ -839,7 +841,8 @@ final class Car3D {
             if let textured = car.childNode(withName: "textured", recursively: true)
                 ?? car.childNode(withName: "kenney", recursively: true) {
                 textured.geometry = textured.geometry?.copy() as? SCNGeometry
-                textured.geometry?.materials = [CarModels.texturePaint(spec, color)]
+                texturesLoaded = textures || spec.textureNormal == nil
+                textured.geometry?.materials = [texturesLoaded ? CarModels.texturePaint(spec, color) : CarModels.placeholder]
                 texturedNode = textured
             }
             if let tail = car.childNode(withName: "taillight", recursively: true) {
@@ -1699,15 +1702,19 @@ final class World3D {
 
     // MARK: Level
 
-    func makeCar(color: UIColor, style: CarStyle = .sedan, model: CarModelID = .italia, variety: Int = 0) -> Car3D {
-        let car = Car3D(color: color, style: style, model: model, variety: variety)
+    func makeCar(color: UIColor, style: CarStyle = .sedan, model: CarModelID = .italia, variety: Int = 0,
+                 textures: Bool = true) -> Car3D {
+        let car = Car3D(color: color, style: style, model: model, variety: variety, textures: textures)
+        LeakWatch.track(car, "Car3D")
         scene.rootNode.addChildNode(car.node)
         return car
     }
 
     /// The loose cones, barrels and bins of a city level.
     func addProps(_ defs: [PropDef]) -> StreetProps {
-        StreetProps(defs: defs, parent: levelRoot)
+        let props = StreetProps(defs: defs, parent: levelRoot)
+        LeakWatch.track(props, "StreetProps")
+        return props
     }
 
     /// Day, night (dark sky, moonlight, lamp light pools) or rain (overcast, wet shiny streets,
@@ -2213,6 +2220,7 @@ final class World3D {
                                 style: CarStyle(rawValue: (obstacle.tint + Int(obstacle.center.x)) % 3) ?? .sedan,
                                 parked: true, variety: obstacle.tint &* 977 &+ Int(obstacle.center.x) &+ Int(obstacle.center.y) &* 3)
                 car.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
+                LeakWatch.track(car, "Car3D")
                 if PerfSettings.optimized {
                     levelRoot.addChildNode(car.node)
                     parkedCars3D.append((car, obstacle.center))

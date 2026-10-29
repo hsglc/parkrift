@@ -86,21 +86,32 @@ enum TrafficVehicles {
         return loaded
     }
 
+    private static var maps: [String: Any] = [:]
+    /// A traffic car's map as a GPU texture (kept: traffic is in every city and race), or the
+    /// image if it cannot be read that way. As images SceneKit kept the decoded pictures in memory
+    /// beside their GPU copies.
+    private static func map(_ name: String) -> Any? {
+        if let cached = maps[name] { return cached }
+        let loaded: Any? = Scenery.loadTexture(file: name, srgb: name.hasSuffix("_basecolor.jpg")) ?? image(name)
+        maps[name] = loaded
+        return loaded
+    }
+
     /// The car's own texture and maps (one material per car and paint, shared by every copy).
     private static func material(_ model: TrafficModel, paint: Int?) -> SCNMaterial {
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
-        material.diffuse.contents = image(model.file + "_basecolor.jpg")
+        material.diffuse.contents = map(model.file + "_basecolor.jpg")
         material.diffuse.mipFilter = .linear
-        material.normal.contents = image(model.file + "_normal.jpg")
+        material.normal.contents = map(model.file + "_normal.jpg")
         material.normal.mipFilter = .linear
-        material.roughness.contents = image(model.file + "_rough.jpg")
+        material.roughness.contents = map(model.file + "_rough.jpg")
         material.roughness.mipFilter = .linear
-        material.metalness.contents = image(model.file + "_metal.jpg")
+        material.metalness.contents = map(model.file + "_metal.jpg")
         material.metalness.mipFilter = .linear
         material.isDoubleSided = true
         guard let paint = paint else { return material }
-        if let mask = image(model.file + "_mask.png") {
+        if let mask = map(model.file + "_mask.png") {
             material.clearCoat.contents = mask
             material.clearCoat.intensity = 0.9
             material.clearCoatRoughness.contents = NSNumber(value: 0.05)
@@ -273,6 +284,12 @@ enum TrafficVehicles {
             _ = mesh(model)
             _ = wheelMesh(model)
             _ = lodShell(model)
+            // Their maps too (read on the first level's loading they held it up for a moment)
+            lock.lock()
+            for map in ["_basecolor.jpg", "_normal.jpg", "_rough.jpg", "_metal.jpg", "_mask.png"] {
+                _ = self.map(model.file + map)
+            }
+            lock.unlock()
         }
     }
 

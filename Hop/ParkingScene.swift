@@ -398,9 +398,8 @@ final class ParkingScene: SKScene {
         localCar = world.makeCar(color: mine.color, style: .racer, model: mine.model)
         localCar?.setRim(mine.rimColor)
         let friend = model.friendCar ?? CarChoice.friendDefault
-        remoteCar = world.makeCar(color: friend.color, style: .racer, model: friend.model)
-        // Solo: the friend's car stays hidden, so it holds no 4K textures
-        remoteCar?.setTexturesLoaded(online)
+        // Solo: the friend's car stays hidden, so its 4K maps are not even read
+        remoteCar = world.makeCar(color: friend.color, style: .racer, model: friend.model, textures: online)
         remoteCar?.setRim(friend.rimColor)
         remoteChoice = friend
         // The chosen car's driving character with its upgrades (online too: every bought level
@@ -432,6 +431,7 @@ final class ParkingScene: SKScene {
 
     override func didMove(to view: SKView) {
         stage("scene attached \(Int(size.width))x\(Int(size.height))")
+        LeakWatch.track(view, "SKView")
         view.isMultipleTouchEnabled = true
         view.allowsTransparency = true
         backgroundColor = .clear
@@ -938,6 +938,7 @@ final class ParkingScene: SKScene {
         traffic = nil
         if let city = level.city {
             let newTraffic = Traffic(map: city, starts: level.bots, seed: UInt64(levelIndex * 31 + 7))
+            LeakWatch.track(newTraffic, "Traffic")
             traffic = newTraffic
             for (index, bot) in newTraffic.bots.enumerated() {
                 botCars.append(world.makeCar(color: CarArt.parkedColors[bot.tint % CarArt.parkedColors.count],
@@ -952,6 +953,7 @@ final class ParkingScene: SKScene {
         pedestrianSince.removeAll()
         if let city = level.city {
             let people = PedestrianSystem(map: city, count: 22, seed: UInt64(levelIndex * 131 + 5))
+            LeakWatch.track(people, "PedestrianSystem")
             pedestrians = people
             for _ in people.people {
                 pedestrianNodes.append(world.addPedestrianNode())
@@ -2022,6 +2024,8 @@ final class ParkingScene: SKScene {
                             variety: 17 + index)
             world.addLevelNode(car.node)
             let patrol = PatrolCar(lane: lane, car: car, topSpeed: challenge.patrolSpeed, phase: index == 0 ? 0.5 : 0.15)
+            LeakWatch.track(car, "Car3D")
+            LeakWatch.track(patrol, "PatrolCar")
             patrolCars.append(patrol)
             obstacleBoxes.append(patrol.box)
         }
@@ -3420,6 +3424,7 @@ final class ParkingScene: SKScene {
         let node = world.makePoliceNode()
         lap("police-node")
         police = PoliceChase(node: node, map: city, start: start)
+        if let police { LeakWatch.track(police, "PoliceChase") }
         lap("police-chase")
         showPoliceWarning(reason)
         lap("police-banner")

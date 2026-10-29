@@ -50,6 +50,9 @@ enum Scenery {
     private static let textureLock = NSLock()
     private static var textures: [String: Any] = [:]
     private static let textureLoader: MTKTextureLoader? = MTLCreateSystemDefaultDevice().map { MTKTextureLoader(device: $0) }
+    /// One texture read at a time: the loader is shared by the launch preloads, the garage and
+    /// the level build on different threads.
+    private static let loaderLock = NSLock()
 
     static func texture(_ name: String) -> Any? {
         textureLock.lock()
@@ -62,6 +65,8 @@ enum Scenery {
                 .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue)
             ]
             do {
+                loaderLock.lock()
+                defer { loaderLock.unlock() }
                 result = try loader.newTexture(name: name, scaleFactor: 1, bundle: .main, options: options)
             } catch {
                 if PerfSettings.benchmark {
@@ -72,6 +77,45 @@ enum Scenery {
         if result == nil { result = UIImage(named: name + ".jpg") }
         textures[name] = result
         return result
+    }
+
+    /// A bundle image (JPEG or PNG) read straight into a GPU texture with its mipmaps, the same
+    /// pixels as the image (not compressed): SceneKit given a UIImage keeps the decoded picture in
+    /// memory as well as its GPU copy (a 4K car map is 64 MB of that), a texture loaded this way
+    /// is only on the GPU. `srgb` for colour maps; normal, roughness, metal and mask maps are data.
+    static func loadTexture(file: String, srgb: Bool) -> MTLTexture? {
+        let ext = (file as NSString).pathExtension
+        guard let loader = textureLoader,
+              let url = Bundle.main.url(forResource: (file as NSString).deletingPathExtension, withExtension: ext.isEmpty ? nil : ext)
+        else { return nil }
+        let options: [MTKTextureLoader.Option: Any] = [
+            .SRGB: NSNumber(value: srgb),
+            // Rows in the image's own order, as SceneKit lays out an image: no flip needed (unlike
+            // the asset catalog's texture sets, stored bottom-up)
+            .origin: MTKTextureLoader.Origin.topLeft,
+            .generateMipmaps: NSNumber(value: true),
+            .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+            .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue)
+        ]
+        do {
+            loaderLock.lock()
+            defer { loaderLock.unlock() }
+            return try loader.newTexture(URL: url, options: options)
+        } catch {
+            if PerfSettings.benchmark {
+                FileHandle.standardError.write("PPTEX \(file) failed: \(error)\n".data(using: .utf8)!)
+            }
+            return nil
+        }
+    }
+
+    /// Texture-set textures are stored bottom-up, images top-down: flips v for a property showing
+    /// one so the model's UVs land where they were painted. (Not for `loadTexture`'s.)
+    static func orient(_ property: SCNMaterialProperty) {
+        guard property.contents is MTLTexture else { return }
+        property.wrapS = .repeat
+        property.wrapT = .repeat
+        property.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(1, -1, 1), SCNMatrix4MakeTranslation(0, 1, 0))
     }
 
     /// The material of a Meshy prop or person: its own colour, normal and roughness maps.
@@ -85,13 +129,7 @@ enum Scenery {
         for property in [material.diffuse, material.normal, material.roughness] {
             property.mipFilter = .linear
             property.maxAnisotropy = 4
-            // Texture-set textures come in bottom-up (Metal's order), images top-down: flip v
-            // for those so the model's UVs land where they were painted
-            if property.contents is MTLTexture {
-                property.wrapS = .repeat
-                property.wrapT = .repeat
-                property.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(1, -1, 1), SCNMatrix4MakeTranslation(0, 1, 0))
-            }
+            orient(property)
         }
         return material
     }

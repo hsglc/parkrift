@@ -1,3 +1,4 @@
+import Metal
 import SceneKit
 import UIKit
 
@@ -410,6 +411,18 @@ enum CarModels {
     /// the garage for a moment on every entry and every car change).
     static func whenDecoded(_ spec: CarSpec, then: @escaping () -> Void) {
         let names = [spec.textureBase, spec.textureMask, spec.textureNormal, spec.textureRough, spec.textureMetal].compactMap { $0 }
+        if spec.textureNormal != nil {
+            // Meshy cars: their maps go straight to the GPU in the background, held here until
+            // the car's materials have taken them
+            decodeQueue.async {
+                let ready = names.compactMap { gpuMap($0) }
+                DispatchQueue.main.async {
+                    then()
+                    _ = ready
+                }
+            }
+            return
+        }
         decodeQueue.async {
             var ready: [String: UIImage] = [:]
             for name in names {
@@ -437,7 +450,13 @@ enum CarModels {
     static func prewarmRetroTextures(_ id: CarModelID? = nil) {
         let specs = CarSpec.all.filter { $0.textureBase != nil && $0.id == (id ?? CarChoice.saved.model) }
         DispatchQueue.global(qos: .utility).async {
-            for spec in specs {
+            for spec in specs where spec.textureNormal != nil {
+                // The player's car: its maps stay on the GPU (see gpuMap)
+                for name in [spec.textureBase, spec.textureMask, spec.textureNormal, spec.textureRough, spec.textureMetal].compactMap({ $0 }) {
+                    _ = gpuMap(name)
+                }
+            }
+            for spec in specs where spec.textureNormal == nil {
                 if let base = spec.textureBase { _ = image(base) }
                 if let mask = spec.textureMask { _ = image(mask) }
                 if let normal = spec.textureNormal { _ = image(normal) }
@@ -451,25 +470,63 @@ enum CarModels {
 
     /// Normal, gloss and metal maps of a Meshy car, used texel for texel.
     private static func applyMeshyMaps(_ spec: CarSpec, to material: SCNMaterial) {
-        if let name = spec.textureNormal, let normal = image(name) {
+        if let name = spec.textureNormal, let normal = gpuMap(name) {
             material.normal.contents = normal
             material.normal.mipFilter = .linear
         }
-        if let name = spec.textureRough, let rough = image(name) {
+        if let name = spec.textureRough, let rough = gpuMap(name) {
             material.roughness.contents = rough
             material.roughness.mipFilter = .linear
         }
-        if let name = spec.textureMetal, let metal = image(name) {
+        if let name = spec.textureMetal, let metal = gpuMap(name) {
             material.metalness.contents = metal
             material.metalness.mipFilter = .linear
         }
+    }
+
+    // MARK: Meshy car maps on the GPU
+
+    private static let mapLock = NSLock()
+    /// Maps in use, shared by every car of a model (weak: a map nobody shows is freed).
+    private static let liveMaps = NSMapTable<NSString, AnyObject>.strongToWeakObjects()
+    /// The last car's maps are kept even when nothing shows them (the player's car goes from the
+    /// garage to the game and back without being read again).
+    private static var keptMaps: [String: MTLTexture] = [:]
+    private static var keptModel = ""
+
+    /// A Meshy car map (basecolor, mask, normal, rough, metal) as a GPU texture, read straight from
+    /// the file: SceneKit given the image itself kept the decoded picture in memory beside its GPU
+    /// copy, which held 64 MB for every 4K basecolor (about 470 MB with the traffic's maps).
+    static func gpuMap(_ name: String) -> MTLTexture? {
+        mapLock.lock()
+        defer { mapLock.unlock() }
+        let texture: MTLTexture
+        if let live = liveMaps.object(forKey: name as NSString) as? MTLTexture {
+            texture = live
+        } else {
+            guard let loaded = Scenery.loadTexture(file: name, srgb: name.hasSuffix("_basecolor.jpg")) else { return nil }
+            liveMaps.setObject(loaded, forKey: name as NSString)
+            texture = loaded
+        }
+        let model = String(name.prefix { $0 != "_" })
+        if model != keptModel {
+            keptMaps.removeAll()
+            keptModel = model
+        }
+        keptMaps[name] = texture
+        return texture
+    }
+
+    /// A Meshy car's map as contents (a GPU texture), or the image for the palette cars.
+    private static func contents(_ name: String, _ spec: CarSpec) -> Any? {
+        spec.textureNormal != nil ? gpuMap(name) : image(name)
     }
 
     /// Tyre or rim material with the car's own texture and maps (`loaded`), or plain rubber /
     /// metal in `solid` with no textures at all.
     static func setWheelMaps(_ spec: CarSpec, on material: SCNMaterial, loaded: Bool, solid: UIColor) {
         if loaded, let base = spec.textureBase {
-            material.diffuse.contents = image(base)
+            material.diffuse.contents = contents(base, spec)
             material.diffuse.mipFilter = .linear
             applyMeshyMaps(spec, to: material)
         } else {
@@ -488,7 +545,7 @@ enum CarModels {
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
         if let base = spec.textureBase {
-            material.diffuse.contents = image(base)
+            material.diffuse.contents = contents(base, spec)
             material.diffuse.mipFilter = .linear
         }
         applyMeshyMaps(spec, to: material)
@@ -501,7 +558,7 @@ enum CarModels {
         guard let base = spec.textureBase, let maskName = spec.textureMask else { return kenney }
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
-        material.diffuse.contents = image(base)
+        material.diffuse.contents = contents(base, spec)
         // Palette cells: no mipmaps, so far-away faces do not blend with the next colour; painted
         // textures (Meshy cars) are mipmapped so they stay smooth far away
         material.diffuse.mipFilter = base.hasSuffix("_palette.png") ? .none : .linear
@@ -513,7 +570,7 @@ enum CarModels {
         if spec.textureNormal != nil {
             // Meshy's own maps as they are; the clear coat only where the paint is
             applyMeshyMaps(spec, to: material)
-            if let mask = image(maskName) {
+            if let mask = contents(maskName, spec) {
                 material.clearCoat.contents = mask
                 material.clearCoat.intensity = 0.9
             }
@@ -521,7 +578,7 @@ enum CarModels {
         material.shaderModifiers = [.surface: paintShader]
         // Generated bodies have a few open shells (mirrors, spoilers): draw both sides
         material.isDoubleSided = true
-        if let mask = image(maskName) {
+        if let mask = contents(maskName, spec) {
             material.setValue(SCNMaterialProperty(contents: mask), forKey: "paintMask")
         }
         setPaint(material, color)
@@ -529,7 +586,7 @@ enum CarModels {
     }
 
     /// Paints a textured material through its mask on the GPU (traffic cars).
-    static func applyPaintShader(_ material: SCNMaterial, mask: UIImage, color: UIColor) {
+    static func applyPaintShader(_ material: SCNMaterial, mask: Any, color: UIColor) {
         material.shaderModifiers = [.surface: paintShader]
         material.setValue(SCNMaterialProperty(contents: mask), forKey: "paintMask")
         setPaint(material, color)
