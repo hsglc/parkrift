@@ -145,12 +145,10 @@ for lane in (65, 135):
 # Sealed cracks (tar: dark, shiny, slightly raised) and a patch
 cracks = np.zeros((N, N))
 crack(cracks, (82 * k, 0), 900, 101, base_angle=0.0)          # longitudinal, along a lane joint
-crack(cracks, (150 * k, 300), 500, 102, base_angle=0.05)
 crack(cracks, (40 * k, 700), 260, 103, base_angle=np.pi / 2)  # transverse
-crack(cracks, (120 * k, 120), 220, 104, base_angle=np.pi / 2 + 0.1)
 seal = ndimage.gaussian_filter(cracks, 1.1, mode='wrap')
 seal = np.clip(seal / seal.max() * 3, 0, 1)
-rgb = rgb * (1 - 0.55 * seal[..., None])
+rgb = rgb * (1 - 0.22 * seal[..., None])
 rough = rough - 0.35 * seal
 height = height + 0.4 * seal
 # Irregular repair patch
@@ -208,7 +206,7 @@ crack(jc, (J * 0.3, 0), 420, 201, base_angle=0.02)
 crack(jc, (0, J * 0.7), 420, 202, base_angle=np.pi / 2)
 jseal = ndimage.gaussian_filter(jc, 1.0, mode='wrap')
 jseal = np.clip(jseal / jseal.max() * 3, 0, 1)
-jrgb = jrgb * (1 - 0.55 * jseal[..., None])
+jrgb = jrgb * (1 - 0.22 * jseal[..., None])
 jr = jr - 0.35 * jseal
 Image.fromarray((np.clip(jrgb, 0, 1) * 255).astype(np.uint8)).save(os.path.join(OUT, 'junction_albedo.jpg'), quality=88)
 normal_map(ndimage.gaussian_filter(jh, 0.7, mode='wrap'), 2.2).save(os.path.join(OUT, 'junction_normal.png'))

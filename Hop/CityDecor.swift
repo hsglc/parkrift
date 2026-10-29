@@ -115,6 +115,63 @@ enum CityDecor {
         return root
     }
 
+    // MARK: Parking lot surroundings
+
+    /// The town round the parking lot (100 x 50 m, level units 0...1000 x 0...500): a paved
+    /// pavement with trees and benches, then a ring of shop and office buildings with gaps for
+    /// side streets, and the skyline beyond. Built once; every parking level shares it.
+    static let lotSurroundings: SCNNode = {
+        let root = SCNNode()
+        let solid = MeshBuilder()
+        let ground = MeshBuilder()
+        let far = MeshBuilder()
+        var rng = SplitMix64(seed: 2026)
+        // Buildings: rows along each side, set back past an 8 m pavement
+        func row(from start: CGFloat, to end: CGFloat, fixed: CGFloat, alongX: Bool, depth: CGFloat) {
+            var p = start
+            while p < end - 60 {
+                let width = min(end - p, CGFloat(rng.range(150, 260)))
+                let height = CGFloat(rng.range(9, 26))
+                let center = alongX ? CGPoint(x: p + width / 2, y: fixed) : CGPoint(x: fixed, y: p + width / 2)
+                let size = alongX ? CGSize(width: width, height: depth) : CGSize(width: depth, height: width)
+                let obstacle = ObstacleDef(kind: .building, center: center, size: size, angle: 0,
+                                           tint: rng.int(16), height: height)
+                building(obstacle, solid: solid, ground: ground, rng: &rng)
+                p += width + CGFloat(rng.range(30, 70))
+            }
+        }
+        let depth: CGFloat = 150
+        let gap: CGFloat = 110   // pavement + a lane from the lot's edge to the buildings
+        row(from: -200, to: 1200, fixed: 500 + gap + depth / 2, alongX: true, depth: depth)
+        row(from: -200, to: 1200, fixed: -gap - depth / 2, alongX: true, depth: depth)
+        row(from: -40, to: 540, fixed: -gap - depth / 2, alongX: false, depth: depth)
+        row(from: -40, to: 540, fixed: 1000 + gap + depth / 2, alongX: false, depth: depth)
+        // Trees along the pavement
+        var i = 0
+        for x in stride(from: CGFloat(40), to: 1000, by: 90) {
+            for y in [CGFloat(-45), 545] {
+                tree(solid, ground, at: v(CGPoint(x: x + CGFloat(rng.range(-12, 12)), y: y)), size: Float(rng.range(0.9, 1.2)), variant: i)
+                i += 1
+            }
+        }
+        for y in stride(from: CGFloat(60), to: 500, by: 110) {
+            for x in [CGFloat(-45), 1045] {
+                tree(solid, ground, at: v(CGPoint(x: x, y: y)), size: Float(rng.range(0.9, 1.2)), variant: i)
+                i += 1
+            }
+        }
+        skyline(world: CGSize(width: 1000, height: 500), far: far, ground: ground, rng: &rng)
+        for (builder, shadows) in [(solid, true), (ground, false), (far, false)] {
+            if let geometry = builder.build() {
+                let node = SCNNode(geometry: geometry)
+                node.castsShadow = shadows
+                if builder === ground { node.renderingOrder = 5 }
+                root.addChildNode(node)
+            }
+        }
+        return root
+    }()
+
     // MARK: Helpers
 
     private static func v(_ p: CGPoint, _ y: Float = 0) -> SIMD3<Float> {
@@ -517,7 +574,7 @@ enum CityDecor {
     private static func alleys(_ alleys: [CGRect], ramps: [RampDef], solid: MeshBuilder, ground: MeshBuilder) {
         guard !alleys.isEmpty else { return }
         let asphalt = material("alleyAsphalt") {
-            let material = World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.png", rough: "junction_rough.jpg")
+            let material = World3D.asphaltMaterial(albedo: "junction_albedo.jpg", normal: "junction_normal.jpg", rough: "junction_rough.jpg")
             for property in [material.diffuse, material.normal, material.roughness] {
                 property.wrapS = .repeat
                 property.wrapT = .repeat
