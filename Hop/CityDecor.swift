@@ -74,6 +74,7 @@ enum CityDecor {
         let ground = MeshBuilder()     // flat overlays: no shadows
         let far = MeshBuilder()        // skyline: no shadows
         var rng = SplitMix64(seed: UInt64(level.obstacles.count) &* 7919 &+ UInt64(city.xs.count))
+        treeNodes = []
 
         for obstacle in level.obstacles where obstacle.kind == .building {
             switch obstacle.tint {
@@ -91,6 +92,7 @@ enum CityDecor {
         if let geometry = solid.build() {
             root.addChildNode(SCNNode(geometry: geometry))
         }
+        if let trees = takeTrees() { root.addChildNode(trees) }
         if let geometry = ground.build() {
             let node = SCNNode(geometry: geometry)
             node.castsShadow = false
@@ -126,6 +128,7 @@ enum CityDecor {
         let ground = MeshBuilder()
         let far = MeshBuilder()
         var rng = SplitMix64(seed: 2026)
+        treeNodes = []
         // Buildings: rows along each side, set back past an 8 m pavement
         func row(from start: CGFloat, to end: CGFloat, fixed: CGFloat, alongX: Bool, depth: CGFloat) {
             var p = start
@@ -156,6 +159,7 @@ enum CityDecor {
             }
         }
         skyline(world: CGSize(width: 1000, height: 500), far: far, ground: ground, rng: &rng)
+        if let trees = takeTrees() { root.addChildNode(trees) }
         for (builder, shadows) in [(solid, true), (ground, false), (far, false)] {
             if let geometry = builder.build() {
                 let node = SCNNode(geometry: geometry)
@@ -452,16 +456,40 @@ enum CityDecor {
 
     // MARK: Sidewalks
 
+    /// The trees placed by the build in progress: clones of the Meshy models (shared geometry, a
+    /// lighter mesh further away, culled one by one), gathered under one node.
+    static var treeNodes: [SCNNode] = []
+
+    /// A street tree in its planter (Meshy, tools/convert_meshy_street.py), turned and scaled a
+    /// little each time; plain shapes are the fallback.
     private static func tree(_ solid: MeshBuilder, _ ground: MeshBuilder, at p: SIMD3<Float>, size: Float, variant: Int) {
-        let trunk = color("trunk", UIColor(red: 0.40, green: 0.28, blue: 0.18, alpha: 1))
-        let leaves = [color("leaves0", UIColor(red: 0.26, green: 0.52, blue: 0.24, alpha: 1)),
-                      color("leaves1", UIColor(red: 0.36, green: 0.60, blue: 0.26, alpha: 1))]
-        solid.addPrism(center: p, radius: 0.16 * size, height: 2.8 * size, sides: 6, material: trunk)
-        solid.addBall(center: p + SIMD3(0, 3.9 * size, 0), radius: 1.55 * size, squash: 0.85, material: leaves[variant % 2])
-        solid.addBall(center: p + SIMD3(0.45 * size, 5.0 * size, -0.3 * size), radius: 1.0 * size, squash: 0.9,
-                      material: leaves[(variant + 1) % 2], rings: 3, segments: 6)
-        ground.addDecal(center: SIMD3(p.x, 0.105, p.z), direction: SIMD2(0, 1), length: 3.4 * size, width: 3.4 * size,
-                        material: overlay("blob", CityArt.blobShadow))
+        let models = Scenery.trees
+        if !models.isEmpty {
+            let model = models[abs(variant &* 7 &+ Int(p.x * 3) &+ Int(p.z)) % models.count]
+            // Planters stay square to the street: quarter turns only
+            let yaw = Float((Int(p.x * 13) &+ Int(p.z * 7)) & 3) * .pi / 2
+            let s = min(1.06, max(0.86, size))
+            let tree = model.clone()
+            tree.simdScale = SIMD3(repeating: s)
+            tree.simdEulerAngles = SIMD3(0, yaw, 0)
+            tree.simdPosition = p
+            treeNodes.append(tree)
+        } else {
+            let trunk = color("trunk", UIColor(red: 0.40, green: 0.28, blue: 0.18, alpha: 1))
+            let leaves = [color("leaves0", UIColor(red: 0.26, green: 0.52, blue: 0.24, alpha: 1)),
+                          color("leaves1", UIColor(red: 0.36, green: 0.60, blue: 0.26, alpha: 1))]
+            solid.addPrism(center: p, radius: 0.16 * size, height: 2.8 * size, sides: 6, material: trunk)
+            solid.addBall(center: p + SIMD3(0, 3.9 * size, 0), radius: 1.55 * size, squash: 0.85, material: leaves[variant % 2])
+        }
+    }
+
+    /// The trees placed so far under one node (and a fresh list for the next build).
+    private static func takeTrees() -> SCNNode? {
+        defer { treeNodes = [] }
+        guard !treeNodes.isEmpty else { return nil }
+        let node = SCNNode()
+        for tree in treeNodes { node.addChildNode(tree) }
+        return node
     }
 
     private static func bench(_ solid: MeshBuilder, at p: SIMD3<Float>, alongX: Bool, facingPositive: Bool) {
@@ -498,7 +526,6 @@ enum CityDecor {
             return material
         }
         let adPanel = material("adPanel") { Mat.glow(UIColor(red: 0.95, green: 0.55, blue: 0.75, alpha: 1)) }
-        let pit = color("treePit", UIColor(red: 0.30, green: 0.24, blue: 0.18, alpha: 1), rough: 1)
         let curbShadow = overlay("contact", CityArt.contactShadow)
         var busStops = 0
 
@@ -533,7 +560,6 @@ enum CityDecor {
                     let nearLamp = lamps.contains { abs($0.x - p.x) < 30 && abs($0.y - p.y) < 30 }
                     if slot % 2 == 0 {
                         if !nearLamp {
-                            ground.addDecal(center: v(p, 0.095), direction: SIMD2(1, 0), length: 1.3, width: 1.3, material: pit)
                             tree(solid, ground, at: v(p), size: Float(rng.range(0.85, 1.1)), variant: rng.int(2))
                         }
                     } else {

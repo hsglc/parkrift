@@ -72,6 +72,63 @@ final class MeshBuilder {
         quad([p(-w, h, l), p(w, h, l), p(w, h, -l), p(-w, h, -l)], normal: SIMD3(0, 1, 0), uvMax: roofRepeats, material: roof)
     }
 
+    /// A mesh read from a model file (Scenery.MeshData), placed with `transform`.
+    func addMesh(_ mesh: Scenery.MeshData, transform: simd_float4x4, material: SCNMaterial) {
+        let base = UInt32(positions.count)
+        let normalMatrix = simd_float3x3(SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
+                                         SIMD3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
+                                         SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z))
+        for i in 0..<mesh.positions.count {
+            let p = transform * SIMD4<Float>(mesh.positions[i], 1)
+            positions.append(SCNVector3(p.x, p.y, p.z))
+            let n = simd_normalize(normalMatrix * mesh.normals[i])
+            normals.append(SCNVector3(n.x, n.y, n.z))
+            uvs.append(mesh.uvs[i])
+        }
+        let g = group(for: material)
+        groups[g] += mesh.indices.map { $0 + base }
+    }
+
+    /// A long piece with a cross-section `profile` (across, up, normal across, normal up; across
+    /// measured from the line a-b towards `side`) run from `a` to `b` on the ground: kerbs.
+    func addProfile(from a: SIMD3<Float>, to b: SIMD3<Float>, side: SIMD3<Float>,
+                    profile: [(Float, Float, Float, Float)], material: SCNMaterial, uvRepeat: Float) {
+        let length = simd_length(b - a)
+        guard length > 0.01, profile.count > 1 else { return }
+        var perimeter: [Float] = [0]
+        for k in 1..<profile.count {
+            perimeter.append(perimeter[k - 1] + hypot(profile[k].0 - profile[k - 1].0, profile[k].1 - profile[k - 1].1))
+        }
+        let along = (b - a) / length
+        for k in 0..<(profile.count - 1) {
+            let p0 = profile[k], p1 = profile[k + 1]
+            func at(_ start: SIMD3<Float>, _ p: (Float, Float, Float, Float)) -> SIMD3<Float> {
+                start + side * p.0 + SIMD3(0, p.1, 0)
+            }
+            let corners = [at(a, p0), at(b, p0), at(b, p1), at(a, p1)]
+            let n0 = simd_normalize(side * p0.2 + SIMD3(0, p0.3, 0))
+            let n1 = simd_normalize(side * p1.2 + SIMD3(0, p1.3, 0))
+            let base = UInt32(positions.count)
+            let u = length / uvRepeat
+            let v0 = perimeter[k] / uvRepeat, v1 = perimeter[k + 1] / uvRepeat
+            let uv: [SIMD2<Float>] = [SIMD2(0, v0), SIMD2(u, v0), SIMD2(u, v1), SIMD2(0, v1)]
+            for (c, (n, t)) in zip(corners, zip([n0, n0, n1, n1], uv)) {
+                positions.append(SCNVector3(c.x, c.y, c.z))
+                normals.append(SCNVector3(n.x, n.y, n.z))
+                uvs.append(t)
+            }
+            // Wind the quad so it faces along its normal
+            let face = simd_cross(corners[1] - corners[0], corners[3] - corners[0])
+            let g = group(for: material)
+            if simd_dot(face, n0 + n1) >= 0 {
+                groups[g] += [base, base + 1, base + 2, base, base + 2, base + 3]
+            } else {
+                groups[g] += [base, base + 2, base + 1, base, base + 3, base + 2]
+            }
+        }
+        _ = along
+    }
+
     /// Any flat quad: corners counter-clockwise seen from the side `normal` points to; `uv` per corner
     /// (v = 0 is the top of the image).
     func addQuad(_ corners: [SIMD3<Float>], normal: SIMD3<Float>, uv: [SIMD2<Float>], material: SCNMaterial) {
@@ -204,10 +261,55 @@ final class MeshBuilder {
                                          usesFloatComponents: true, componentsPerVector: 2,
                                          bytesPerComponent: MemoryLayout<Float>.size, dataOffset: 0,
                                          dataStride: MemoryLayout<SIMD2<Float>>.stride)
-        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals), uvSource],
+        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals), uvSource,
+                                             tangentSource()],
                                    elements: groups.map { SCNGeometryElement(indices: $0, primitiveType: .triangles) })
         geometry.materials = materials
         return geometry
+    }
+
+    /// Per-vertex tangents (xyz + handedness) worked out here, so SceneKit never has to build them
+    /// itself for a normal-mapped material: its own tangent generator crashes on large code-built
+    /// meshes (C3DCreateTangentsWithGeometryOptimized).
+    private func tangentSource() -> SCNGeometrySource {
+        let count = positions.count
+        var tan = [SIMD3<Float>](repeating: .zero, count: count)
+        var bit = [SIMD3<Float>](repeating: .zero, count: count)
+        for indices in groups {
+            var i = 0
+            while i + 2 < indices.count {
+                let a = Int(indices[i]), b = Int(indices[i + 1]), c = Int(indices[i + 2])
+                i += 3
+                guard a < count, b < count, c < count else { continue }
+                let p0 = SIMD3<Float>(positions[a]), p1 = SIMD3<Float>(positions[b]), p2 = SIMD3<Float>(positions[c])
+                let e1 = p1 - p0, e2 = p2 - p0
+                let d1 = uvs[b] - uvs[a], d2 = uvs[c] - uvs[a]
+                let det = d1.x * d2.y - d2.x * d1.y
+                guard abs(det) > 1e-12 else { continue }
+                let r = 1 / det
+                let t = (e1 * d2.y - e2 * d1.y) * r
+                let s = (e2 * d1.x - e1 * d2.x) * r
+                for v in [a, b, c] { tan[v] += t; bit[v] += s }
+            }
+        }
+        var out = [SIMD4<Float>](repeating: SIMD4(1, 0, 0, 1), count: count)
+        for v in 0..<count {
+            let n = SIMD3<Float>(normals[v])
+            var t = tan[v] - n * simd_dot(n, tan[v])
+            let len = simd_length(t)
+            if len < 1e-6 {
+                // Any direction across the normal will do where the UVs give none
+                t = abs(n.y) < 0.9 ? simd_normalize(simd_cross(SIMD3(0, 1, 0), n)) : SIMD3(1, 0, 0)
+            } else {
+                t /= len
+            }
+            let w: Float = simd_dot(simd_cross(n, t), bit[v]) < 0 ? -1 : 1
+            out[v] = SIMD4(t.x, t.y, t.z, w)
+        }
+        let data = out.withUnsafeBufferPointer { Data(buffer: $0) }
+        return SCNGeometrySource(data: data, semantic: .tangent, vectorCount: count, usesFloatComponents: true,
+                                 componentsPerVector: 4, bytesPerComponent: MemoryLayout<Float>.size, dataOffset: 0,
+                                 dataStride: MemoryLayout<SIMD4<Float>>.stride)
     }
 }
 

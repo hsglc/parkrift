@@ -2,6 +2,9 @@ import Foundation
 
 /// What happened in one round, as the game reports it at the end.
 struct RunStats {
+    /// Which game mode the round was.
+    enum Mode { case park, city, race, online }
+    var mode: Mode = .park
     var finished: Bool
     var stars: Int
     /// nil outside a head-to-head round.
@@ -22,7 +25,7 @@ struct RunReward {
     var total: Int { lines.reduce(0) { $0 + $1.coins } + tasksDone.reduce(0) { $0 + $1.coins } }
 }
 
-/// The meta game kept on the device: coins, the cars bought with them, three daily tasks and a
+/// The meta game kept on the device: coins, the cars bought with them, daily tasks for every mode and a
 /// seven-day login streak. Rewards follow the genre's usual loop: every round pays a little,
 /// a daily task pays more than a round, and the daily gift grows over a week of visits.
 enum Progression {
@@ -148,27 +151,81 @@ enum Progression {
 
     // MARK: Daily tasks
 
+    /// Every mode has its own tasks each day: two for parking, two for the city, two for racing
+    /// and one for playing with a friend, drawn from a larger pool (the same for everyone on a date).
+    enum TaskMode: Int, CaseIterable {
+        case park, city, race, online
+
+        var title: String {
+            switch self {
+            case .park: return Strings.modeSoloTitle
+            case .city: return Strings.modeCityTitle
+            case .race: return Strings.carRace
+            case .online: return Strings.modeOnlineTitle
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .park: return "parkingsign"
+            case .city: return "building.2.fill"
+            case .race: return "flag.checkered"
+            case .online: return "person.2.fill"
+            }
+        }
+
+        /// How many of its tasks show each day.
+        var daily: Int { self == .online ? 1 : 2 }
+    }
+
     enum TaskKind: Int, CaseIterable {
-        case drift, nearMiss, threeStars, escape, rounds, topSpeed, clean
+        // Parking
+        case parkRounds, threeStars, parkClean, parkFlawless, parkStars
+        // City
+        case cityRounds, nearMiss, escape, drift, cityClean
+        // Race
+        case raceRounds, raceClean, topSpeed, raceDrift, raceNearMiss
+        // Online
+        case onlineRounds, onlineWin
+
+        var mode: TaskMode {
+            switch self {
+            case .parkRounds, .threeStars, .parkClean, .parkFlawless, .parkStars: return .park
+            case .cityRounds, .nearMiss, .escape, .drift, .cityClean: return .city
+            case .raceRounds, .raceClean, .topSpeed, .raceDrift, .raceNearMiss: return .race
+            case .onlineRounds, .onlineWin: return .online
+            }
+        }
 
         var target: Int {
             switch self {
-            case .drift: return 1500
-            case .nearMiss: return 5
-            case .threeStars: return 3
+            case .parkRounds: return 4
+            case .threeStars: return 2
+            case .parkClean: return 3
+            case .parkFlawless: return 1
+            case .parkStars: return 8
+            case .cityRounds: return 3
+            case .nearMiss: return 6
             case .escape: return 1
-            case .rounds: return 5
-            case .topSpeed: return 85
-            case .clean: return 2
+            case .drift: return 1500
+            case .cityClean: return 1
+            case .raceRounds: return 2
+            case .raceClean: return 1
+            case .topSpeed: return 95
+            case .raceDrift: return 800
+            case .raceNearMiss: return 4
+            case .onlineRounds: return 2
+            case .onlineWin: return 1
             }
         }
 
         var reward: Int {
             switch self {
-            case .drift, .threeStars, .clean: return 150
-            case .nearMiss: return 120
-            case .escape: return 200
-            case .rounds, .topSpeed: return 100
+            case .parkRounds, .cityRounds, .raceRounds, .topSpeed: return 100
+            case .threeStars, .parkClean, .drift, .raceDrift, .nearMiss, .raceNearMiss: return 140
+            case .parkStars, .cityClean, .raceClean: return 160
+            case .parkFlawless, .escape, .onlineRounds: return 200
+            case .onlineWin: return 250
             }
         }
 
@@ -176,13 +233,18 @@ enum Progression {
 
         var icon: String {
             switch self {
-            case .drift: return "tornado"
-            case .nearMiss: return "arrow.left.and.right"
-            case .threeStars: return "star.fill"
+            case .parkRounds: return "parkingsign"
+            case .threeStars, .parkStars: return "star.fill"
+            case .parkClean, .cityClean, .raceClean: return "checkmark.shield.fill"
+            case .parkFlawless: return "sparkles"
+            case .cityRounds: return "building.2.fill"
+            case .nearMiss, .raceNearMiss: return "arrow.left.and.right"
             case .escape: return "light.beacon.max.fill"
-            case .rounds: return "flag.checkered"
+            case .drift, .raceDrift: return "tornado"
+            case .raceRounds: return "flag.checkered"
             case .topSpeed: return "speedometer"
-            case .clean: return "checkmark.shield.fill"
+            case .onlineRounds: return "person.2.fill"
+            case .onlineWin: return "trophy.fill"
             }
         }
     }
@@ -202,18 +264,23 @@ enum Progression {
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
-    /// Today's three tasks: the same for everyone on the same date.
+    /// Today's tasks, mode by mode: the same for everyone on the same date.
     private static func todaysKinds() -> [TaskKind] {
         let days = Int(Date().timeIntervalSince1970 / 86_400)
         var rng = SplitMix64(seed: UInt64(days) &* 2_654_435_761)
-        var kinds = TaskKind.allCases
-        kinds.shuffle(using: &rng)
-        return Array(kinds.prefix(3))
+        var result: [TaskKind] = []
+        for mode in TaskMode.allCases {
+            var pool = TaskKind.allCases.filter { $0.mode == mode }
+            pool.shuffle(using: &rng)
+            result += pool.prefix(mode.daily)
+        }
+        return result
     }
 
     private static func todaysProgress() -> [Int] {
+        let count = todaysKinds().count
         guard let saved = defaults.dictionary(forKey: "pp.daily"), saved["day"] as? String == todayKey,
-              let progress = saved["p"] as? [Int], progress.count == 3 else { return [0, 0, 0] }
+              let progress = saved["p"] as? [Int], progress.count == count else { return Array(repeating: 0, count: count) }
         return progress
     }
 
@@ -221,6 +288,9 @@ enum Progression {
         let progress = todaysProgress()
         return todaysKinds().enumerated().map { DailyTask(index: $0.offset, kind: $0.element, progress: progress[$0.offset]) }
     }
+
+    /// Today's tasks still open (for the badge on the gift button).
+    static var openTasks: Int { tasks.filter { !$0.done }.count }
 
     /// Adds the round to today's tasks; returns the tasks it just completed (their coins are paid).
     private static func advanceTasks(with run: RunStats) -> [(name: String, coins: Int)] {
@@ -230,14 +300,25 @@ enum Progression {
             let before = progress[index]
             guard before < kind.target else { continue }
             var value = before
+            let park = run.mode == .park, city = run.mode == .city, race = run.mode == .race
             switch kind {
-            case .drift: value += run.driftPoints
-            case .nearMiss: value += run.nearMisses
-            case .threeStars: if run.solo && run.finished && run.stars == 3 { value += 1 }
-            case .escape: value += run.escapes
-            case .rounds: if run.finished { value += 1 }
-            case .topSpeed: value = max(value, run.topSpeed)
-            case .clean: if run.finished && run.hits == 0 { value += 1 }
+            case .parkRounds: if park && run.finished { value += 1 }
+            case .threeStars: if park && run.finished && run.stars == 3 { value += 1 }
+            case .parkClean: if park && run.finished && run.hits == 0 { value += 1 }
+            case .parkFlawless: if park && run.finished && run.stars == 3 && run.hits == 0 { value += 1 }
+            case .parkStars: if park && run.finished { value += run.stars }
+            case .cityRounds: if city && run.finished { value += 1 }
+            case .nearMiss: if city { value += run.nearMisses }
+            case .escape: if city || race { value += run.escapes }
+            case .drift: if city { value += run.driftPoints }
+            case .cityClean: if city && run.finished && run.hits == 0 { value += 1 }
+            case .raceRounds: if race && run.finished { value += 1 }
+            case .raceClean: if race && run.finished && run.hits == 0 { value += 1 }
+            case .topSpeed: if race { value = max(value, run.topSpeed) }
+            case .raceDrift: if race { value += run.driftPoints }
+            case .raceNearMiss: if race { value += run.nearMisses }
+            case .onlineRounds: if run.mode == .online && run.finished { value += 1 }
+            case .onlineWin: if run.mode == .online && run.won == true { value += 1 }
             }
             progress[index] = min(kind.target, value)
             if progress[index] >= kind.target { completed.append((kind.title, kind.reward)) }

@@ -51,7 +51,17 @@ final class AppModel: ObservableObject {
     @Published var friendHere = false
     @Published var connecting = false
     @Published var errorText: String?
-    @Published var selectedLevel = 0
+    /// The parking level shown on the home screen and in the list: where the player left off
+    /// (kept between launches; a new player starts at level 1).
+    @Published var selectedLevel: Int = {
+        let saved = UserDefaults.standard.object(forKey: "pp.selected") as? Int
+        let unlocked = max(1, UserDefaults.standard.integer(forKey: "pp.unlocked"))
+        return max(0, min(saved ?? (unlocked - 1), Levels.all.count - 1))
+    }() {
+        didSet {
+            if !Levels.isCity(selectedLevel) { UserDefaults.standard.set(selectedLevel, forKey: "pp.selected") }
+        }
+    }
     @Published var results: ResultsInfo?
     /// Loading screen over the game until the world is built and the countdown can start.
     @Published var loading = false
@@ -389,6 +399,10 @@ final class AppModel: ObservableObject {
 
     func levelCompleted(_ index: Int) {
         if index + 2 > unlockedLevels { unlockedLevels = index + 2 }
+        // The home screen offers the next level from now on
+        if !Levels.isCity(index) && index + 1 < Levels.all.count && selectedLevel <= index {
+            selectedLevel = index + 1
+        }
     }
 
     // MARK: Coins, cars, daily tasks

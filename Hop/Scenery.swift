@@ -6,6 +6,83 @@ import UIKit
 /// (a partly cloudy day and an overcast one) used as background and as the light the scene
 /// reflects.
 enum Scenery {
+    /// Triangles read from a model file: positions, normals, UVs, indices (in the model's space).
+    struct MeshData {
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var uvs: [SIMD2<Float>] = []
+        var indices: [UInt32] = []
+    }
+
+    /// The meshes of a USDZ file in the bundle, by node name.
+    static func meshes(_ file: String) -> [String: MeshData] {
+        guard let url = Bundle.main.url(forResource: file, withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return [:] }
+        var result: [String: MeshData] = [:]
+        scene.rootNode.enumerateHierarchy { node, _ in
+            guard let geometry = node.geometry, let name = node.name,
+                  let vertexSource = geometry.sources(for: .vertex).first else { return }
+            let transform = node.simdConvertTransform(matrix_identity_float4x4, to: scene.rootNode)
+            let normalMatrix = simd_float3x3(SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
+                                             SIMD3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
+                                             SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z))
+            let p = MeshMerge.floats(vertexSource, components: 3)
+            let n = geometry.sources(for: .normal).first.map { MeshMerge.floats($0, components: 3) } ?? []
+            let t = geometry.sources(for: .texcoord).first.map { MeshMerge.floats($0, components: 2) } ?? []
+            var mesh = result[name] ?? MeshData()
+            let base = UInt32(mesh.positions.count)
+            for i in 0..<p.count {
+                let w = transform * SIMD4<Float>(p[i][0], p[i][1], p[i][2], 1)
+                mesh.positions.append(SIMD3(w.x, w.y, w.z))
+                mesh.normals.append(i < n.count ? simd_normalize(normalMatrix * SIMD3(n[i][0], n[i][1], n[i][2])) : SIMD3(0, 1, 0))
+                mesh.uvs.append(i < t.count ? SIMD2(t[i][0], t[i][1]) : .zero)
+            }
+            for element in geometry.elements { mesh.indices += MeshMerge.indices(element).map { $0 + base } }
+            result[name] = mesh
+        }
+        return result
+    }
+
+    /// A street prop modelled with Meshy from the reference sheet (tools/convert_meshy_street.py):
+    /// the close-up mesh "<name>" with its lighter "<name>_lod" swapped in from `lodDistance`
+    /// metres, textured with its own colour, normal and roughness maps. Clones share all of it.
+    static func prop(_ name: String, lodDistance: CGFloat) -> SCNNode? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return nil }
+        var full: SCNNode?
+        var lod: SCNNode?
+        scene.rootNode.enumerateHierarchy { node, _ in
+            guard node.geometry != nil else { return }
+            if node.name == name + "_lod" { lod = node } else if node.name == name { full = node }
+        }
+        guard let mesh = full, let geometry = mesh.geometry else { return nil }
+        let material = SCNMaterial()
+        material.lightingModel = .physicallyBased
+        material.diffuse.contents = image("\(name)_diff.jpg")
+        material.normal.contents = image("\(name)_nor.jpg")
+        material.roughness.contents = image("\(name)_rough.jpg")
+        material.metalness.contents = NSNumber(value: 0)
+        for property in [material.diffuse, material.normal, material.roughness] {
+            property.mipFilter = .linear
+            property.maxAnisotropy = 8
+        }
+        geometry.materials = [material]
+        if let far = lod?.geometry {
+            far.materials = [material]
+            geometry.levelsOfDetail = [SCNLevelOfDetail(geometry: far, worldSpaceDistance: lodDistance)]
+        }
+        let node = SCNNode(geometry: geometry)
+        node.simdTransform = mesh.simdConvertTransform(matrix_identity_float4x4, to: scene.rootNode)
+        node.castsShadow = true
+        let holder = SCNNode()
+        holder.addChildNode(node)
+        return holder
+    }
+
+    /// The four street trees in their kerbed planters: green, light green, yellow, blossom.
+    static let trees: [SCNNode] = ["tree_green", "tree_light", "tree_yellow", "tree_pink"]
+        .compactMap { prop($0, lodDistance: 38) }
+
     private static var cache: [String: SCNMaterial] = [:]
 
     /// A PBR set from Hop/Textures/ph_<name>_{diff,nor,rough}.jpg, repeated every `tile` metres
