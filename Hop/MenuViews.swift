@@ -645,6 +645,8 @@ struct AboutView: View {
         Credit(what: Strings.pick("Motor, korna, siren sesleri ve müzik", "Engine, horn and siren sounds, music", "Motor, claxon, sirena y música"),
                author: "OpenGameArt (banditracer.eu, omfgdude)", license: "CC0", link: "https://opengameart.org"),
         Credit(what: Strings.pick("Arayüz sesleri", "Interface sounds", "Sonidos de interfaz"), author: "Kenney", license: "CC0", link: "https://kenney.nl"),
+        Credit(what: Strings.pick("Yağmur sesi", "Rain sound", "Sonido de lluvia"), author: "Ylmir (OpenGameArt)", license: "CC0",
+               link: "https://opengameart.org/content/rain-loopable"),
         Credit(what: Strings.pick("Trafik ışığı", "Traffic light", "Semáforo"),
                author: Strings.pick("Özgün, Meshy AI ile üretildi", "Original, made with Meshy AI", "Originales, hechos con Meshy AI"), license: "CC BY 4.0", link: "https://www.meshy.ai")
     ] }
