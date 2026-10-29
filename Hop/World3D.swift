@@ -1054,11 +1054,11 @@ final class World3D {
         skidMaterial.writesToDepthBuffer = false
         skidGeometry.materials = [skidMaterial]
 
-        scene.background.contents = Environment.daySky
+        scene.background.contents = Scenery.daySky
         scene.fogColor = UIColor(red: 0.84, green: 0.90, blue: 0.97, alpha: 1)
         scene.fogStartDistance = 70
         scene.fogEndDistance = 200
-        scene.lightingEnvironment.contents = Environment.daySky
+        scene.lightingEnvironment.contents = Scenery.daySky
         scene.lightingEnvironment.intensity = 1.0
         buildLights()
         scene.rootNode.addChildNode(lotRoot)
@@ -1148,14 +1148,14 @@ final class World3D {
         // Paving all around (Poly Haven slabs), under the town that rings the lot
         let apronSize = CGSize(width: 400, height: 400)
         let apron = SCNPlane(width: apronSize.width, height: apronSize.height)
-        let apronMaterial = Environment.surface("pavement", tile: 2.5, size: apronSize, normal: 0.8)
+        let apronMaterial = Scenery.surface("pavement", tile: 2.5, size: apronSize, normal: 0.8)
         apron.materials = [apronMaterial]
         scene.rootNode.addChildNode(flat(apron, y: -0.06))
 
         // Asphalt lot: photo-scanned asphalt every 3.5 m, a large stain map over it breaks the repeat
         let lotSize = CGSize(width: 100, height: 50)
         let lot = SCNPlane(width: lotSize.width, height: lotSize.height)
-        let lotMaterial = Environment.surface("asphalt", tile: 3.5, size: lotSize)
+        let lotMaterial = Scenery.surface("asphalt", tile: 3.5, size: lotSize)
         lotMaterial.multiply.contents = UIImage(named: "street_stains.jpg")
         lotMaterial.multiply.contentsTransform = SCNMatrix4MakeScale(2, 1, 1)
         lotMaterial.multiply.wrapS = .repeat
@@ -1167,7 +1167,7 @@ final class World3D {
         lotRoot.addChildNode(CityDecor.lotSurroundings.clone())
 
         // Raised curbs
-        let concrete = Environment.shared("concrete", tile: 2, size: CGSize(width: 100, height: 1))
+        let concrete = Scenery.shared("concrete", tile: 2, size: CGSize(width: 100, height: 1))
         let curbs: [(CGFloat, CGFloat, Float, Float)] = [(101, 1.0, 0, -24.6), (101, 1.0, 0, 24.6), (1.0, 50, -49.6, 0), (1.0, 50, 49.6, 0)]
         for curb in curbs {
             let geometry = SCNBox(width: curb.0, height: 0.22, length: curb.1, chamferRadius: 0.06)
@@ -1579,8 +1579,8 @@ final class World3D {
         let snowy = newWeather == .snow
         switch newWeather {
         case .day:
-            scene.background.contents = Environment.daySky
-            scene.lightingEnvironment.contents = Environment.daySky
+            scene.background.contents = Scenery.daySky
+            scene.lightingEnvironment.contents = Scenery.daySky
             scene.lightingEnvironment.intensity = 1.0
             scene.fogColor = UIColor(red: 0.80, green: 0.86, blue: 0.94, alpha: 1)
             scene.fogStartDistance = 70
@@ -1602,8 +1602,8 @@ final class World3D {
             ambientLight.color = UIColor(red: 0.45, green: 0.52, blue: 0.80, alpha: 1)
         case .rain:
             // Overcast and soft: a grey day, light mist, the wet street catches the lights
-            scene.background.contents = Environment.overcastSky
-            scene.lightingEnvironment.contents = Environment.overcastSky
+            scene.background.contents = Scenery.overcastSky
+            scene.lightingEnvironment.contents = Scenery.overcastSky
             scene.lightingEnvironment.intensity = 1.2
             scene.fogColor = UIColor(red: 0.46, green: 0.50, blue: 0.56, alpha: 1)
             scene.fogStartDistance = 32
@@ -1614,8 +1614,8 @@ final class World3D {
             ambientLight.color = UIColor(red: 0.68, green: 0.74, blue: 0.84, alpha: 1)
         case .snow:
             // Bright white overcast: soft shadows, pale blue mist, snow on the ground
-            scene.background.contents = Environment.overcastSky
-            scene.lightingEnvironment.contents = Environment.overcastSky
+            scene.background.contents = Scenery.overcastSky
+            scene.lightingEnvironment.contents = Scenery.overcastSky
             scene.lightingEnvironment.intensity = 1.55
             scene.fogColor = UIColor(red: 0.80, green: 0.84, blue: 0.90, alpha: 1)
             scene.fogStartDistance = 26
@@ -1902,7 +1902,7 @@ final class World3D {
         setWeather(level.city != nil || level.weather == .rain || level.weather == .snow ? level.weather : .day)
 
         if level.city == nil {
-            levelRoot.addChildNode(Environment.markingsNode(for: level))
+            levelRoot.addChildNode(Scenery.markingsNode(for: level))
         }
         if level.race {
             buildFinish(level.spots[0])
@@ -2063,9 +2063,9 @@ final class World3D {
                 let geometry = SCNBox(width: obstacle.size.width / 10, height: 1.1,
                                       length: obstacle.size.height / 10, chamferRadius: 0.06)
                 geometry.chamferSegmentCount = 1
-                let long = Environment.shared("concrete", tile: 2, size: CGSize(width: max(obstacle.size.width, obstacle.size.height) / 10, height: 1.1))
-                let short = Environment.shared("concrete", tile: 2, size: CGSize(width: min(obstacle.size.width, obstacle.size.height) / 10, height: 1.1))
-                let top = Environment.shared("concrete", tile: 2, size: CGSize(width: obstacle.size.width / 10, height: obstacle.size.height / 10))
+                let long = Scenery.shared("concrete", tile: 2, size: CGSize(width: max(obstacle.size.width, obstacle.size.height) / 10, height: 1.1))
+                let short = Scenery.shared("concrete", tile: 2, size: CGSize(width: min(obstacle.size.width, obstacle.size.height) / 10, height: 1.1))
+                let top = Scenery.shared("concrete", tile: 2, size: CGSize(width: obstacle.size.width / 10, height: obstacle.size.height / 10))
                 let alongX = obstacle.size.width >= obstacle.size.height
                 // SCNBox faces: front, right, back, left, top, bottom
                 geometry.materials = alongX ? [long, short, long, short, top, concrete] : [short, long, short, long, top, concrete]

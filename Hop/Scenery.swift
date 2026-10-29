@@ -5,7 +5,7 @@ import UIKit
 /// grass PBR sets (colour, normal and roughness maps, 1K, tiled in metres) and two sky panoramas
 /// (a partly cloudy day and an overcast one) used as background and as the light the scene
 /// reflects.
-enum Environment {
+enum Scenery {
     private static var cache: [String: SCNMaterial] = [:]
 
     /// A PBR set from Hop/Textures/ph_<name>_{diff,nor,rough}.jpg, repeated every `tile` metres
