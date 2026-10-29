@@ -261,10 +261,55 @@ final class MeshBuilder {
                                          usesFloatComponents: true, componentsPerVector: 2,
                                          bytesPerComponent: MemoryLayout<Float>.size, dataOffset: 0,
                                          dataStride: MemoryLayout<SIMD2<Float>>.stride)
-        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals), uvSource],
+        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: positions), SCNGeometrySource(normals: normals), uvSource,
+                                             tangentSource()],
                                    elements: groups.map { SCNGeometryElement(indices: $0, primitiveType: .triangles) })
         geometry.materials = materials
         return geometry
+    }
+
+    /// Per-vertex tangents (xyz + handedness) worked out here, so SceneKit never has to build them
+    /// itself for a normal-mapped material: its own tangent generator crashes on large code-built
+    /// meshes (C3DCreateTangentsWithGeometryOptimized).
+    private func tangentSource() -> SCNGeometrySource {
+        let count = positions.count
+        var tan = [SIMD3<Float>](repeating: .zero, count: count)
+        var bit = [SIMD3<Float>](repeating: .zero, count: count)
+        for indices in groups {
+            var i = 0
+            while i + 2 < indices.count {
+                let a = Int(indices[i]), b = Int(indices[i + 1]), c = Int(indices[i + 2])
+                i += 3
+                guard a < count, b < count, c < count else { continue }
+                let p0 = SIMD3<Float>(positions[a]), p1 = SIMD3<Float>(positions[b]), p2 = SIMD3<Float>(positions[c])
+                let e1 = p1 - p0, e2 = p2 - p0
+                let d1 = uvs[b] - uvs[a], d2 = uvs[c] - uvs[a]
+                let det = d1.x * d2.y - d2.x * d1.y
+                guard abs(det) > 1e-12 else { continue }
+                let r = 1 / det
+                let t = (e1 * d2.y - e2 * d1.y) * r
+                let s = (e2 * d1.x - e1 * d2.x) * r
+                for v in [a, b, c] { tan[v] += t; bit[v] += s }
+            }
+        }
+        var out = [SIMD4<Float>](repeating: SIMD4(1, 0, 0, 1), count: count)
+        for v in 0..<count {
+            let n = SIMD3<Float>(normals[v])
+            var t = tan[v] - n * simd_dot(n, tan[v])
+            let len = simd_length(t)
+            if len < 1e-6 {
+                // Any direction across the normal will do where the UVs give none
+                t = abs(n.y) < 0.9 ? simd_normalize(simd_cross(SIMD3(0, 1, 0), n)) : SIMD3(1, 0, 0)
+            } else {
+                t /= len
+            }
+            let w: Float = simd_dot(simd_cross(n, t), bit[v]) < 0 ? -1 : 1
+            out[v] = SIMD4(t.x, t.y, t.z, w)
+        }
+        let data = out.withUnsafeBufferPointer { Data(buffer: $0) }
+        return SCNGeometrySource(data: data, semantic: .tangent, vectorCount: count, usesFloatComponents: true,
+                                 componentsPerVector: 4, bytesPerComponent: MemoryLayout<Float>.size, dataOffset: 0,
+                                 dataStride: MemoryLayout<SIMD4<Float>>.stride)
     }
 }
 

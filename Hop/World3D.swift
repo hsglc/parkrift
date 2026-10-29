@@ -2389,25 +2389,13 @@ final class World3D {
         return result.map { (position: $0.0, toward: $0.1) }
     }
 
-    /// The traffic light model, read once (in the background at launch, see CarModels.preload).
-    /// The traffic light (tools/make_street_models.py): its parts get their materials by name.
-    static let signalTemplate: SCNNode? = {
-        guard let node = CarModels.load("signal") else { return nil }
-        let paint = Mat.pbr(UIColor(red: 0.16, green: 0.18, blue: 0.19, alpha: 1), metal: 0.65, rough: 0.42)
-        let plastic = Mat.pbr(UIColor(white: 0.055, alpha: 1), metal: 0, rough: 0.48)
-        let glass = Mat.pbr(UIColor(red: 0.06, green: 0.05, blue: 0.05, alpha: 1), metal: 0.1, rough: 0.06)
-        let plate = Mat.pbr(UIColor(white: 0.03, alpha: 1), metal: 0, rough: 0.7)
-        let border = Mat.pbr(UIColor(white: 0.9, alpha: 1), metal: 0, rough: 0.55)
-        let button = Mat.pbr(UIColor(red: 0.95, green: 0.74, blue: 0.1, alpha: 1), metal: 0, rough: 0.4)
-        let materials: [String: SCNMaterial] = ["pole": paint, "housing": plastic, "visor": plastic, "lens": glass,
-                                                "plate": plate, "border": border, "button": button]
-        node.enumerateHierarchy { child, _ in
-            if let name = child.name, let material = materials[name] { child.geometry?.materials = [material] }
-        }
-        return node
-    }()
-    /// The mast's offset from the model's origin (behind the head), along the lenses' facing.
-    static let signalMastOffset: Float = -0.42
+    /// The two traffic lights (Meshy from the reference sheet, tools/convert_meshy_street.py):
+    /// a plain post and one with a pedestrian signal, lenses facing +x, post on the origin. Read
+    /// once (in the background at launch, see CarModels.preload).
+    static let signalTemplates: [SCNNode] = ["signal_pole", "signal_ped"].compactMap { Scenery.prop($0, lodDistance: 32) }
+    static var signalTemplate: SCNNode? { signalTemplates.first }
+    /// The mast's offset from the model's origin along the lenses' facing (the head sits on it).
+    static let signalMastOffset: Float = 0
 
     /// A traffic light that can be knocked over: its pivot (at the mast's foot), where it stands
     /// (level units) and, once hit, how it falls.
@@ -2466,12 +2454,15 @@ final class World3D {
 
     private static let signalOff: SCNMaterial = Mat.pbr(UIColor(white: 0.05, alpha: 1), metal: 0, rough: 0.2)
 
-    /// Lens centers of the traffic light model (game axes, from tools/convert_meshy_props.py),
+    /// Lens centres of each traffic light (game axes, printed by tools/convert_meshy_street.py),
     /// just in front of the glass: red, amber, green.
-    static let signalLenses: [SIMD3<Float>] = [SIMD3(0.075, 4.248, 0), SIMD3(0.075, 3.896, 0), SIMD3(0.075, 3.522, 0)]
+    static let signalLensSets: [[SIMD3<Float>]] = [
+        [SIMD3(0.209, 4.322, -0.002), SIMD3(0.212, 3.829, -0.001), SIMD3(0.222, 3.356, 0.005)],
+        [SIMD3(0.308, 4.297, 0.053), SIMD3(0.319, 3.845, 0.057), SIMD3(0.319, 3.390, 0.060)]
+    ]
     /// The lit lens: a thin glowing disc (turned to face along the light's x).
     static let signalLensDisc: SCNGeometry = {
-        let disc = SCNCylinder(radius: 0.125, height: 0.02)
+        let disc = SCNCylinder(radius: 0.112, height: 0.02)
         disc.radialSegmentCount = 16
         return disc
     }()
@@ -2495,7 +2486,7 @@ final class World3D {
             mesh.addBox(center: SIMD3(c.x, c.y, c.z), width: w, height: h, length: l, angle: 0, wall: m, roof: m,
                         wallRepeats: { _ in SIMD2(1, 1) })
         }
-        let signalModel = World3D.signalTemplate
+        let signalModels = World3D.signalTemplates
         var lampHeads: [SCNVector3] = []
 
         for j in 0..<city.rows {
@@ -2522,8 +2513,10 @@ final class World3D {
                     holder.eulerAngles.y = yaw
                     holder.simdPosition = SIMD3(-mast * cos(yaw), 0, mast * sin(yaw))
                     pivot.addChildNode(holder)
-                    if let model = signalModel {
-                        let copy = model.clone()
+                    // Every other corner gets the light with the pedestrian signal
+                    let variant = signalModels.count > 1 ? (i + j + (horizontal ? 0 : 1)) % 2 : 0
+                    if variant < signalModels.count {
+                        let copy = signalModels[variant].clone()
                         copy.castsShadow = true
                         holder.addChildNode(copy)
                     } else {
@@ -2533,7 +2526,7 @@ final class World3D {
                         holder.addChildNode(pole)
                     }
                     // Lamp slots in the light's own space (it falls with it)
-                    let slots = World3D.signalLenses.map { SCNVector3($0.x, $0.y, $0.z) }
+                    let slots = World3D.signalLensSets[signalModels.isEmpty ? 0 : variant].map { SCNVector3($0.x, $0.y, $0.z) }
                     let lamp = SCNNode(geometry: World3D.signalLensDisc.copy() as? SCNGeometry)
                     lamp.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
                     lamp.castsShadow = false
@@ -2598,6 +2591,9 @@ final class World3D {
             kerb.append((-0.225 + r - r * cos(t), 0.18 - r + r * sin(t), -cos(t), sin(t)))
         }
         kerb += [(0.225, 0.18, 0, 1), (0.225, 0.18, 1, 0), (0.225, 0.07, 1, 0)]
+        let paintedKerb = curbMaterial.copy() as! SCNMaterial
+        paintedKerb.multiply.contents = UIColor(red: 1.0, green: 0.78, blue: 0.12, alpha: 1)
+        paintedKerb.roughness.intensity = 0.8
         for block in city.blocks {
             // (start, end, towards the pavement) in level units
             let edges: [(CGPoint, CGPoint, CGVector)] = [
@@ -2609,8 +2605,15 @@ final class World3D {
             for (start, end, inward) in edges {
                 let a = World3D.vec(start), b = World3D.vec(end)
                 let side = SIMD3<Float>(Float(inward.dx), 0, -Float(inward.dy))
-                mesh.addProfile(from: SIMD3(a.x, 0, a.z), to: SIMD3(b.x, 0, b.z), side: side, profile: kerb,
-                                material: curbMaterial, uvRepeat: 1.0)
+                // The last few metres before each crossing are painted yellow (no stopping)
+                let from = SIMD3<Float>(a.x, 0, a.z), to = SIMD3<Float>(b.x, 0, b.z)
+                let length = simd_length(to - from)
+                let paint = min(6.5, length * 0.25)
+                let dir = (to - from) / max(length, 0.001)
+                let p0 = from + dir * paint, p1 = to - dir * paint
+                mesh.addProfile(from: from, to: p0, side: side, profile: kerb, material: paintedKerb, uvRepeat: 1.0)
+                mesh.addProfile(from: p0, to: p1, side: side, profile: kerb, material: curbMaterial, uvRepeat: 1.0)
+                mesh.addProfile(from: p1, to: to, side: side, profile: kerb, material: paintedKerb, uvRepeat: 1.0)
             }
         }
         if let geometry = mesh.build() {

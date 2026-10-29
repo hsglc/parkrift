@@ -276,7 +276,8 @@ enum CarModels {
                 _ = wheel(id)
             }
             TrafficVehicles.preload()
-            _ = World3D.signalTemplate
+            _ = World3D.signalTemplates
+            _ = Scenery.trees
             DispatchQueue.main.async { completion() }
         }
     }

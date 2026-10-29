@@ -43,30 +43,45 @@ enum Scenery {
         return result
     }
 
-    /// The three street trees (tools/make_street_models.py): bark, crown core and leaf cards.
-    static let trees: [[String: MeshData]] = (0..<3).map { meshes("tree_\($0)") }.filter { !$0.isEmpty }
-
-    /// Leaf sprays: a transparent card texture cut out at its alpha (no blending, so no sorting).
-    static let leafCards: SCNMaterial = {
+    /// A street prop modelled with Meshy from the reference sheet (tools/convert_meshy_street.py):
+    /// the close-up mesh "<name>" with its lighter "<name>_lod" swapped in from `lodDistance`
+    /// metres, textured with its own colour, normal and roughness maps. Clones share all of it.
+    static func prop(_ name: String, lodDistance: CGFloat) -> SCNNode? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return nil }
+        var full: SCNNode?
+        var lod: SCNNode?
+        scene.rootNode.enumerateHierarchy { node, _ in
+            guard node.geometry != nil else { return }
+            if node.name == name + "_lod" { lod = node } else if node.name == name { full = node }
+        }
+        guard let mesh = full, let geometry = mesh.geometry else { return nil }
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
-        material.diffuse.contents = image("leafcard.png")
-        material.diffuse.mipFilter = .linear
-        material.normal.contents = image("leafcard_nor.jpg")
-        material.roughness.contents = NSNumber(value: 0.6)
+        material.diffuse.contents = image("\(name)_diff.jpg")
+        material.normal.contents = image("\(name)_nor.jpg")
+        material.roughness.contents = image("\(name)_rough.jpg")
         material.metalness.contents = NSNumber(value: 0)
-        material.isDoubleSided = true
-        material.blendMode = .replace
-        material.shaderModifiers = [.fragment: "if (_output.color.a < 0.45) discard_fragment();\n_output.color.a = 1.0;"]
-        return material
-    }()
+        for property in [material.diffuse, material.normal, material.roughness] {
+            property.mipFilter = .linear
+            property.maxAnisotropy = 8
+        }
+        geometry.materials = [material]
+        if let far = lod?.geometry {
+            far.materials = [material]
+            geometry.levelsOfDetail = [SCNLevelOfDetail(geometry: far, worldSpaceDistance: lodDistance)]
+        }
+        let node = SCNNode(geometry: geometry)
+        node.simdTransform = mesh.simdConvertTransform(matrix_identity_float4x4, to: scene.rootNode)
+        node.castsShadow = true
+        let holder = SCNNode()
+        holder.addChildNode(node)
+        return holder
+    }
 
-    static let bark: SCNMaterial = surface("bark", tile: 0.9, size: CGSize(width: 0.9, height: 0.9))
-    static let crownCore: SCNMaterial = {
-        let material = surface("leaves", tile: 1.4, size: CGSize(width: 1.4, height: 1.4))
-        material.diffuse.intensity = 0.85
-        return material
-    }()
+    /// The four street trees in their kerbed planters: green, light green, yellow, blossom.
+    static let trees: [SCNNode] = ["tree_green", "tree_light", "tree_yellow", "tree_pink"]
+        .compactMap { prop($0, lodDistance: 38) }
 
     private static var cache: [String: SCNMaterial] = [:]
 
