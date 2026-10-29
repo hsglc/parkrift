@@ -127,6 +127,11 @@ enum Strings {
     static var parkedTitle: String { t("PARK ETTİN!", "PARKED!", "¡APARCADO!") }
     static var notParkedTitle: String { t("PARK EDEMEDİN", "NOT PARKED", "SIN APARCAR") }
     static var tryAgain: String { t("Tekrar dene", "Try again", "Reintentar") }
+    static var lastRoundFailed: String { t("Son turu bitiremedin", "You did not finish the last round", "No terminaste la última ronda") }
+    static var lastRoundWon: String { t("Son turu sen kazandın", "You won the last round", "Ganaste la última ronda") }
+    static var lastRoundLost: String { t("Son turu arkadaşın aldı", "Your friend took the last round", "Tu amigo ganó la última ronda") }
+    static var lastRoundDraw: String { t("Son tur berabere", "Last round: a draw", "Última ronda: empate") }
+    static var didNotFinish: String { t("Bitiremedi", "Did not finish", "No terminó") }
     static var timeLabel: String { t("SÜRE", "TIME", "TIEMPO") }
     static var bumpsLabel: String { t("ÇARPMA", "BUMPS", "GOLPES") }
     static var bestLabel: String { t("EN İYİ", "BEST", "MEJOR") }

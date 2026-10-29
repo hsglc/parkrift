@@ -4,6 +4,13 @@ name: Countdown check
 # start countdown.
 on:
   workflow_dispatch:
+    inputs:
+      screens:
+        description: "Screenshot runs"
+        default: "true"
+      net:
+        description: "Online check with two simulators"
+        default: "true"
 
 jobs:
   countdown:
@@ -29,6 +36,7 @@ jobs:
             }
 
       - name: Countdown screenshots
+        if: ${{ inputs.screens != 'false' }}
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
@@ -47,7 +55,7 @@ jobs:
           mkdir -p shots
           rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
           DATA=""
-          for RUN in "daily" "fail" "-parklevel 2" "streets" "city"; do
+          for RUN in "daily" "fail" "card" "-parklevel 2" "streets" "city"; do
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
             if [ "$RUN" = "daily" ]; then
@@ -70,11 +78,29 @@ jobs:
               xcrun simctl io "$UDID" screenshot shots/fail.png || true
               cp "$DATA/Documents/shot-fail.png" shots/ 2>/dev/null || true
               continue
+            elif [ "$RUN" = "card" ]; then
+              # The last card of a match won after failing the last round
+              xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -playpark -parklevel 3 -cardtest -AppleLanguages "(tr)" > /dev/null 2>&1
+              DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
+              for i in $(seq 1 40); do
+                [ -f "$DATA/Documents/shot-card.png" ] && break
+                sleep 2
+              done
+              sleep 1
+              xcrun simctl io "$UDID" screenshot shots/card.png || true
+              cp "$DATA/Documents/shot-card.png" shots/ 2>/dev/null || true
+              continue
             elif [ "$RUN" = "streets" ]; then
               xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playcity -pedtest -policetest -dayweather -AppleLanguages "(tr)" > shots/streets-console.log 2>&1 &
-              sleep 17
+              # Screens once the police banner is up (the app marks it), however slow the runner
+              sleep 4
+              DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
+              for i in $(seq 1 45); do
+                [ -f "$DATA/Documents/shot-police.png" ] && break
+                sleep 2
+              done
               xcrun simctl io "$UDID" screenshot shots/streets-1.png || true
-              sleep 8
+              sleep 4
               xcrun simctl io "$UDID" screenshot shots/streets-2.png || true
               # What every thread is doing (shows a hang, if there is one)
               PID=$(pgrep -x Hop | head -1); [ -n "$PID" ] && sample "$PID" 2 -file shots/sample-streets.txt > /dev/null 2>&1 || true
@@ -90,6 +116,49 @@ jobs:
           done
           cp ~/Library/Logs/DiagnosticReports/Hop* shots/ 2>/dev/null || true
           ls shots | wc -l
+
+      - name: Online check (two simulators in one room)
+        if: ${{ inputs.net != 'false' }}
+        timeout-minutes: 12
+        run: |
+          mkdir -p shots
+          read A B <<< $(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          phones = []
+          for runtime, devices in data.items():
+              if "iOS" in runtime:
+                  phones = [d["udid"] for d in devices if d["name"].startswith("iPhone") and "Pro" in d["name"]] or phones
+          print(phones[-1], phones[-2])
+          ')
+          echo "host $A guest $B"
+          for D in $A $B; do
+            echo "boot $D"
+            xcrun simctl boot "$D" 2>/dev/null || true
+            timeout 240 xcrun simctl bootstatus "$D" -b > /dev/null || echo "bootstatus timed out"
+            xcrun simctl install "$D" build/Build/Products/Release-iphonesimulator/Hop.app
+            xcrun simctl terminate "$D" com.huseyingulcu.hop 2>/dev/null || true
+            echo "ready $D"
+          done
+          CODE=$(python3 -c 'import random; print("".join(random.choice("BCDFGHJKLMNPQRSTVWXZ") for _ in range(4)))')
+          echo "room $CODE"
+          xcrun simctl launch --console-pty "$A" com.huseyingulcu.hop -benchmark -nethost $CODE -dayweather -AppleLanguages "(tr)" > shots/net-host.log 2>&1 &
+          sleep 8
+          xcrun simctl launch --console-pty "$B" com.huseyingulcu.hop -benchmark -netjoin $CODE -dayweather -AppleLanguages "(tr)" > shots/net-guest.log 2>&1 &
+          for t in 30 45 60 75; do
+            sleep 15
+            xcrun simctl io "$A" screenshot "shots/net-host-$t.png" || true
+            xcrun simctl io "$B" screenshot "shots/net-guest-$t.png" || true
+          done
+          # The apps hold the console: close them so the step ends
+          xcrun simctl terminate "$A" com.huseyingulcu.hop 2>/dev/null || true
+          xcrun simctl terminate "$B" com.huseyingulcu.hop 2>/dev/null || true
+          sleep 2
+          kill %1 %2 2>/dev/null || true
+          echo "--- host"; grep -a "PPNET" shots/net-host.log | head -40
+          echo "--- guest"; grep -a "PPNET" shots/net-guest.log | head -40
+          grep -a "PPNET hit" shots/net-*.log | while read -r line; do echo "::notice::$line"; done || true
+          cp ~/Library/Logs/DiagnosticReports/Hop* shots/ 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: always()

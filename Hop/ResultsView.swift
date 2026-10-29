@@ -14,6 +14,17 @@ struct ResultEntry: Identifiable {
     var stars: Int { time == nil ? 0 : AppModel.stars(forHits: hits) }
 }
 
+/// How the round (or the match, on the last card) went for the player; it sets the card's colour,
+/// its icon and its main button.
+enum ResultOutcome {
+    case success    // parked / finished, alone
+    case failed     // did not park or finish (too many hits, time up)
+    case won        // beat the friend this round
+    case lost       // the friend won
+    case draw
+    case champion   // won the match, or finished every level
+}
+
 enum ResultFooter {
     case solo(hasNext: Bool)
     case autoNext(seconds: Double)
@@ -21,7 +32,7 @@ enum ResultFooter {
 }
 
 struct ResultsInfo: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let levelIndex: Int
     let levelTitle: String
     let entries: [ResultEntry]
@@ -31,12 +42,25 @@ struct ResultsInfo: Identifiable {
     var headline: String? = nil
     var scoreLine: String? = nil
     var reward: RunReward? = nil
+    var outcome: ResultOutcome = .success
+    /// On the last card of a match: how the last round went (the card shows the match).
+    var roundLine: String? = nil
 
     var me: ResultEntry? { entries.first { $0.isMe } }
+
+    /// The same card with other buttons (same id: it does not animate in again).
+    func with(footer: ResultFooter) -> ResultsInfo {
+        var copy = ResultsInfo(levelIndex: levelIndex, levelTitle: levelTitle, entries: entries, footer: footer,
+                               newBest: newBest, bestTime: bestTime, headline: headline, scoreLine: scoreLine,
+                               reward: reward, outcome: outcome, roundLine: roundLine)
+        copy.id = id
+        return copy
+    }
 }
 
-/// The card shown over the game when a level ends: "parked!" in green, or in red when the
-/// player did not park (too many hits, time up), with trying again as the main button.
+/// The card shown over the game when a level ends, coloured by how it went: green when parked
+/// or a round won, gold for a match won (or every level done), red when the player did not park
+/// or lost, blue for a draw. A failed solo level makes trying again the main button.
 struct ResultsOverlay: View {
     @EnvironmentObject var model: AppModel
     let info: ResultsInfo
@@ -51,8 +75,38 @@ struct ResultsOverlay: View {
         return false
     }
 
-    /// The player did not park (or finish): too many hits, time up, gave up.
-    private var failed: Bool { info.me?.time == nil }
+    /// The player did not park (or finish) alone: too many hits, time up, gave up.
+    private var failed: Bool { info.outcome == .failed }
+
+    private var headToHead: Bool { info.entries.count > 1 }
+
+    private var heroColors: [Color] {
+        switch info.outcome {
+        case .failed, .lost: return [Color(red: 0.74, green: 0.20, blue: 0.24), Color(red: 0.34, green: 0.07, blue: 0.12)]
+        case .draw: return [Color(red: 0.24, green: 0.38, blue: 0.66), Color(red: 0.10, green: 0.15, blue: 0.32)]
+        case .champion: return [Color(red: 0.86, green: 0.58, blue: 0.12), Color(red: 0.42, green: 0.22, blue: 0.06)]
+        case .success, .won: return [Color(red: 0.16, green: 0.62, blue: 0.40), Color(red: 0.06, green: 0.32, blue: 0.24)]
+        }
+    }
+
+    private var badgeColors: [Color] {
+        switch info.outcome {
+        case .failed, .lost: return [Color(red: 1.0, green: 0.48, blue: 0.44), Color(red: 0.86, green: 0.16, blue: 0.20)]
+        case .draw: return [Color(red: 0.55, green: 0.75, blue: 1.0), Color(red: 0.22, green: 0.45, blue: 0.92)]
+        case .champion: return [Palette.gold, Palette.goldDeep]
+        case .success, .won: return [Color(red: 0.55, green: 1.0, blue: 0.62), Color(red: 0.18, green: 0.78, blue: 0.42)]
+        }
+    }
+
+    private var badgeIcon: String {
+        switch info.outcome {
+        case .failed, .lost: return "xmark"
+        case .draw: return "equal"
+        case .champion: return "trophy.fill"
+        case .won: return "crown.fill"
+        case .success: return "checkmark"
+        }
+    }
 
     /// Failed with the next level not open yet: no way forward but trying again.
     private var nextOpen: Bool { model.unlockedLevels > info.levelIndex + 1 }
@@ -92,9 +146,7 @@ struct ResultsOverlay: View {
 
     private var heroBackground: some View {
         ZStack {
-            LinearGradient(colors: failed ? [Color(red: 0.74, green: 0.20, blue: 0.24), Color(red: 0.34, green: 0.07, blue: 0.12)]
-                                          : [Color(red: 0.16, green: 0.62, blue: 0.40), Color(red: 0.06, green: 0.32, blue: 0.24)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: heroColors, startPoint: .topLeading, endPoint: .bottomTrailing)
             // Soft light rays
             ForEach(0..<8, id: \.self) { index in
                 Rectangle()
@@ -114,13 +166,10 @@ struct ResultsOverlay: View {
                     .fill(Color.white.opacity(0.18))
                     .frame(width: 74, height: 74)
                 Circle()
-                    .fill(LinearGradient(colors: failed ? [Color(red: 1.0, green: 0.48, blue: 0.44), Color(red: 0.86, green: 0.16, blue: 0.20)]
-                                                        : isFinal ? [Palette.gold, Palette.goldDeep]
-                                                                  : [Color(red: 0.55, green: 1.0, blue: 0.62), Color(red: 0.18, green: 0.78, blue: 0.42)],
-                                         startPoint: .top, endPoint: .bottom))
+                    .fill(LinearGradient(colors: badgeColors, startPoint: .top, endPoint: .bottom))
                     .frame(width: 60, height: 60)
                     .shadow(color: .black.opacity(0.25), radius: 0, y: 3)
-                Image(systemName: failed ? "xmark" : (isFinal ? "trophy.fill" : "checkmark"))
+                Image(systemName: badgeIcon)
                     .font(.system(size: 28, weight: .black))
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.25), radius: 0, y: 2)
@@ -128,7 +177,7 @@ struct ResultsOverlay: View {
             .scaleEffect(appeared ? 1 : 0.3)
 
             Text(info.headline ?? (failed ? Strings.notParkedTitle : (isFinal ? Strings.allDone : Strings.parkedTitle)))
-                .font(.system(size: isFinal && !failed ? 20 : 26, weight: .black, design: .rounded))
+                .font(.system(size: isFinal && info.headline == nil && !failed ? 20 : 26, weight: .black, design: .rounded))
                 .italic()
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -147,7 +196,16 @@ struct ResultsOverlay: View {
                     .padding(.vertical, 3)
                     .background(Capsule().fill(Color.black.opacity(0.25)))
             }
+            if let roundLine = info.roundLine {
+                Text(roundLine)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
+            // Stars are the solo score; head to head the rows carry each player's stars
+            if !headToHead {
             HStack(spacing: 6) {
                 ForEach(0..<3, id: \.self) { index in
                     let lit = index < shownStars
@@ -163,6 +221,7 @@ struct ResultsOverlay: View {
                 }
             }
             .padding(.top, 4)
+            }
 
             if info.newBest {
                 Text(Strings.newBest.uppercased())
@@ -423,11 +482,12 @@ private struct PlayerResultRow: View {
             Spacer(minLength: 4)
             if let score = entry.score {
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(score >= 0 ? String(format: "%.1f", score) : "–")
-                        .font(.system(size: 18, weight: .black, design: .rounded))
-                        .foregroundStyle(Palette.gold)
+                    // Not finished: said in words (a lone dash read like a missing number)
+                    Text(score >= 0 ? String(format: "%.1f", score) : Strings.didNotFinish)
+                        .font(.system(size: score >= 0 ? 18 : 12, weight: .black, design: .rounded))
+                        .foregroundStyle(score >= 0 ? Palette.gold : Color.white.opacity(0.5))
                         .monospacedDigit()
-                    Text((entry.time.map { String(format: "%.1f s", $0) } ?? "–") + " · " + Strings.crashes(entry.hits))
+                    Text((entry.time.map { String(format: "%.1f s", $0) + " · " } ?? "") + Strings.crashes(entry.hits))
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.55))
                 }

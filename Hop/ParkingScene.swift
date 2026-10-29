@@ -184,6 +184,34 @@ final class ParkingScene: SKScene {
     static let slowCountdown = ProcessInfo.processInfo.arguments.contains("-slowcountdown")
     static let failTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-failtest")
     static let policeTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-policetest")
+    static let cardTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-cardtest")
+    /// Online check (benchmark builds, two simulators in one room): the guest drives into the host.
+    static let netRole: String? = {
+        guard PerfSettings.benchmark else { return nil }
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-nethost") ? "host" : (args.contains("-netjoin") ? "join" : nil)
+    }()
+    private var netLogClock: CGFloat = 0
+
+    private func netLog(_ text: String) {
+        FileHandle.standardError.write("PPNET \(text)\n".data(using: .utf8)!)
+    }
+
+    /// The guest steers at the host's car (as it sees it) at full throttle; the host waits. Logs
+    /// the measured delay and how far apart the cars are every two seconds.
+    private func netTestDrive(_ role: String, _ dt: CGFloat) {
+        autoControls = []
+        guard phase == .driving, !localParked else { return }
+        netLogClock += dt
+        if netLogClock > 2 {
+            netLogClock = 0
+            netLog(String(format: "%@ delay=%.0fms friend=%@ seen=%.0f speed=%.0f", role, oneWayDelay * 1000,
+                          friendPresent ? "yes" : "no", carPosition.distance(to: remotePosition), velocity))
+        }
+        guard role == "join", friendPresent, remoteTarget != nil else { return }
+        let relative = CGFloat.angleDelta(heading, atan2(remotePosition.y - carPosition.y, remotePosition.x - carPosition.x))
+        autoControls = relative > 0.08 ? [.forward, .left] : (relative < -0.08 ? [.forward, .right] : [.forward])
+    }
     private var policeTestDone = false
 
     /// Best-run ghost car on solo parking levels (turned off).
@@ -307,7 +335,8 @@ final class ParkingScene: SKScene {
     }
     private var remoteSnapshots: [RemoteSnapshot] = []
     private var clockOffset: TimeInterval?
-    private let interpolationDelay: TimeInterval = 0.14
+    /// States arrive 30 times a second; played back this late they always have one on each side.
+    private let interpolationDelay: TimeInterval = 0.1
 
     // MARK: Level state
 
@@ -316,6 +345,15 @@ final class ParkingScene: SKScene {
     private var elapsed: TimeInterval = 0
     private var lastUpdate: TimeInterval = 0
     private var sendClock: TimeInterval = 0
+    /// Network delay to the friend (half the round trip of a "pi"/"po" echo), measured every
+    /// two seconds; the friend's car is drawn this much (plus the interpolation delay) ahead of
+    /// its last state, so it is where the friend really is and a hit lands where it is seen.
+    private var oneWayDelay: TimeInterval = 0.06
+    private var pingClock: TimeInterval = 0
+    /// When the friend's last hit on us arrived (our own detection of the same crash is skipped).
+    private var hitByFriendAt: TimeInterval = -10
+    /// The friend's computed pose last frame (the drawn pose keeps a fading offset from it).
+    private var remotePoseLast: (CGPoint, CGFloat)?
     private var hits = 0
     private var lastHitAt: TimeInterval = -10
     // Drift: the car can point away from where it travels; points turn into nitro
@@ -375,6 +413,8 @@ final class ParkingScene: SKScene {
     private var remoteTime: Double = 0
     private var remoteHits = 0
     private var resultsShown = false
+    /// This round's win is in the score (a card shown again must not count it twice).
+    private var roundCounted = false
     private var advanceScheduled = false
 
     // MARK: Haptics and sound
@@ -593,7 +633,7 @@ final class ParkingScene: SKScene {
 
         hudTop = top
         statusLabel = makeLabel("", size: 16, color: .white)
-        statusLabel.position = CGPoint(x: size.width / 2 + 40, y: top - 86)
+        statusLabel.position = CGPoint(x: size.width / 2 + 40, y: top - 52)
         hud.addChild(statusLabel)
 
         minimap.removeAllChildren()
@@ -601,21 +641,21 @@ final class ParkingScene: SKScene {
         hud.addChild(minimap)
         buildSpeedometer(left: left, top: top)
 
+        // The turn guidance lives in the top bar (in place of the level name while driving in the
+        // city), so nothing hangs below the bar over the road ahead
         navNode = SKNode()
-        navNode.position = CGPoint(x: size.width / 2 + 40, y: top - 46)
-        let navGlass = makeGlass(width: 210, height: 40)
-        navNode.addChild(navGlass)
-        let arrowDisc = SKShapeNode(circleOfRadius: 15)
+        navNode.position = center.position
+        let arrowDisc = SKShapeNode(circleOfRadius: 12)
         arrowDisc.fillColor = UIColor(red: 1.0, green: 0.78, blue: 0.10, alpha: 1)
         arrowDisc.strokeColor = .clear
-        arrowDisc.position = CGPoint(x: -84, y: 0)
+        arrowDisc.position = CGPoint(x: -146, y: 0)
         navNode.addChild(arrowDisc)
-        navArrow = makeIcon("arrow.up", size: 18, color: UIColor(red: 0.08, green: 0.08, blue: 0.12, alpha: 1))
+        navArrow = makeIcon("arrow.up", size: 14, color: UIColor(red: 0.08, green: 0.08, blue: 0.12, alpha: 1))
         navArrow.position = arrowDisc.position
         navNode.addChild(navArrow)
-        navLabel = makeLabel("", size: 15, color: .white)
+        navLabel = makeLabel("", size: 14, color: .white)
         navLabel.horizontalAlignmentMode = .left
-        navLabel.position = CGPoint(x: -62, y: 0)
+        navLabel.position = CGPoint(x: -128, y: 0)
         navNode.addChild(navLabel)
         navNode.isHidden = true
         hud.addChild(navNode)
@@ -1049,6 +1089,7 @@ final class ParkingScene: SKScene {
         remoteReversing = false
         remoteTarget = nil
         remoteSnapshots.removeAll()
+        remotePoseLast = nil
 
         phase = .countdown
         countdown = 3
@@ -1062,6 +1103,7 @@ final class ParkingScene: SKScene {
         remoteTime = 0
         remoteHits = 0
         resultsShown = false
+        roundCounted = false
         advanceScheduled = false
         newBest = false
         nitro = 0.5
@@ -1277,6 +1319,20 @@ final class ParkingScene: SKScene {
             checkLevelDone()
         case "hn":
             remoteHonk()
+        case "hit":
+            guard messageLevel == levelIndex else { return }
+            friendHitUs(message)
+        case "pi":
+            // Echoed straight back so the friend can time the round trip
+            model?.send(["t": "po", "ts": message["ts"] as? Double ?? 0])
+        case "po":
+            guard let sent = message["ts"] as? Double, sent > 0 else { return }
+            let half = max(0, min(0.4, (CACurrentMediaTime() - sent) / 2))
+            oneWayDelay += (half - oneWayDelay) * 0.3
+            // The delay beside the room code, for testing on real phones
+            if online, let code = model?.roomCode {
+                codeLabel.text = "\(Strings.roomCode): \(code) · \(Int((oneWayDelay * 1000).rounded())) ms"
+            }
         case "b":
             guard messageLevel == levelIndex, !isHost, let data = message["d"] as? [Int] else { return }
             traffic?.apply(data)
@@ -1342,16 +1398,44 @@ final class ParkingScene: SKScene {
             // Drop states that are no longer needed
             if index > 2 { remoteSnapshots.removeFirst(index - 2) }
         }
-        // Small smoothing on top hides extrapolation corrections
-        let k = min(1, dt * 20)
-        if remotePosition.distance(to: pose.0) > 120 {
+        // Drawn where the friend is now, not where they were: the states are played back
+        // `interpolationDelay` late and took `oneWayDelay` to arrive, so the pose is carried that
+        // far ahead along the friend's speed and turn (otherwise a car seen beside us was really
+        // metres further on, and a hit on it never happened in the friend's game)
+        if let last = remoteSnapshots.last, abs(last.velocity) > 1, !remoteParked {
+            let lead = CGFloat(min(0.3, interpolationDelay + oneWayDelay))
+            // How fast it turns and speeds up or brakes, from its last two states, so a car in a
+            // bend is carried round the bend and a braking car is not carried past its stop
+            var yawRate: CGFloat = 0
+            var accel: CGFloat = 0
+            if remoteSnapshots.count >= 2 {
+                let before = remoteSnapshots[remoteSnapshots.count - 2]
+                let span = CGFloat(max(last.time - before.time, 0.02))
+                yawRate = max(-2.5, min(2.5, CGFloat.angleDelta(before.heading, last.heading) / span))
+                accel = max(-900, min(600, (last.velocity - before.velocity) / span))
+            }
+            // Distance along the path: never past a stop (a braking car does not reverse)
+            var travel = last.velocity * lead + accel * lead * lead / 2
+            if last.velocity > 0 { travel = max(0, travel) } else { travel = min(0, travel) }
+            let midHeading = pose.1 + yawRate * lead / 2
+            pose = (CGPoint(x: pose.0.x + cos(midHeading) * travel, y: pose.0.y + sin(midHeading) * travel),
+                    pose.1 + yawRate * lead)
+        }
+        // Corrections glide in instead of jumping: what was drawn last frame keeps its offset from
+        // the computed pose and that offset fades over about a tenth of a second. Smooth motion
+        // has no offset, so the car is not drawn behind where it is (a plain low-pass did that).
+        // Only a real jump (a new round, a respawn) snaps; it used to snap past 12 m, which a late
+        // burst of states on a mobile connection easily reached: the "teleport".
+        if let last = remotePoseLast, remotePosition.distance(to: pose.0) < 400 {
+            let fade = CGFloat(exp(-Double(dt) / 0.12))
+            remotePosition = CGPoint(x: pose.0.x + (remotePosition.x - last.0.x) * fade,
+                                     y: pose.0.y + (remotePosition.y - last.0.y) * fade)
+            remoteHeading = pose.1 + CGFloat.angleDelta(last.1, remoteHeading) * fade
+        } else {
             remotePosition = pose.0
             remoteHeading = pose.1
-        } else {
-            remotePosition = CGPoint(x: remotePosition.x + (pose.0.x - remotePosition.x) * k,
-                                     y: remotePosition.y + (pose.0.y - remotePosition.y) * k)
-            remoteHeading += CGFloat.angleDelta(remoteHeading, pose.1) * k
         }
+        remotePoseLast = pose
     }
 
     private func refreshLevelLabel() {
@@ -1391,6 +1475,10 @@ final class ParkingScene: SKScene {
     /// Drives along the route at full throttle, uses nitro, backs out when stuck, and measures
     /// 20 seconds of frames once driving has settled.
     private func runAutopilot(_ dt: CGFloat) {
+        if let role = ParkingScene.netRole {
+            netTestDrive(role, dt)
+            return
+        }
         autoControls = []
         guard phase != .countdown, !benchDone else { return }
         benchClock += finishAnimating ? CGFloat(1.0 / 60.0) : dt
@@ -1670,8 +1758,14 @@ final class ParkingScene: SKScene {
         online = false
         remoteTarget = nil
         showToast(Strings.friendLeft)
-        if resultsShown && !advanceScheduled {
-            resultsShown = false
+        if resultsShown {
+            // The card stays as it was (the round is not judged again, which counted it twice
+            // and turned a win into a draw); one that was waiting to move on with the friend gets
+            // buttons of its own
+            if !advanceScheduled, let results = model?.results, case .autoNext = results.footer {
+                model?.results = results.with(footer: Levels.isLast(levelIndex) ? .final : .solo(hasNext: true))
+            }
+            return
         }
         if phase == .finished { checkLevelDone() }
     }
@@ -1898,9 +1992,14 @@ final class ParkingScene: SKScene {
 
         if online && friendPresent {
             sendClock += TimeInterval(dt)
-            if sendClock >= 1.0 / 20.0 && !localParked {
+            if sendClock >= 1.0 / 30.0 && !localParked {
                 sendClock = 0
                 sendState()
+            }
+            pingClock += TimeInterval(dt)
+            if pingClock >= 2 {
+                pingClock = 0
+                model?.send(["t": "pi", "ts": CACurrentMediaTime()])
             }
         }
 
@@ -2056,6 +2155,21 @@ final class ParkingScene: SKScene {
             dispatchPolice(Strings.crimeCrash)
             statusLabel.text = Strings.friendParkedHurry(18)
             flashBonus(Strings.crimeCrash)
+            // Tells the check the HUD is up (the screen itself is taken from outside)
+            run(.wait(forDuration: 0.6)) { Task { @MainActor in saveWindowSnapshot(named: "shot-police") } }
+        }
+        // Benchmark builds (-cardtest): the last card of a match won after failing the last round
+        if benchmark && ParkingScene.cardTest && !policeTestDone && phase == .driving && elapsed > 2 {
+            policeTestDone = true
+            phase = .finished
+            resultsShown = true
+            model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex) + " · " + level.name,
+                                         entries: [ResultEntry(name: Strings.you, slot: 0, time: nil, hits: 15, isMe: true, isWinner: false, score: -1),
+                                                   ResultEntry(name: Strings.friend, slot: 1, time: 31.9, hits: 10, isMe: false, isWinner: true, score: 61.9)],
+                                         footer: .final, newBest: false, bestTime: nil, headline: Strings.youWon,
+                                         scoreLine: Strings.score(2, 1), reward: nil, outcome: .champion, roundLine: Strings.lastRoundFailed)
+            run(.wait(forDuration: 1.2)) { Task { @MainActor in saveWindowSnapshot(named: "shot-card") } }
+            return
         }
         // Benchmark builds (-failtest): a level failed two seconds in, for a screenshot of the card
         if benchmark && ParkingScene.failTest && phase == .driving && !localParked && !level.race && elapsed > 2 {
@@ -2274,7 +2388,7 @@ final class ParkingScene: SKScene {
             routeLine.path = path
             routeCasing.path = path
         }
-        navNode.isHidden = localParked
+        setNavShown(!localParked && phase != .countdown)
         guard route.count >= 2 else { return }
 
         // Where to steer right now
@@ -2656,7 +2770,7 @@ final class ParkingScene: SKScene {
         mapDistance.position = pill.position
         minimap.addChild(mapDistance)
 
-        navNode.isHidden = !isCity
+        setNavShown(false)
         mapHeading = heading
         mapZoom = 1
         minimapTime = 0
@@ -2932,7 +3046,9 @@ final class ParkingScene: SKScene {
         // (head-on, glancing or from behind alike), so every real car crash reacts the same way
         if let impact = carImpact(OBB(center: newPosition, size: Levels.carSize, angle: newHeading), to: newPosition) {
             // A real crash (not just leaning on a stopped car); the same rule for every car
-            if impact.closing > 22 && lastUpdate - lastHitAt > 0.45 {
+            var friendJustHitUs = false
+            if case .remoteCar = impact.contact { friendJustHitUs = lastUpdate - hitByFriendAt < 0.5 }
+            if impact.closing > 22 && lastUpdate - lastHitAt > 0.45 && !friendJustHitUs {
                 lastHitAt = lastUpdate
                 hits += 1
                 if benchmark { FrameMonitor.shared.mark("hit") }
@@ -3462,7 +3578,7 @@ final class ParkingScene: SKScene {
         policeBanner = SKNode()
         // Stacked under the top bar and the turn pill (it sat on the pill and the timer before);
         // the status line and bonus texts move below it while it shows
-        policeBanner.position = CGPoint(x: size.width / 2 + 40, y: hudTop - 98)
+        policeBanner.position = CGPoint(x: size.width / 2 + 40, y: hudTop - 50)
         policeBanner.zPosition = 22
         // Not 0: SpriteKit skips fully transparent nodes, so the label's text would be laid out
         // only on the first chase
@@ -3500,7 +3616,15 @@ final class ParkingScene: SKScene {
 
     /// The status line (and bonus texts) under the police banner while it shows, under the turn pill otherwise.
     private func placeStatus() {
-        statusLabel.position = CGPoint(x: size.width / 2 + 40, y: hudTop - (policeWarningShown ? 150 : 86))
+        statusLabel.position = CGPoint(x: size.width / 2 + 40, y: hudTop - (policeWarningShown ? 98 : 52))
+    }
+
+    /// The turn guidance in the top bar, or the level name (and score) when there is none.
+    private func setNavShown(_ shown: Bool) {
+        let show = shown && isCity
+        if navNode.isHidden == !show { return }
+        navNode.isHidden = !show
+        levelLabel.isHidden = show
     }
 
     private func showPoliceWarning(_ reason: String) {
@@ -3599,6 +3723,16 @@ final class ParkingScene: SKScene {
             let kick = 40 + impact.closing * 0.6
             traffic?.hit(index, shove: CGVector(dx: nx * kick, dy: ny * kick), spin: -spinSign * (1.4 + 2.4 * strength))
         }
+        if case .remoteCar = impact.contact, online, friendPresent {
+            // The friend's game simulates the friend's car: tell it about the hit, or on the
+            // friend's screen nothing happens (each player only ever saw their own side of a crash)
+            let kick = 40 + impact.closing * 0.6
+            let point = CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2)
+            if benchmark { netLog(String(format: "hit sent closing=%.0f", impact.closing)) }
+            model?.send(["t": "hit", "l": levelIndex, "dx": Double(nx * kick), "dy": Double(ny * kick),
+                         "sp": Double(-spinSign * (1.4 + 2.4 * strength)), "k": Double(strength),
+                         "x": Double(point.x), "y": Double(point.y)])
+        }
         var clock = CACurrentMediaTime()
         func lap(_ name: String) {
             guard benchmark else { return }
@@ -3616,6 +3750,30 @@ final class ParkingScene: SKScene {
         sparks(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
         dust(at: CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2))
         lap("sparks")
+    }
+
+    /// The friend drove into us (their game saw the hit): our car takes the shove and the spin they
+    /// worked out, with the crunch, the shake and the sparks. It does not count as our crash.
+    private func friendHitUs(_ message: [String: Any]) {
+        guard phase == .driving, !localParked else { return }
+        let dx = CGFloat(message["dx"] as? Double ?? 0), dy = CGFloat(message["dy"] as? Double ?? 0)
+        let spin = CGFloat(message["sp"] as? Double ?? 0)
+        let strength = CGFloat(message["k"] as? Double ?? 0.5)
+        hitByFriendAt = lastUpdate
+        if benchmark {
+            netLog(String(format: "hit received shove=%.0f seen=%.0f delay=%.0fms", hypot(dx, dy),
+                          carPosition.distance(to: remotePosition), oneWayDelay * 1000))
+        }
+        failDrift()
+        crashShove = CGVector(dx: crashShove.dx + dx, dy: crashShove.dy + dy)
+        crashSpin += spin
+        velocity *= 0.6
+        audio.play("crash", volume: Float(min(1, 0.45 + strength * 0.6)))
+        bumpHaptic.impactOccurred(intensity: min(1, 0.6 + strength * 0.4))
+        world?.shake(strength: 3 + 7 * strength)
+        let point = CGPoint(x: message["x"] as? Double ?? Double(carPosition.x), y: message["y"] as? Double ?? Double(carPosition.y))
+        sparks(at: point)
+        dust(at: point)
     }
 
     /// A real crash (into a car, or a wall at speed): crunch sound, a shove away from the hit and a
@@ -4301,6 +4459,8 @@ final class ParkingScene: SKScene {
         var entries = [ResultEntry(name: Strings.you, slot: slot, time: myTime, hits: hits, isMe: true, isWinner: false)]
         var headline: String?
         var scoreLine: String?
+        var roundLine: String?
+        var outcome: ResultOutcome = myTime == nil ? .failed : .success
         if (online && friendPresent) || remoteParked {
             let friendTime: Double? = remoteParked && remoteTime >= 0 ? remoteTime : nil
             entries.append(ResultEntry(name: Strings.friend, slot: otherSlot, time: friendTime,
@@ -4324,18 +4484,28 @@ final class ParkingScene: SKScene {
             }
             let iWon = entries[0].isWinner && !entries[1].isWinner
             let friendWon = entries[1].isWinner && !entries[0].isWinner
-            if iWon { myWins += 1 }
-            if friendWon { friendWins += 1 }
+            if !roundCounted {
+                roundCounted = true
+                if iWon { myWins += 1 }
+                if friendWon { friendWins += 1 }
+            }
             headline = iWon ? Strings.youWon : (friendWon ? Strings.friendWon : Strings.draw)
+            outcome = iWon ? .won : (friendWon ? .lost : .draw)
             if isCity {
                 scoreLine = Strings.score(myWins, friendWins)
                 if case .final = footer {
+                    // The match decides the card; the last round is a line of its own (winning the
+                    // match after failing the last round used to show a red "you won")
                     headline = myWins > friendWins ? Strings.youWon : (friendWins > myWins ? Strings.friendWon : Strings.draw)
+                    outcome = myWins > friendWins ? .champion : (friendWins > myWins ? .lost : .draw)
+                    roundLine = myTime == nil ? Strings.lastRoundFailed
+                        : (iWon ? Strings.lastRoundWon : (friendWon ? Strings.lastRoundLost : Strings.lastRoundDraw))
                 }
             }
             refreshLevelLabel()
         } else if case .final = footer, isCity {
             headline = Strings.allRounds
+            if myTime != nil { outcome = .champion }
         }
         if let reason = failReason, headline == nil { headline = reason }
         if level.race && entries.count == 1 {
@@ -4354,7 +4524,8 @@ final class ParkingScene: SKScene {
         model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex) + " · " + level.name,
                                      entries: entries, footer: footer, newBest: newBest,
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
-                                     headline: headline, scoreLine: scoreLine, reward: reward)
+                                     headline: headline, scoreLine: scoreLine, reward: reward,
+                                     outcome: outcome, roundLine: roundLine)
         // The card covers the world: stop drawing it (a frozen frame) until the next level loads
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self, self.model?.results != nil else { return }
@@ -4611,7 +4782,7 @@ final class ParkingScene: SKScene {
     private func flashBonus(_ text: String) {
         bonusLabel.removeAllActions()
         bonusLabel.text = text
-        bonusLabel.position = policeWarningShown ? CGPoint(x: size.width / 2 + 40, y: hudTop - 178)
+        bonusLabel.position = policeWarningShown ? CGPoint(x: size.width / 2 + 40, y: hudTop - 126)
                                                  : CGPoint(x: size.width / 2, y: size.height * 0.7)
         bonusLabel.setScale(0.6)
         bonusLabel.alpha = 1

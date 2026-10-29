@@ -202,6 +202,17 @@ final class AppModel: ObservableObject {
         connect()
     }
 
+    #if BENCHMARK
+    /// Online check: a room with a given code; the game starts as soon as the friend is in.
+    func hostRoomForTest(code: String) {
+        roomCode = code
+        isHost = true
+        startWhenFriendJoins = true
+        connect()
+    }
+    #endif
+    private var startWhenFriendJoins = false
+
     func joinRoom(code: String) {
         let cleaned = code.uppercased().filter { $0.isLetter && $0.isASCII }
         guard cleaned.count == 4 else {
@@ -646,6 +657,10 @@ final class AppModel: ObservableObject {
             if isHost { net.send(["t": "mode", "m": onlineMode.rawValue]) }
             net.send(carChoice.message)
             scene?.friendJoined()
+            if startWhenFriendJoins && isHost {
+                startWhenFriendJoins = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in self?.startOnlineGame() }
+            }
             if matchmaking && isHost {
                 // Matched: start a city race shortly
                 stopMatchmaking(error: nil)
@@ -795,6 +810,18 @@ struct RootView: View {
                 return
             }
             #if BENCHMARK
+            // Online check: two simulators meet in the room named after the flag
+            let netArgs = ProcessInfo.processInfo.arguments
+            for (flag, host) in [("-nethost", true), ("-netjoin", false)] {
+                if let index = netArgs.firstIndex(of: flag), index + 1 < netArgs.count {
+                    AudioManager.shared.isMuted = true
+                    let code = netArgs[index + 1]
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        if host { model.hostRoomForTest(code: code) } else { model.joinRoom(code: code) }
+                    }
+                    return
+                }
+            }
             if ProcessInfo.processInfo.arguments.contains("-leaktest") {
                 splash = false
                 AudioManager.shared.isMuted = true
