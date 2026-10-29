@@ -958,6 +958,13 @@ final class Car3D {
         return (pivot, (front ? 0 : 2) + (left ? 0 : 1), pivot.position.y)
     }
 
+    /// Draws every material of the body from both sides (for close-up spectator shots).
+    func setDoubleSided() {
+        body.enumerateHierarchy { node, _ in
+            node.geometry?.materials.forEach { $0.isDoubleSided = true }
+        }
+    }
+
     /// `heave` lifts the body on its springs; `wheelLift` (per corner) moves each wheel up or
     /// down on its own (over a kerb, onto a ramp, hanging in the air).
     func update(position: CGPoint, heading: CGFloat, steer: CGFloat,
@@ -1276,7 +1283,7 @@ final class World3D {
             if shots[spectateIndex] == .trackside {
                 // A camera on the roadside ahead, on the open side
                 let ahead = car + forwardNow * max(16, min(30, Float(speed) / 10 * 1.6)) + side * spectateSide * 5.5
-                spectateFixed = ahead + SIMD3<Float>(0, 1.3, 0)
+                spectateFixed = ahead + SIMD3<Float>(0, 6.0, 0)
                 if !lineIsClear(from: target + forwardNow * 4, to: spectateFixed, margin: 0.5) {
                     spectateFixed = car + forwardNow * 14 + SIMD3<Float>(0, 3.5, 0)
                 }
@@ -1293,14 +1300,14 @@ final class World3D {
         switch shots[spectateIndex] {
         case .chase:
             // Long lens from behind and above: the car big, the street compressed behind it
-            eye = car - forward * (11 - t * 0.4) + SIMD3<Float>(0, 3.0, 0) + side * 0.8 * sin(t * 0.6)
-            look = car + forward * 3 + SIMD3<Float>(0, 0.7, 0)
-            fov = 36
+            eye = car - forward * (13 - t * 0.4) + SIMD3<Float>(0, 6.5, 0) + side * 0.8 * sin(t * 0.6)
+            look = car + forward * 3 + SIMD3<Float>(0, 0.5, 0)
+            fov = 40
         case .tracking:
             // Alongside at door height, a step ahead, drifting slowly back along the car
-            eye = car + side * spectateSide * 6.5 + forward * (2.4 - t * 0.7) + SIMD3<Float>(0, 1.05, 0)
-            look = car + forward * 0.6 + SIMD3<Float>(0, 0.7, 0)
-            fov = 40
+            eye = car + side * spectateSide * 8 + forward * (2.4 - t * 0.7) + SIMD3<Float>(0, 5.2, 0)
+            look = car + forward * 0.6 + SIMD3<Float>(0, 0.5, 0)
+            fov = 42
         case .trackside:
             // Fixed on the roadside: pans to follow and zooms in as the car comes closer
             eye = spectateFixed
@@ -1308,14 +1315,14 @@ final class World3D {
             fov = max(18, min(55, 2 * atan(3.4 / distance) * 180 / .pi))
         case .front:
             // Low, ahead of the car and looking back at it as it rushes at the lens
-            eye = car + forward * (7.5 - t * 0.25) + side * spectateSide * 1.6 + SIMD3<Float>(0, 0.75, 0)
-            look = car + SIMD3<Float>(0, 0.75, 0)
-            fov = 46
+            eye = car + forward * (9 - t * 0.25) + side * spectateSide * 1.6 + SIMD3<Float>(0, 4.8, 0)
+            look = car + SIMD3<Float>(0, 0.5, 0)
+            fov = 48
         case .helicopter:
             // High and behind, slowly swinging round
             let swing = t * 0.18
             let dir = forward * cos(swing) + side * spectateSide * sin(swing)
-            eye = car - dir * 15 + SIMD3<Float>(0, 13 + t * 0.6, 0)
+            eye = car - dir * 15 + SIMD3<Float>(0, 16 + t * 0.6, 0)
             look = car + forward * 4
             fov = 48
         }

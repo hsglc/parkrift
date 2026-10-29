@@ -23,7 +23,7 @@ from mathutils import Matrix, Vector
 from PIL import Image
 
 SRC, MODELS, TEXTURES = sys.argv[-3:]
-TRIANGLES = 14000
+TRIANGLES = 8000
 # clip: (frames, loop, root motion: 'cycle' removes it every frame, 'start' keeps the travel)
 # Longest stretch of a clip used (seconds): the angry clip runs on for 20 s of talking
 LIMIT = {'angry': 2.6, 'phone': 3.0, 'idle': 3.0}   # idle and phone play back and forth in the game
@@ -196,4 +196,4 @@ def bake(name, triangles, suffix):
 # Close up the full mesh; past about 14 m a light one (the game switches by distance)
 for person in ('woman', 'man'):
     bake(person, TRIANGLES, '')
-    bake(person, 3500, '_far')
+    bake(person, 2000, '_far')

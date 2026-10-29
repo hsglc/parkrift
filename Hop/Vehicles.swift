@@ -119,6 +119,20 @@ enum TrafficVehicles {
         return node
     }
 
+    private static var lodShells: [String: SCNGeometry] = [:]
+    /// The body's textured shell reduced for distance (tools/make_npc_lods.py).
+    private static func lodShell(_ model: TrafficModel) -> SCNGeometry? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = lodShells[model.id] { return cached }
+        var found: SCNGeometry?
+        CarModels.load(model.file + "_body_lod")?.enumerateHierarchy { node, stop in
+            if node.name == "textured", let geometry = node.geometry { found = geometry; stop.pointee = true }
+        }
+        if let found = found { lodShells[model.id] = found }
+        return found
+    }
+
     private static func wheelMesh(_ model: TrafficModel) -> SCNNode? {
         lock.lock()
         defer { lock.unlock() }
@@ -142,6 +156,11 @@ enum TrafficVehicles {
             switch name {
             case "textured":
                 geometry.materials = [paintMaterial]
+                // A light shell (a fifth of the triangles) a little way off
+                if let lod = lodShell(model)?.copy() as? SCNGeometry {
+                    lod.materials = [paintMaterial]
+                    geometry.levelsOfDetail = [SCNLevelOfDetail(geometry: lod, worldSpaceDistance: 24)]
+                }
             case "lamp_red", "lamp_blue":
                 // Found by these colours and flashed by the police chase
                 let lamp = Mat.pbr(name == "lamp_red" ? UIColor(red: 0.9, green: 0.05, blue: 0.05, alpha: 1)
@@ -200,6 +219,8 @@ enum TrafficVehicles {
         let flatWheels = wheelMaterial(model).copy() as! SCNMaterial
         flatWheels.normal.contents = nil
         if let merged = MeshMerge.merge(holder, material: flatWheels) {
+            // Past 40 m the wheels of a parked car are hidden under its body anyway
+            merged.levelsOfDetail = [SCNLevelOfDetail(geometry: nil, worldSpaceDistance: 40)]
             set.geometry = merged
         } else {
             // Could not merge: the four wheels as they are

@@ -54,10 +54,14 @@ struct DailyView: View {
             .padding(.horizontal, 26)
             .padding(.top, 14)
             .padding(.bottom, 10)
+            // If anything is too tall it gives at the bottom, never cuts the title
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .onAppear {
             shown = true
-            pulse = true
+            // Start the pulses once the sheet has settled (a repeating animation started during
+            // the slide-in would keep replaying the slide)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { pulse = true }
             if mode == nil {
                 mode = Progression.TaskMode.allCases.first { m in Progression.tasks.contains { $0.kind.mode == m && !$0.done } } ?? .park
             }
@@ -68,10 +72,7 @@ struct DailyView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(Strings.dailyKicker).font(.kicker(9)).tracking(1.6).foregroundStyle(Neo.cyan)
-                Text(Strings.dailyTitle.uppercased()).font(.race(30)).foregroundStyle(.white)
-            }
+            Text(Strings.dailyTitle.uppercased()).font(.race(28)).foregroundStyle(.white)
             Spacer()
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 6) {
@@ -142,8 +143,8 @@ struct DailyView: View {
                     Text(Strings.dailyGiftHint)
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
                         .lineLimit(2)
+                        .minimumScaleFactor(0.8)
                 }
             }
             .padding(.top, 8)

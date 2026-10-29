@@ -333,6 +333,147 @@ enum CarArt {
         }
     }
 
+    // MARK: Minimap
+
+    /// The level drawn as a navigation map (y up, `scale` map points per world unit, at 3x):
+    /// streets with dashed centre lines and zebra crossings, pavements, building footprints with a
+    /// lit edge, parks with trees; or the parking lot with its painted bays, walls, parked cars
+    /// and cones.
+    static func minimapTexture(level: LevelDef, scale: CGFloat) -> SKTexture {
+        let size = CGSize(width: max(4, level.world.width * scale), height: max(4, level.world.height * scale))
+        return render(size, scale: 3) { context, s in
+            context.translateBy(x: 0, y: s.height)
+            context.scaleBy(x: 1, y: -1)
+            func rect(_ r: CGRect) -> CGRect { CGRect(x: r.minX * scale, y: r.minY * scale, width: r.width * scale, height: r.height * scale) }
+            func box(_ o: ObstacleDef, inset: CGFloat = 0, corner: CGFloat) -> CGPath {
+                let w = max(1.5, o.size.width * scale - inset * 2), h = max(1.5, o.size.height * scale - inset * 2)
+                var t = CGAffineTransform(translationX: o.center.x * scale, y: o.center.y * scale).rotated(by: o.angle)
+                return CGPath(roundedRect: CGRect(x: -w / 2, y: -h / 2, width: w, height: h), cornerWidth: min(corner, w / 2),
+                              cornerHeight: min(corner, h / 2), transform: &t)
+            }
+            if let city = level.city {
+                // Streets
+                context.setFillColor(UIColor(red: 0.21, green: 0.24, blue: 0.31, alpha: 1).cgColor)
+                context.fill(CGRect(origin: .zero, size: s))
+                // Dashed centre lines
+                context.setStrokeColor(UIColor(red: 1.0, green: 0.84, blue: 0.36, alpha: 0.5).cgColor)
+                context.setLineWidth(0.5)
+                context.setLineDash(phase: 0, lengths: [2.2, 1.8])
+                for x in city.xs {
+                    context.move(to: CGPoint(x: x * scale, y: 0))
+                    context.addLine(to: CGPoint(x: x * scale, y: s.height))
+                }
+                for y in city.ys {
+                    context.move(to: CGPoint(x: 0, y: y * scale))
+                    context.addLine(to: CGPoint(x: s.width, y: y * scale))
+                }
+                context.strokePath()
+                context.setLineDash(phase: 0, lengths: [])
+                // Blocks: pavement around, darker lots inside
+                for block in city.blocks {
+                    let outer = rect(block)
+                    context.setFillColor(UIColor(red: 0.40, green: 0.44, blue: 0.52, alpha: 1).cgColor)
+                    context.addPath(CGPath(roundedRect: outer, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil))
+                    context.fillPath()
+                    let inner = outer.insetBy(dx: 2.2, dy: 2.2)
+                    context.setFillColor(UIColor(red: 0.12, green: 0.14, blue: 0.20, alpha: 1).cgColor)
+                    context.addPath(CGPath(roundedRect: inner, cornerWidth: 1.2, cornerHeight: 1.2, transform: nil))
+                    context.fillPath()
+                }
+                // Zebra crossings on every approach to a junction
+                context.setFillColor(UIColor.white.withAlphaComponent(0.42).cgColor)
+                for x in city.xs {
+                    for y in city.ys {
+                        let edge = (CityMap.roadHalf + 6) * scale
+                        let half = CityMap.roadHalf * scale * 0.82
+                        for k in stride(from: -half, through: half, by: 1.6) {
+                            context.fill(CGRect(x: x * scale + k - 0.4, y: y * scale + edge - 0.9, width: 0.8, height: 1.8))
+                            context.fill(CGRect(x: x * scale + k - 0.4, y: y * scale - edge - 0.9, width: 0.8, height: 1.8))
+                            context.fill(CGRect(x: x * scale + edge - 0.9, y: y * scale + k - 0.4, width: 1.8, height: 0.8))
+                            context.fill(CGRect(x: x * scale - edge - 0.9, y: y * scale + k - 0.4, width: 1.8, height: 0.8))
+                        }
+                    }
+                }
+                // Buildings and parks
+                for o in level.obstacles where o.kind == .building {
+                    if o.tint == 102 {
+                        context.setFillColor(UIColor(red: 0.15, green: 0.36, blue: 0.27, alpha: 1).cgColor)
+                        context.addPath(box(o, corner: 2))
+                        context.fillPath()
+                        // Trees: soft dots
+                        context.setFillColor(UIColor(red: 0.24, green: 0.52, blue: 0.34, alpha: 1).cgColor)
+                        var seed = UInt64(abs(Int(o.center.x * 7 + o.center.y * 13)))
+                        for _ in 0..<Int(max(4, o.size.width * o.size.height * scale * scale / 22)) {
+                            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                            let u = CGFloat(seed >> 40 & 0xFFFF) / 65535 - 0.5
+                            let v = CGFloat(seed >> 20 & 0xFFFF) / 65535 - 0.5
+                            let p = CGPoint(x: (o.center.x + u * o.size.width * 0.85) * scale, y: (o.center.y + v * o.size.height * 0.85) * scale)
+                            context.fillEllipse(in: CGRect(x: p.x - 1.1, y: p.y - 1.1, width: 2.2, height: 2.2))
+                        }
+                    } else {
+                        context.setFillColor(UIColor(red: 0.19, green: 0.22, blue: 0.31, alpha: 1).cgColor)
+                        context.addPath(box(o, inset: 0.3, corner: 0.8))
+                        context.fillPath()
+                        context.setStrokeColor(UIColor.white.withAlphaComponent(0.10).cgColor)
+                        context.setLineWidth(0.5)
+                        context.addPath(box(o, inset: 0.3, corner: 0.8))
+                        context.strokePath()
+                    }
+                }
+            } else {
+                // The lot
+                context.setFillColor(UIColor(red: 0.17, green: 0.19, blue: 0.25, alpha: 1).cgColor)
+                context.fill(CGRect(origin: .zero, size: s))
+                for o in level.obstacles {
+                    switch o.kind {
+                    case .wall, .building:
+                        context.setFillColor(UIColor(red: 0.58, green: 0.62, blue: 0.70, alpha: 1).cgColor)
+                        context.addPath(box(o, corner: 0.6))
+                        context.fillPath()
+                    case .car:
+                        context.setFillColor(UIColor(red: 0.40, green: 0.44, blue: 0.53, alpha: 1).cgColor)
+                        context.addPath(box(o, inset: 0.2, corner: 1.4))
+                        context.fillPath()
+                        context.setFillColor(UIColor(red: 0.20, green: 0.23, blue: 0.30, alpha: 1).cgColor)
+                        context.addPath(box(ObstacleDef(kind: .car, center: o.center, size: CGSize(width: o.size.width * 0.38, height: o.size.height * 0.7),
+                                                        angle: o.angle, tint: 0), corner: 0.8))
+                        context.fillPath()
+                    case .cone:
+                        context.setFillColor(UIColor(red: 1.0, green: 0.52, blue: 0.16, alpha: 1).cgColor)
+                        let r = max(1, o.size.width * scale / 2)
+                        context.fillEllipse(in: CGRect(x: o.center.x * scale - r, y: o.center.y * scale - r, width: r * 2, height: r * 2))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Dark at the rim, clear inside: the map fades into the bezel.
+    static let minimapVignette: SKTexture = render(CGSize(width: 128, height: 128), scale: 2) { context, s in
+        let colors = [UIColor(red: 0.03, green: 0.04, blue: 0.08, alpha: 0).cgColor,
+                      UIColor(red: 0.03, green: 0.04, blue: 0.08, alpha: 0.15).cgColor,
+                      UIColor(red: 0.03, green: 0.04, blue: 0.08, alpha: 0.85).cgColor] as CFArray
+        if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.72, 1]) {
+            let c = CGPoint(x: s.width / 2, y: s.height / 2)
+            context.drawRadialGradient(g, startCenter: c, startRadius: 0, endCenter: c, endRadius: s.width / 2, options: [])
+        }
+    }
+
+    /// A soft wedge from the bottom centre upwards (tinted in the game): the view ahead.
+    static let minimapCone: SKTexture = render(CGSize(width: 128, height: 96), scale: 2) { context, s in
+        let origin = CGPoint(x: s.width / 2, y: s.height)
+        let path = CGMutablePath()
+        path.move(to: origin)
+        path.addArc(center: origin, radius: s.height, startAngle: -CGFloat.pi / 2 - 0.6, endAngle: -CGFloat.pi / 2 + 0.6, clockwise: false)
+        path.closeSubpath()
+        context.addPath(path)
+        context.clip()
+        let colors = [UIColor.white.withAlphaComponent(0.55).cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+        if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+            context.drawRadialGradient(g, startCenter: origin, startRadius: 0, endCenter: origin, endRadius: s.height, options: [])
+        }
+    }
+
     /// One stat of the finish panel: icon, small label, big value and its unit.
     struct FinishStat {
         let icon: String
