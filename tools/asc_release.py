@@ -343,19 +343,21 @@ def attach_build(app_id, vid):
     return ok is not None
 
 
+# App Review Information > Notes (Apple asked for these six points on the first submission)
+REVIEW_NOTES = """1. Screen recording: attached to our reply in App Store Connect; captured on a physical iPhone with the latest iOS, from launch through the menu, garage, a parking level, a city race and creating an online room. The app has no account registration, login, user-generated content or paid content.
+2. Purpose and audience: a casual 3D car game for players 9+ who enjoy short driving challenges: 50 parking levels that get harder one by one, city races and parking races through traffic, and an online mode to play the same level against a friend. Quick skill-based sessions of one to three minutes.
+3. How to use: no setup, account or login; everything works right after launch. Solo: Park Master > choose a level > pick a car > start. City works the same way. Neither needs a network. Coins are earned only by playing and unlock cars and upgrades; there are no in-app purchases or ads. Online: Create Room on one device, Join Room with the 4-letter code on a second device, or Quick Match on two devices at about the same time (if nobody is found within a minute it starts a solo race against the traffic). Game Center leaderboards are optional.
+4. External services: Cloudflare Workers (a relay that passes car positions between the two phones in a room and hosts the privacy and support pages; it stores nothing) and Apple Game Center (optional leaderboards). No analytics, ads, payments, authentication or AI services at runtime. Car models were made in advance with Meshy AI (original designs) and are bundled; other assets are CC0 or commercially licensed and credited in the app (the (i) button on the main menu).
+5. Regions: the app works the same in every region where it is available.
+6. Regulated industry or protected material: none. All car designs are original and do not replicate real brands or models; no logos or trademarks."""
+
+
 def review_details(vid):
     phone = os.environ.get('REVIEW_PHONE', '').strip()
     existing = call('GET', f'/v1/appStoreVersions/{vid}/appStoreReviewDetail', quiet=True)
     attrs = {'contactFirstName': 'Hüseyin', 'contactLastName': 'Gülcü', 'contactEmail': 'huseyinglc0@gmail.com',
              'demoAccountRequired': False,
-             'notes': ('No account or login exists in this app; everything works right away. '
-                       'Solo: Park Master (50 levels) and City (car race, park race) need no network. '
-                       'Online (Play with a friend): tap Create Room on one device and Join Room with the 4-letter code '
-                       'on a second device, or Quick Match on two devices at about the same time. If no opponent is '
-                       'found within a minute, Quick Match starts a solo race against the city traffic instead. '
-                       'Online play only relays car positions between the two players; there is no chat, no text '
-                       'entry other than the room code, and no user-generated content. Game Center (leaderboards) is '
-                       'optional. Coins are earned in play only; there are no in-app purchases or ads.')}
+             'notes': REVIEW_NOTES}
     if phone:
         attrs['contactPhone'] = phone
     if existing and existing.get('data'):
