@@ -102,7 +102,7 @@ enum Scenery {
     /// the close-up mesh "<name>", "<name>_lod" (a fifth of it) from `near` metres and
     /// "<name>_far" (about 2,500 triangles) from `far` metres. The shadow is cast by the far mesh
     /// alone, so the detail costs nothing in the shadow pass. Clones share all of it.
-    static func prop(_ name: String, near: CGFloat, far: CGFloat) -> SCNNode? {
+    static func prop(_ name: String, near: CGFloat, far: CGFloat, hidden: CGFloat = 150) -> SCNNode? {
         guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
               let scene = try? SCNScene(url: url, options: nil) else { return nil }
         var meshes: [String: SCNNode] = [:]
@@ -122,6 +122,8 @@ enum Scenery {
             low.materials = [material]
             levels.append(SCNLevelOfDetail(geometry: low, worldSpaceDistance: far))
         }
+        // Past `hidden` metres (deep in the fog, mostly behind buildings) the prop is not drawn
+        levels.append(SCNLevelOfDetail(geometry: nil, worldSpaceDistance: hidden))
         geometry.levelsOfDetail = levels
         let transform = mesh.simdConvertTransform(matrix_identity_float4x4, to: scene.rootNode)
         let node = SCNNode(geometry: geometry)
@@ -130,8 +132,9 @@ enum Scenery {
         holder.addChildNode(node)
         node.categoryBitMask = World3D.propCategory
         if let low = farGeometry?.copy() as? SCNGeometry {
-            low.levelsOfDetail = nil
             low.materials = [shadowCaster]
+            // The shadow only matters within the shadow distance
+            low.levelsOfDetail = [SCNLevelOfDetail(geometry: nil, worldSpaceDistance: 70)]
             let shadow = SCNNode(geometry: low)
             shadow.simdTransform = transform
             shadow.castsShadow = true

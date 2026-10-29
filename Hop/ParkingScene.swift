@@ -4303,38 +4303,42 @@ final class ParkingScene: SKScene {
             pedestrianStates = people.people.map { $0.state }
             pedestrianSince = Array(repeating: lastUpdate, count: people.people.count)
         }
-        // People are detailed meshes: draw the ones within 45 m
+        // People are detailed meshes: draw the ones within 45 m, the light mesh past 18 m from
+        // the camera
         let range: CGFloat = 450
+        let eye = world?.cameraNode.simdWorldPosition ?? SIMD3<Float>(0, 0, 0)
         for (index, person) in people.people.enumerated() where index < pedestrianNodes.count {
             let node = pedestrianNodes[index]
             if pedestrianStates[index] != person.state {
                 pedestrianStates[index] = person.state
                 pedestrianSince[index] = lastUpdate
             }
-            let far = abs(person.position.x - carPosition.x) > range || abs(person.position.y - carPosition.y) > range
-            if node.isHidden != far { node.isHidden = far }
-            if far { continue }
+            let outOfRange = abs(person.position.x - carPosition.x) > range || abs(person.position.y - carPosition.y) > range
+            if node.isHidden != outOfRange { node.isHidden = outOfRange }
+            if outOfRange { continue }
             let character = person.outfit
             let since = CGFloat(lastUpdate - pedestrianSince[index])
+            let spot = World3D.vec(person.position)
+            let far = simd_distance(eye, SIMD3<Float>(spot.x, spot.y, spot.z)) > 18
             let geometry: SCNGeometry?
             switch person.state {
             case .walking, .crossing:
                 // Hurrying people run; the clip follows the distance walked so the feet stick
                 if person.hurry > 1.3 {
-                    geometry = PedestrianModels.geometry(character: character, clip: .run, phase: person.stride / PedestrianModels.runCycle)
+                    geometry = PedestrianModels.geometry(character: character, clip: .run, phase: person.stride / PedestrianModels.runCycle, far: far)
                 } else {
-                    geometry = PedestrianModels.geometry(character: character, clip: .walk, phase: person.stride / PedestrianModels.walkCycle)
+                    geometry = PedestrianModels.geometry(character: character, clip: .walk, phase: person.stride / PedestrianModels.walkCycle, far: far)
                 }
             case .waiting, .browsing:
                 // Some check their phone while they wait; each starts at its own point of the clip
                 let clip: PedestrianModels.Clip = index % 3 == 0 ? .phone : .idle
-                geometry = PedestrianModels.geometry(character: character, clip: clip, time: since + CGFloat(index) * 0.37)
+                geometry = PedestrianModels.geometry(character: character, clip: clip, time: since + CGFloat(index) * 0.37, far: far)
             case .startled:
-                geometry = PedestrianModels.geometry(character: character, clip: .dodge, time: since)
+                geometry = PedestrianModels.geometry(character: character, clip: .dodge, time: since, far: far)
             case .fallen:
-                geometry = PedestrianModels.geometry(character: character, clip: .knockdown, time: since)
+                geometry = PedestrianModels.geometry(character: character, clip: .knockdown, time: since, far: far)
             case .angry:
-                geometry = PedestrianModels.geometry(character: character, clip: .angry, time: since)
+                geometry = PedestrianModels.geometry(character: character, clip: .angry, time: since, far: far)
             }
             if let geometry = geometry, node.geometry !== geometry { node.geometry = geometry }
             var p = World3D.vec(person.position)

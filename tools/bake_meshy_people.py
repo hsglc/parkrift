@@ -7,7 +7,7 @@ skinning), so every clip is sampled into frames of the same mesh: the skinned me
 once (decimation before the armature, so all frames share topology, UVs and triangles) and each
 frame stores only positions and normals.
 
-Output per character:
+Output per character (ped_<name>_far.bin: the same at about 3,500 triangles):
   Hop/Models/ped_<name>.bin   'PED1', vertex count, index count, clip count; UVs (float32 x2),
                               indices (uint32); per clip: name, frame count, frames per second,
                               loop flag, then per frame positions (float16 x3) and normals
@@ -94,12 +94,12 @@ def save_textures(name, mesh):
             os.path.join(TEXTURES, f'ped_{name}_rough.jpg'), quality=88)
 
 
-def reduce(mesh):
+def reduce(mesh, triangles):
     tris = sum(len(p.vertices) - 2 for p in mesh.data.polygons)
-    if tris <= TRIANGLES:
+    if tris <= triangles:
         return
     mod = mesh.modifiers.new('reduce', 'DECIMATE')
-    mod.ratio = TRIANGLES / tris
+    mod.ratio = triangles / tris
     mod.use_collapse_triangulate = True
     # Before the armature: one reduced mesh, then skinned (all frames share it)
     while mesh.modifiers.find('reduce') > 0:
@@ -143,7 +143,7 @@ def sample(mesh, arm, frame, offset):
     return verts, normals, uvs, indices, root
 
 
-def bake(name):
+def bake(name, triangles, suffix):
     folder = os.path.join(SRC, name)
     out = bytearray()
     shared = None
@@ -151,9 +151,9 @@ def bake(name):
     clips = []
     for clip, (count, loop, motion) in CLIPS.items():
         mesh, arm, action = import_clip(os.path.join(folder, clip + '.glb'))
-        if shared is None:
+        if shared is None and suffix == '':
             save_textures(name, mesh)
-        reduce(mesh)
+        reduce(mesh, triangles)
         start, end = action.frame_range if action else (1, 24)
         fps = bpy.context.scene.render.fps
         if clip in LIMIT:
@@ -188,10 +188,12 @@ def bake(name):
             p[:, 1] -= ground                   # feet on the ground
             out += p.astype(np.float16).tobytes()
             out += np.array(normals, np.float32).astype(np.float16).tobytes()
-    with open(os.path.join(MODELS, f'ped_{name}.bin'), 'wb') as f:
+    with open(os.path.join(MODELS, f'ped_{name}{suffix}.bin'), 'wb') as f:
         f.write(bytes(out))
     print(f'PED {name}: {vc} vertices, {ic // 3} triangles, {len(out) / 1e6:.1f} MB', flush=True)
 
 
+# Close up the full mesh; past about 14 m a light one (the game switches by distance)
 for person in ('woman', 'man'):
-    bake(person)
+    bake(person, TRIANGLES, '')
+    bake(person, 3500, '_far')

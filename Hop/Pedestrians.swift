@@ -394,20 +394,21 @@ enum PedestrianModels {
     private static let lock = NSLock()
     private static var loaded: [Int: Character] = [:]
 
-    private static func character(_ index: Int) -> Character? {
-        let k = abs(index) % characters.count
+    /// A character's clips, close-up (`far` false) or the light mesh for further away.
+    private static func character(_ index: Int, far: Bool = false) -> Character? {
+        let k = (abs(index) % characters.count) * 2 + (far ? 1 : 0)
         lock.lock()
         defer { lock.unlock() }
         if let c = loaded[k] { return c }
-        let c = load(characters[k])
+        let c = load(characters[k / 2] + (far ? "_far" : ""))
         loaded[k] = c
         return c
     }
 
     /// The frame of `clip` at `time` seconds into it (looping clips wrap, the others hold their
     /// last frame).
-    static func geometry(character index: Int, clip: Clip, time: CGFloat) -> SCNGeometry? {
-        guard let c = character(index), let frames = c.frames[clip], !frames.isEmpty else { return nil }
+    static func geometry(character index: Int, clip: Clip, time: CGFloat, far: Bool = false) -> SCNGeometry? {
+        guard let c = character(index, far: far), let frames = c.frames[clip], !frames.isEmpty else { return nil }
         let raw = Int(floor(time * CGFloat(c.fps[clip] ?? 12)))
         let n = frames.count
         let frame: Int
@@ -425,8 +426,8 @@ enum PedestrianModels {
     }
 
     /// The frame at a point of a walking or running cycle (0...1), so the feet match the ground.
-    static func geometry(character index: Int, clip: Clip, phase: CGFloat) -> SCNGeometry? {
-        guard let c = character(index), let frames = c.frames[clip], !frames.isEmpty else { return nil }
+    static func geometry(character index: Int, clip: Clip, phase: CGFloat, far: Bool = false) -> SCNGeometry? {
+        guard let c = character(index, far: far), let frames = c.frames[clip], !frames.isEmpty else { return nil }
         let p = phase - floor(phase)
         return frames[min(frames.count - 1, Int(p * CGFloat(frames.count)))]
     }
@@ -447,7 +448,7 @@ enum PedestrianModels {
         let uvSource = SCNGeometrySource(data: uvData, semantic: .texcoord, vectorCount: vertexCount, usesFloatComponents: true,
                                          componentsPerVector: 2, bytesPerComponent: 4, dataOffset: 0, dataStride: 8)
         let element = SCNGeometryElement(data: indexData, primitiveType: .triangles, primitiveCount: indexCount / 3, bytesPerIndex: 4)
-        let material = Scenery.modelMaterial("ped_\(name)")
+        let material = Scenery.modelMaterial("ped_" + (name.hasSuffix("_far") ? String(name.dropLast(4)) : name))
         let frameBytes = vertexCount * 6
         for _ in 0..<clipCount {
             guard o < data.count else { break }
@@ -486,15 +487,18 @@ enum PedestrianModels {
     /// Loads both characters on a background thread (called at launch).
     static func preload() {
         DispatchQueue.global(qos: .utility).async {
-            for index in characters.indices { _ = character(index) }
+            for index in characters.indices {
+                _ = character(index)
+                _ = character(index, far: true)
+            }
         }
     }
 
     /// One frame of each character, for the loading warm-up (they share one material, so one
     /// compiles the shader; the other frames upload on first sight, a few hundred KB each).
     static var all: [SCNGeometry] {
-        characters.indices.compactMap { index -> SCNGeometry? in
-            character(index)?.frames[.walk]?.first
+        characters.indices.flatMap { index -> [SCNGeometry] in
+            [character(index)?.frames[.walk]?.first, character(index, far: true)?.frames[.walk]?.first].compactMap { $0 }
         }
     }
 }
