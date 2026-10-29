@@ -1175,7 +1175,9 @@ final class World3D {
         let apron = SCNPlane(width: apronSize.width, height: apronSize.height)
         let apronMaterial = Scenery.surface("pavement", tile: 2.5, size: apronSize, normal: 0.8)
         apron.materials = [apronMaterial]
-        scene.rootNode.addChildNode(flat(apron, y: -0.06))
+        apronNode = flat(apron, y: -0.06)
+        scene.rootNode.addChildNode(apronNode)
+        townApron = apronMaterial
 
         // Asphalt lot: photo-scanned asphalt every 3.5 m, a large stain map over it breaks the repeat
         let lotSize = CGSize(width: 100, height: 50)
@@ -1187,9 +1189,13 @@ final class World3D {
         lotMaterial.multiply.wrapT = .repeat
         lot.materials = [lotMaterial]
         lotMaterials = [lotMaterial, apronMaterial]
-        lotRoot.addChildNode(flat(lot, y: 0))
+        townLot = lotMaterial
+        lotPlane = flat(lot, y: 0)
+        lotRoot.addChildNode(lotPlane)
         // The town round the lot (shared meshes, one copy per scene)
-        lotRoot.addChildNode(CityDecor.lotSurroundings.clone())
+        townNode = CityDecor.lotSurroundings.clone()
+        lotRoot.addChildNode(townNode)
+        lotRoot.addChildNode(venueRoot)
 
         // Raised curbs
         let concrete = Scenery.shared("concrete", tile: 2, size: CGSize(width: 100, height: 1))
@@ -1201,6 +1207,51 @@ final class World3D {
             node.position = SCNVector3(curb.2, 0.11, curb.3)
             lotRoot.addChildNode(node)
         }
+    }
+
+    // MARK: Venues
+
+    private var apronNode = SCNNode()
+    private var lotPlane = SCNNode()
+    private var townNode = SCNNode()
+    private let venueRoot = SCNNode()
+    private var cornerLamps: [SCNNode] = []
+    private var townApron = SCNMaterial()
+    private var townLot = SCNMaterial()
+    private var venueLots: [Venue: SCNMaterial] = [:]
+    private(set) var venue: Venue = .town
+    /// Where the next parking level loaded takes place (set by the scene).
+    var levelVenue: Venue = .town
+
+    /// Puts the parking lot in another place (see Venue): its surface, the town round it (some
+    /// sides left out, or dropped five floors for the rooftop) and the venue's own buildings.
+    func applyVenue(_ next: Venue) {
+        guard next != venue else { return }
+        venue = next
+        venueRoot.childNodes.forEach { $0.removeFromParentNode() }
+        townNode.removeFromParentNode()
+        townNode = CityDecor.lotSurroundings(skipping: next.skippedSides).clone()
+        townNode.position.y = next.townDrop
+        lotRoot.addChildNode(townNode)
+        if let decor = VenueDecor.node(next) { venueRoot.addChildNode(decor.clone()) }
+        apronNode.isHidden = next == .harbor
+        apronNode.position.y = next.townDrop - 0.06
+        cornerLamps.forEach { $0.isHidden = next != .town }
+        // The lot's own surface, tiled every 5 m (its painted lines are drawn over it)
+        var lot = townLot
+        if let set = next.lotSurface {
+            if let made = venueLots[next] {
+                lot = made
+            } else if let made = VenueDecor.surface(set).copy() as? SCNMaterial {
+                for property in [made.diffuse, made.normal, made.roughness] {
+                    property.contentsTransform = SCNMatrix4MakeScale(20, -10, 1)
+                }
+                venueLots[next] = made
+                lot = made
+            }
+        }
+        lotPlane.geometry?.materials = [lot]
+        lotMaterials = [lot, townApron]
     }
 
     private func buildScenery() {
@@ -1217,6 +1268,7 @@ final class World3D {
             let lampNode = SCNNode(geometry: lamp)
             lampNode.position = SCNVector3(corner.0 + (corner.0 > 0 ? -0.6 : 0.6), 6, corner.1)
             lotRoot.addChildNode(lampNode)
+            cornerLamps += [poleNode, lampNode]
         }
     }
 
@@ -2107,6 +2159,7 @@ final class World3D {
         parkedCars3D.removeAll()
         arrowNode = nil
         lotRoot.isHidden = level.city != nil
+        if level.city == nil { applyVenue(levelVenue) }
         cityMap = nil
         signalHeads.removeAll()
         roadMaterials.removeAll()

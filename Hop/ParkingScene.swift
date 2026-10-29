@@ -929,6 +929,7 @@ final class ParkingScene: SKScene {
             stage(String(format: "lap %@ %.0f ms", what, (now - lapClock) * 1000))
             lapClock = now
         }
+        world.levelVenue = Venue.of(level: levelIndex)
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
         lap("world.load")
         setupPatrols(world)
