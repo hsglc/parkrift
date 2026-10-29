@@ -2718,23 +2718,62 @@ final class ParkingScene: SKScene {
             return
         }
 
-        // Scraping along a curb, wall or parked car: keep the free axis instead of stopping dead
+        // Walls, kerbs and parked cars, as in Asphalt: a glancing hit guides the car along the
+        // wall (it turns with it, keeps most of its speed and the steering still works, so the
+        // player can pull away); only a near head-on hit stops it.
         var slid = false
         var lostSpeed = abs(velocity)
-        if blocked(moving: OBB(center: newPosition, size: Levels.carSize, angle: newHeading), to: newPosition) {
+        if blocked(moving: OBB(center: newPosition, size: Levels.carSize, angle: newHeading), to: newPosition),
+           let normal = wallNormal(), abs(velocity) > 3 {
+            let sign: CGFloat = velocity >= 0 ? 1 : -1
+            let dir = CGVector(dx: cos(moveHeading) * sign, dy: sin(moveHeading) * sign)
+            let dot = dir.dx * normal.dx + dir.dy * normal.dy
+            let into = max(0, -dot)                         // 0: along the wall, 1: straight at it
+            if into < 0.8 {
+                var tangent = CGVector(dx: dir.dx - normal.dx * dot, dy: dir.dy - normal.dy * dot)
+                let length = max(0.001, hypot(tangent.dx, tangent.dy))
+                tangent = CGVector(dx: tangent.dx / length, dy: tangent.dy / length)
+                // The nose swings round to run along the wall; the player's steering adds to it
+                let along = atan2(tangent.dy, tangent.dx) + (sign < 0 ? .pi : 0)
+                let turned = newHeading + CGFloat.angleDelta(newHeading, along) * min(1, dt * 5) * into
+                let step = abs(velocity) * dt
+                let options = [CGPoint(x: carPosition.x + tangent.dx * step + normal.dx * 0.4, y: carPosition.y + tangent.dy * step + normal.dy * 0.4),
+                               CGPoint(x: carPosition.x + normal.dx * 0.8, y: carPosition.y + normal.dy * 0.8)]
+                for (k, candidate) in options.enumerated() {
+                    for h in [turned, heading] {
+                        if !blocked(moving: OBB(center: candidate, size: Levels.carSize, angle: h), to: candidate) {
+                            carPosition = candidate
+                            heading = h
+                            if drifting { travelHeading = h - driftSlip }
+                            slid = true
+                            lostSpeed = abs(velocity) * into
+                            if k == 1 { velocity *= 0.85 }
+                            break
+                        }
+                    }
+                    if slid { break }
+                }
+                // Speed lost to the wall: little when brushing it, more the steeper the hit
+                if slid { velocity -= velocity * min(0.6, into * 1.4) * min(1, dt * 8) }
+            }
+        }
+        if !slid && blocked(moving: OBB(center: newPosition, size: Levels.carSize, angle: newHeading), to: newPosition) {
+            // Unknown wall shape: keep the free axis instead of stopping dead
             let candidates = [(CGPoint(x: newPosition.x, y: carPosition.y), abs(sin(heading) * velocity)),
                               (CGPoint(x: carPosition.x, y: newPosition.y), abs(cos(heading) * velocity))]
             for (candidate, lost) in candidates.sorted(by: { $0.1 < $1.1 }) where candidate.distance(to: carPosition) > 0.05 {
-                if !blocked(moving: OBB(center: candidate, size: Levels.carSize, angle: heading), to: candidate) {
+                for h in [newHeading, heading] where !blocked(moving: OBB(center: candidate, size: Levels.carSize, angle: h), to: candidate) {
                     carPosition = candidate
+                    heading = h
                     lostSpeed = lost
                     slid = true
+                    velocity *= 0.94
                     break
                 }
+                if slid { break }
             }
         }
         if slid {
-            velocity *= 0.94
             if lostSpeed > 45 && lastUpdate - lastHitAt > 0.6 {
                 lastHitAt = lastUpdate
                 hits += 1
@@ -2991,6 +3030,22 @@ final class ParkingScene: SKScene {
                 audio.play("bump", volume: 0.4)
                 tickHaptic.impactOccurred(intensity: 0.6)
             }
+        }
+        // Traffic lights: a car that runs into one knocks it over (it pivots on its foot and falls
+        // the way the car was going); the car loses some speed but drives on
+        if let world = world, airTime <= 0 {
+            let carBox = OBB(center: carPosition, size: CGSize(width: Levels.carSize.width + 6, height: Levels.carSize.height + 6), angle: heading)
+            for pole in world.signalPoles where !pole.fallen {
+                if abs(pole.position.x - carPosition.x) > 40 || abs(pole.position.y - carPosition.y) > 40 { continue }
+                guard carBox.contains(pole.position), abs(velocity) > 12 else { continue }
+                let direction = CGVector(dx: cos(moveHeading) * (velocity >= 0 ? 1 : -1), dy: sin(moveHeading) * (velocity >= 0 ? 1 : -1))
+                world.knockSignal(pole, direction: direction, speed: abs(velocity))
+                velocity *= 0.72
+                audio.play("crash", volume: 0.45)
+                bumpHaptic.impactOccurred(intensity: 0.8)
+                world.shake(strength: 2)
+            }
+            world.stepFallingSignals(Float(dt))
         }
         // The trail the police follows
         trailClock += dt
@@ -3388,6 +3443,26 @@ final class ParkingScene: SKScene {
             }
         }
         return false
+    }
+
+    /// Which way the wall the car is touching faces (level units, pointing away from it): probes
+    /// a car-sized box a little way out in sixteen directions and averages the blocked ones.
+    private func wallNormal() -> CGVector? {
+        var sum = CGVector.zero
+        var found = 0
+        for k in 0..<16 {
+            let a = CGFloat(k) / 16 * 2 * .pi
+            let d = CGVector(dx: cos(a), dy: sin(a))
+            let probe = CGPoint(x: carPosition.x + d.dx * 4, y: carPosition.y + d.dy * 4)
+            if !contacts(OBB(center: probe, size: Levels.carSize, angle: heading), includeRemote: false).isEmpty {
+                sum.dx -= d.dx
+                sum.dy -= d.dy
+                found += 1
+            }
+        }
+        let length = hypot(sum.dx, sum.dy)
+        guard found > 0, found < 14, length > 0.01 else { return nil }
+        return CGVector(dx: sum.dx / length, dy: sum.dy / length)
     }
 
     /// When the two cars overlap, nudge ours away from the other one.
@@ -3968,7 +4043,8 @@ final class ParkingScene: SKScene {
         // Coins for the round (and any daily task it completed)
         let me = entries[0]
         let headToHead = entries.count > 1
-        let stats = RunStats(finished: me.time != nil, stars: me.stars,
+        let mode: RunStats.Mode = online ? .online : (level.race ? .race : (isCity ? .city : .park))
+        let stats = RunStats(mode: mode, finished: me.time != nil, stars: me.stars,
                              won: headToHead ? (me.isWinner && !entries[1].isWinner) : nil,
                              race: level.race, solo: !isCity, hits: hits, driftPoints: runDriftPoints,
                              nearMisses: runNearMisses, escapes: runEscapes, topSpeed: runTopSpeed)

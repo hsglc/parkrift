@@ -74,6 +74,7 @@ enum CityDecor {
         let ground = MeshBuilder()     // flat overlays: no shadows
         let far = MeshBuilder()        // skyline: no shadows
         var rng = SplitMix64(seed: UInt64(level.obstacles.count) &* 7919 &+ UInt64(city.xs.count))
+        foliage = MeshBuilder()
 
         for obstacle in level.obstacles where obstacle.kind == .building {
             switch obstacle.tint {
@@ -91,6 +92,7 @@ enum CityDecor {
         if let geometry = solid.build() {
             root.addChildNode(SCNNode(geometry: geometry))
         }
+        if let leaves = takeFoliage() { root.addChildNode(leaves) }
         if let geometry = ground.build() {
             let node = SCNNode(geometry: geometry)
             node.castsShadow = false
@@ -126,6 +128,7 @@ enum CityDecor {
         let ground = MeshBuilder()
         let far = MeshBuilder()
         var rng = SplitMix64(seed: 2026)
+        foliage = MeshBuilder()
         // Buildings: rows along each side, set back past an 8 m pavement
         func row(from start: CGFloat, to end: CGFloat, fixed: CGFloat, alongX: Bool, depth: CGFloat) {
             var p = start
@@ -156,6 +159,7 @@ enum CityDecor {
             }
         }
         skyline(world: CGSize(width: 1000, height: 500), far: far, ground: ground, rng: &rng)
+        if let leaves = takeFoliage() { root.addChildNode(leaves) }
         for (builder, shadows) in [(solid, true), (ground, false), (far, false)] {
             if let geometry = builder.build() {
                 let node = SCNNode(geometry: geometry)
@@ -452,16 +456,42 @@ enum CityDecor {
 
     // MARK: Sidewalks
 
+    /// Leaf cards of the trees being built (drawn without shadows: cut-out cards would cast
+    /// square ones).
+    static var foliage = MeshBuilder()
+
+    /// A street tree modelled in Blender (tools/make_street_models.py): bark, a dense crown core
+    /// and leaf sprays, turned and scaled a little each time; the plain shapes are the fallback.
     private static func tree(_ solid: MeshBuilder, _ ground: MeshBuilder, at p: SIMD3<Float>, size: Float, variant: Int) {
-        let trunk = color("trunk", UIColor(red: 0.40, green: 0.28, blue: 0.18, alpha: 1))
-        let leaves = [color("leaves0", UIColor(red: 0.26, green: 0.52, blue: 0.24, alpha: 1)),
-                      color("leaves1", UIColor(red: 0.36, green: 0.60, blue: 0.26, alpha: 1))]
-        solid.addPrism(center: p, radius: 0.16 * size, height: 2.8 * size, sides: 6, material: trunk)
-        solid.addBall(center: p + SIMD3(0, 3.9 * size, 0), radius: 1.55 * size, squash: 0.85, material: leaves[variant % 2])
-        solid.addBall(center: p + SIMD3(0.45 * size, 5.0 * size, -0.3 * size), radius: 1.0 * size, squash: 0.9,
-                      material: leaves[(variant + 1) % 2], rings: 3, segments: 6)
-        ground.addDecal(center: SIMD3(p.x, 0.105, p.z), direction: SIMD2(0, 1), length: 3.4 * size, width: 3.4 * size,
+        let models = Scenery.trees
+        if !models.isEmpty {
+            let model = models[abs(variant &* 7 &+ Int(p.x * 3) &+ Int(p.z)) % models.count]
+            let yaw = Float((Int(p.x * 13) &+ Int(p.z * 7)) % 360) * .pi / 180
+            let s = size * 0.95
+            var transform = simd_float4x4(diagonal: SIMD4(s, s, s, 1))
+            transform = simd_float4x4(simd_quatf(angle: yaw, axis: SIMD3(0, 1, 0))) * transform
+            transform.columns.3 = SIMD4(p.x, p.y, p.z, 1)
+            if let bark = model["bark"] { solid.addMesh(bark, transform: transform, material: Scenery.bark) }
+            if let core = model["core"] { solid.addMesh(core, transform: transform, material: Scenery.crownCore) }
+            if let leaves = model["leaves"] { foliage.addMesh(leaves, transform: transform, material: Scenery.leafCards) }
+        } else {
+            let trunk = color("trunk", UIColor(red: 0.40, green: 0.28, blue: 0.18, alpha: 1))
+            let leaves = [color("leaves0", UIColor(red: 0.26, green: 0.52, blue: 0.24, alpha: 1)),
+                          color("leaves1", UIColor(red: 0.36, green: 0.60, blue: 0.26, alpha: 1))]
+            solid.addPrism(center: p, radius: 0.16 * size, height: 2.8 * size, sides: 6, material: trunk)
+            solid.addBall(center: p + SIMD3(0, 3.9 * size, 0), radius: 1.55 * size, squash: 0.85, material: leaves[variant % 2])
+        }
+        ground.addDecal(center: SIMD3(p.x, 0.105, p.z), direction: SIMD2(0, 1), length: 4.2 * size, width: 4.2 * size,
                         material: overlay("blob", CityArt.blobShadow))
+    }
+
+    /// The leaf cards gathered so far as a node (and a fresh builder for the next build).
+    private static func takeFoliage() -> SCNNode? {
+        defer { foliage = MeshBuilder() }
+        guard let geometry = foliage.build() else { return nil }
+        let node = SCNNode(geometry: geometry)
+        node.castsShadow = false
+        return node
     }
 
     private static func bench(_ solid: MeshBuilder, at p: SIMD3<Float>, alongX: Bool, facingPositive: Bool) {

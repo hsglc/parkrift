@@ -345,14 +345,25 @@ enum Strings {
     static var maxLevel: String { t("MAKS", "MAX", "MÁX") }
     static var rims: String { t("Jant", "Rims", "Llantas") }
     static func taskTitle(_ kind: Progression.TaskKind) -> String {
+        let n = kind.target
         switch kind {
-        case .drift: return t("Toplam \(kind.target) drift puanı", "Score \(kind.target) drift points", "Suma \(kind.target) puntos de derrape")
-        case .nearMiss: return t("\(kind.target) kıl payı geçiş", "\(kind.target) near misses", "\(kind.target) adelantamientos por los pelos")
-        case .threeStars: return t("\(kind.target) bölümü 3 yıldızla bitir", "3-star \(kind.target) levels", "Termina \(kind.target) niveles con 3 estrellas")
+        case .parkRounds: return t("\(n) park bölümü bitir", "Finish \(n) parking levels", "Termina \(n) niveles de aparcamiento")
+        case .threeStars: return t("\(n) bölümü 3 yıldızla bitir", "3-star \(n) levels", "Termina \(n) niveles con 3 estrellas")
+        case .parkClean: return t("\(n) bölümü hiç çarpmadan park et", "Park \(n) levels without a hit", "Aparca \(n) niveles sin chocar")
+        case .parkFlawless: return t("Bir bölümü 3 yıldız ve sıfır çarpmayla bitir", "A level with 3 stars and zero hits", "Un nivel con 3 estrellas y sin golpes")
+        case .parkStars: return t("Park bölümlerinden \(n) yıldız topla", "Collect \(n) stars in parking levels", "Consigue \(n) estrellas aparcando")
+        case .cityRounds: return t("Şehirde \(n) tur bitir", "Finish \(n) city rounds", "Termina \(n) rondas en la ciudad")
+        case .nearMiss: return t("Şehirde \(n) kıl payı geçiş", "\(n) near misses in the city", "\(n) adelantamientos por los pelos en la ciudad")
         case .escape: return t("Polisten kaç", "Escape the police", "Escapa de la policía")
-        case .rounds: return t("\(kind.target) tur bitir", "Finish \(kind.target) rounds", "Termina \(kind.target) rondas")
-        case .topSpeed: return t("\(kind.target) km/sa hıza çık", "Reach \(kind.target) km/h", "Alcanza \(kind.target) km/h")
-        case .clean: return t("\(kind.target) turu hiç çarpmadan bitir", "Finish \(kind.target) rounds without a crash", "Termina \(kind.target) rondas sin chocar")
+        case .drift: return t("Şehirde \(n) drift puanı", "\(n) drift points in the city", "\(n) puntos de derrape en la ciudad")
+        case .cityClean: return t("Bir şehir turunu hiç çarpmadan bitir", "A city round without a crash", "Una ronda en la ciudad sin chocar")
+        case .raceRounds: return t("\(n) yarış bitir", "Finish \(n) races", "Termina \(n) carreras")
+        case .raceClean: return t("Bir yarışı hiç çarpmadan bitir", "A race without a crash", "Una carrera sin chocar")
+        case .topSpeed: return t("Yarışta \(n) km/sa hıza çık", "Reach \(n) km/h in a race", "Alcanza \(n) km/h en una carrera")
+        case .raceDrift: return t("Yarışlarda \(n) drift puanı", "\(n) drift points in races", "\(n) puntos de derrape en carreras")
+        case .raceNearMiss: return t("Yarışlarda \(n) kıl payı geçiş", "\(n) near misses in races", "\(n) adelantamientos por los pelos en carreras")
+        case .onlineRounds: return t("Arkadaşınla \(n) tur oyna", "Play \(n) rounds with a friend", "Juega \(n) rondas con un amigo")
+        case .onlineWin: return t("Arkadaşına karşı kazan", "Beat your friend", "Gana a tu amigo")
         }
     }
 }

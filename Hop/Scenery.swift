@@ -6,6 +6,68 @@ import UIKit
 /// (a partly cloudy day and an overcast one) used as background and as the light the scene
 /// reflects.
 enum Scenery {
+    /// Triangles read from a model file: positions, normals, UVs, indices (in the model's space).
+    struct MeshData {
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var uvs: [SIMD2<Float>] = []
+        var indices: [UInt32] = []
+    }
+
+    /// The meshes of a USDZ file in the bundle, by node name.
+    static func meshes(_ file: String) -> [String: MeshData] {
+        guard let url = Bundle.main.url(forResource: file, withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return [:] }
+        var result: [String: MeshData] = [:]
+        scene.rootNode.enumerateHierarchy { node, _ in
+            guard let geometry = node.geometry, let name = node.name,
+                  let vertexSource = geometry.sources(for: .vertex).first else { return }
+            let transform = node.simdConvertTransform(matrix_identity_float4x4, to: scene.rootNode)
+            let normalMatrix = simd_float3x3(SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
+                                             SIMD3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
+                                             SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z))
+            let p = MeshMerge.floats(vertexSource, components: 3)
+            let n = geometry.sources(for: .normal).first.map { MeshMerge.floats($0, components: 3) } ?? []
+            let t = geometry.sources(for: .texcoord).first.map { MeshMerge.floats($0, components: 2) } ?? []
+            var mesh = result[name] ?? MeshData()
+            let base = UInt32(mesh.positions.count)
+            for i in 0..<p.count {
+                let w = transform * SIMD4<Float>(p[i][0], p[i][1], p[i][2], 1)
+                mesh.positions.append(SIMD3(w.x, w.y, w.z))
+                mesh.normals.append(i < n.count ? simd_normalize(normalMatrix * SIMD3(n[i][0], n[i][1], n[i][2])) : SIMD3(0, 1, 0))
+                mesh.uvs.append(i < t.count ? SIMD2(t[i][0], t[i][1]) : .zero)
+            }
+            for element in geometry.elements { mesh.indices += MeshMerge.indices(element).map { $0 + base } }
+            result[name] = mesh
+        }
+        return result
+    }
+
+    /// The three street trees (tools/make_street_models.py): bark, crown core and leaf cards.
+    static let trees: [[String: MeshData]] = (0..<3).map { meshes("tree_\($0)") }.filter { !$0.isEmpty }
+
+    /// Leaf sprays: a transparent card texture cut out at its alpha (no blending, so no sorting).
+    static let leafCards: SCNMaterial = {
+        let material = SCNMaterial()
+        material.lightingModel = .physicallyBased
+        material.diffuse.contents = image("leafcard.png")
+        material.diffuse.mipFilter = .linear
+        material.normal.contents = image("leafcard_nor.jpg")
+        material.roughness.contents = NSNumber(value: 0.6)
+        material.metalness.contents = NSNumber(value: 0)
+        material.isDoubleSided = true
+        material.blendMode = .replace
+        material.shaderModifiers = [.fragment: "if (_output.color.a < 0.45) discard_fragment();\n_output.color.a = 1.0;"]
+        return material
+    }()
+
+    static let bark: SCNMaterial = surface("bark", tile: 0.9, size: CGSize(width: 0.9, height: 0.9))
+    static let crownCore: SCNMaterial = {
+        let material = surface("leaves", tile: 1.4, size: CGSize(width: 1.4, height: 1.4))
+        material.diffuse.intensity = 0.85
+        return material
+    }()
+
     private static var cache: [String: SCNMaterial] = [:]
 
     /// A PBR set from Hop/Textures/ph_<name>_{diff,nor,rough}.jpg, repeated every `tile` metres

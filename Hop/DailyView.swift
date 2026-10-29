@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The daily screen in the home screen's racing style: the seven-day gift strip as slanted
-/// plates with today's gift to collect, and today's three tasks with slanted progress bars.
+/// plates with today's gift to collect, and today's tasks for every mode with slanted progress bars.
 struct DailyView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -135,42 +135,30 @@ struct DailyView: View {
     // MARK: Tasks
 
     private var tasksPanel: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(Strings.dailyTasks.uppercased()).font(.kicker(10)).tracking(1.5).foregroundStyle(Neo.cyan)
-            ForEach(Progression.tasks) { task in
-                HStack(spacing: 12) {
-                    Image(systemName: task.kind.icon)
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(task.done ? Neo.ink : .white)
-                        .frame(width: 40, height: 34)
-                        .background(SlantedShape(skew: 6).fill(task.done ? AnyShapeStyle(green) : AnyShapeStyle(Color.white.opacity(0.1))))
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Text(task.kind.title)
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                            Spacer(minLength: 4)
-                            if task.done {
-                                Image(systemName: "checkmark").font(.system(size: 12, weight: .black)).foregroundStyle(green)
-                            } else {
-                                Text("+\(task.kind.reward)").font(.race(14)).foregroundStyle(Palette.gold)
+        let tasks = Progression.tasks
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(Strings.dailyTasks.uppercased()).font(.kicker(10)).tracking(1.5).foregroundStyle(Neo.cyan)
+                Spacer()
+                Text("\(tasks.filter(\.done).count) / \(tasks.count)")
+                    .font(.race(13)).monospacedDigit().foregroundStyle(.white.opacity(0.7))
+            }
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Progression.TaskMode.allCases, id: \.rawValue) { mode in
+                        let group = tasks.filter { $0.kind.mode == mode }
+                        if !group.isEmpty {
+                            HStack(spacing: 6) {
+                                Image(systemName: mode.icon).font(.system(size: 10, weight: .black))
+                                Text(mode.title.uppercased()).font(.kicker(9)).tracking(1.2)
                             }
+                            .foregroundStyle(.white.opacity(0.55))
+                            .padding(.top, mode == .park ? 0 : 6)
+                            ForEach(group) { task in taskRow(task) }
                         }
-                        SlantedBar(value: Double(min(task.progress, task.kind.target)) / Double(max(1, task.kind.target)),
-                                   color: task.done ? green : Palette.gold)
-                            .frame(height: 6)
-                        Text("\(min(task.progress, task.kind.target)) / \(task.kind.target)")
-                            .font(.race(11, weight: .heavy))
-                            .monospacedDigit()
-                            .foregroundStyle(.white.opacity(0.5))
                     }
                 }
-                .padding(.vertical, 10)
-                .padding(.leading, 18)
-                .padding(.trailing, 14)
-                .background(NeoPanel())
+                .padding(.bottom, 4)
             }
             Text(Strings.dailyTasksHint)
                 .font(.system(size: 11, weight: .semibold))
@@ -179,5 +167,41 @@ struct DailyView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func taskRow(_ task: Progression.DailyTask) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: task.kind.icon)
+                .font(.system(size: 14, weight: .black))
+                .foregroundStyle(task.done ? Neo.ink : .white)
+                .frame(width: 36, height: 30)
+                .background(SlantedShape(skew: 6).fill(task.done ? AnyShapeStyle(green) : AnyShapeStyle(Color.white.opacity(0.1))))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(task.kind.title)
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 4)
+                    Text("\(min(task.progress, task.kind.target))/\(task.kind.target)")
+                        .font(.race(11, weight: .heavy))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.5))
+                    if task.done {
+                        Image(systemName: "checkmark").font(.system(size: 12, weight: .black)).foregroundStyle(green)
+                    } else {
+                        Text("+\(task.kind.reward)").font(.race(13)).foregroundStyle(Palette.gold)
+                    }
+                }
+                SlantedBar(value: Double(min(task.progress, task.kind.target)) / Double(max(1, task.kind.target)),
+                           color: task.done ? green : Palette.gold)
+                    .frame(height: 5)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
+        .background(NeoPanel())
     }
 }

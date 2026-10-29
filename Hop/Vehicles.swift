@@ -274,7 +274,7 @@ enum TrafficVehicles {
 /// traffic cars' wheels (parked cars stood on bare wheel arches), so the four wheels are joined
 /// here by hand: one draw call per parked car instead of eight.
 enum MeshMerge {
-    private static func floats(_ source: SCNGeometrySource, components: Int) -> [[Float]] {
+    static func floats(_ source: SCNGeometrySource, components: Int) -> [[Float]] {
         guard source.usesFloatComponents, source.bytesPerComponent == 4 else { return [] }
         var result: [[Float]] = []
         result.reserveCapacity(source.vectorCount)
@@ -291,7 +291,7 @@ enum MeshMerge {
         return result
     }
 
-    private static func indices(_ element: SCNGeometryElement) -> [UInt32] {
+    static func indices(_ element: SCNGeometryElement) -> [UInt32] {
         guard element.primitiveType == .triangles else { return [] }
         let count = element.primitiveCount * 3
         var out: [UInt32] = []
