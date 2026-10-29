@@ -1701,13 +1701,16 @@ final class World3D {
 
     func makeCar(color: UIColor, style: CarStyle = .sedan, model: CarModelID = .italia, variety: Int = 0) -> Car3D {
         let car = Car3D(color: color, style: style, model: model, variety: variety)
+        LeakWatch.track(car, "Car3D")
         scene.rootNode.addChildNode(car.node)
         return car
     }
 
     /// The loose cones, barrels and bins of a city level.
     func addProps(_ defs: [PropDef]) -> StreetProps {
-        StreetProps(defs: defs, parent: levelRoot)
+        let props = StreetProps(defs: defs, parent: levelRoot)
+        LeakWatch.track(props, "StreetProps")
+        return props
     }
 
     /// Day, night (dark sky, moonlight, lamp light pools) or rain (overcast, wet shiny streets,
@@ -2213,6 +2216,7 @@ final class World3D {
                                 style: CarStyle(rawValue: (obstacle.tint + Int(obstacle.center.x)) % 3) ?? .sedan,
                                 parked: true, variety: obstacle.tint &* 977 &+ Int(obstacle.center.x) &+ Int(obstacle.center.y) &* 3)
                 car.update(position: obstacle.center, heading: obstacle.angle, steer: 0)
+                LeakWatch.track(car, "Car3D")
                 if PerfSettings.optimized {
                     levelRoot.addChildNode(car.node)
                     parkedCars3D.append((car, obstacle.center))

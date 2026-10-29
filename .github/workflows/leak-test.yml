@@ -1,0 +1,74 @@
+name: Leak test
+
+# Builds the app for the simulator (benchmark build) and runs the leak test (-leaktest): a parking
+# level, the city and a race played and quit six times. After each round, back on the menu, the
+# app logs its memory footprint and how many of the game's big objects are still alive.
+on:
+  workflow_dispatch:
+
+jobs:
+  leak:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+
+      - name: Build for simulator
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project Hop.xcodeproj -scheme Hop -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS=BENCHMARK build > build.log 2>&1 || {
+              grep -E "error:" build.log | head -40 | while read -r line; do echo "::error::$line"; done
+              exit 1
+            }
+
+      - name: Run the leak test
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          best = ""
+          for runtime, devices in data.items():
+              if "iOS" in runtime:
+                  for d in devices:
+                      if d["name"].startswith("iPhone") and "Pro Max" in d["name"]:
+                          best = d["udid"]
+          print(best)
+          ')
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
+          mkdir -p out
+          rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
+          xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -leaktest -AppleLanguages "(tr)" > out/console.log 2>&1 &
+          sleep 8
+          DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data 2>/dev/null)
+          for i in $(seq 1 150); do
+            PID=$(pgrep -x Hop | head -1)
+            if [ -z "$PID" ]; then echo "$(date +%T) app not running" >> out/memory.log; break; fi
+            echo "$(date +%T) $(tail -1 "$DATA/Documents/crashtest.txt" 2>/dev/null) | $(footprint $PID 2>/dev/null | grep -iE 'phys_footprint|footprint:' | head -1)" >> out/memory.log
+            if grep -q "^done" "$DATA/Documents/crashtest.txt" 2>/dev/null; then echo "finished" >> out/memory.log; break; fi
+            sleep 3
+          done
+          DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data 2>/dev/null)
+          cp "$DATA/Documents/crashtest.txt" out/ 2>/dev/null || true
+          sleep 5
+          cp ~/Library/Logs/DiagnosticReports/Hop* out/ 2>/dev/null || true
+          ls -la out
+          echo "--- leak checks"; cat out/crashtest.txt || true
+          grep "^LEAK" out/crashtest.txt | while read -r line; do echo "::notice::$line"; done || true
+          echo "--- memory"; tail -40 out/memory.log
+          if ls out/Hop* >/dev/null 2>&1; then echo "::error::The app crashed"; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: leak-test
+          path: out

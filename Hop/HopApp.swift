@@ -351,6 +351,66 @@ final class AppModel: ObservableObject {
         }
     }
 
+    #if BENCHMARK
+    /// Leak test (-leaktest): the same three games (a parking level, the city, a race) played
+    /// and quit six times over, with the garage in between. After each round, back on the menu,
+    /// it logs the memory footprint and how many of the game's big objects are still alive:
+    /// every one should be gone, and the footprint should level off after the first round
+    /// (caches filled once), not climb round after round.
+    func runLeakTest() {
+        var steps: [(TimeInterval, String, () -> Void)] = []
+        var t: TimeInterval = 2.0
+        func add(_ wait: TimeInterval, _ name: String, _ action: @escaping () -> Void) {
+            t += wait
+            steps.append((t, name, action))
+        }
+        let log = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("crashtest.txt")
+        func write(_ line: String) {
+            print("LEAKTEST \(line)")
+            if let handle = try? FileHandle(forWritingTo: log) {
+                handle.seekToEndOfFile()
+                handle.write((line + "\n").data(using: .utf8)!)
+                try? handle.close()
+            }
+        }
+        func check(_ label: String) {
+            write(String(format: "LEAK %@ footprint=%.0fMB live: %@", label, LeakWatch.footprintMB, LeakWatch.live))
+        }
+        add(0, "start") { check("start") }
+        for round in 0..<6 {
+            let r = "round \(round)"
+            add(0.5, "\(r): garage") { self.openGarage(.menu) }
+            add(2.5, "\(r): garage back") { self.leaveGarage(confirmed: false) }
+            add(1.5, "\(r): park") { self.selectedLevel = 2; self.playSolo() }
+            add(1.5, "\(r): start park") { self.leaveGarage(confirmed: true) }
+            add(5.0, "\(r): drive") { self.scene?.testHold("forward") }
+            add(3.0, "\(r): in park") { check("\(r) park") }
+            add(0.2, "\(r): quit park") { self.leaveToMenu() }
+            add(2.0, "\(r): city") { self.playCity() }
+            add(1.5, "\(r): start city") { self.leaveGarage(confirmed: true) }
+            add(6.0, "\(r): drive") { self.scene?.testHold("forward") }
+            add(4.0, "\(r): in city") { check("\(r) city") }
+            add(0.2, "\(r): quit city") { self.leaveToMenu() }
+            add(2.0, "\(r): race") { self.playRace() }
+            add(1.5, "\(r): start race") { self.leaveGarage(confirmed: true) }
+            add(6.0, "\(r): drive") { self.scene?.testHold("forward") }
+            add(4.0, "\(r): in race") { check("\(r) race") }
+            add(0.2, "\(r): quit race") { self.leaveToMenu() }
+            // On the menu, everything from the games should be gone by now
+            add(4.0, "\(r): menu") { check("\(r) menu") }
+        }
+        add(6.0, "done") { check("end"); write("done") }
+        try? "".write(to: log, atomically: true, encoding: .utf8)
+        for (time, name, action) in steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + time) {
+                print("LEAKTEST step \(name)")
+                action()
+            }
+        }
+    }
+    #endif
+
     func leaveToMenu() {
         matchmaking = false
         matchTimeout?.cancel()
@@ -391,6 +451,9 @@ final class AppModel: ObservableObject {
             guard let self = self, self.screen == .game, self.scene == nil else { return }
             let newWorld = World3D()
             let newScene = ParkingScene(size: CGSize(width: 852, height: 393))
+            LeakWatch.track(newWorld, "World3D")
+            LeakWatch.track(newWorld.scene, "SCNScene")
+            LeakWatch.track(newScene, "ParkingScene")
             newScene.scaleMode = .resizeFill
             newScene.configure(model: self, world: newWorld, online: self.online, slot: self.mySlot,
                                isHost: self.isHost || !self.online, level: level)
@@ -731,6 +794,14 @@ struct RootView: View {
                 model.runCrashTest()
                 return
             }
+            #if BENCHMARK
+            if ProcessInfo.processInfo.arguments.contains("-leaktest") {
+                splash = false
+                AudioManager.shared.isMuted = true
+                model.runLeakTest()
+                return
+            }
+            #endif
             // Store screenshots (simulator, taken from outside with simctl): stay on a screen
             let args = ProcessInfo.processInfo.arguments
             if PerfSettings.benchmark && (args.contains("-staymenu") || args.contains("-staydaily")) {
@@ -789,6 +860,7 @@ struct SceneKitView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
+        LeakWatch.track(view, "SCNView")
         view.scene = world.scene
         view.pointOfView = world.cameraNode
         world.renderer = view
