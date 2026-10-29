@@ -140,6 +140,26 @@ struct CityMap {
         return .red
     }
 
+    /// Height of the pavement (metres) above the road: kerbs and sidewalks stand this high.
+    static let kerbTop: CGFloat = 0.15
+
+    /// The ground's height (metres) at a point: the road, or up on the pavement of a block, with
+    /// the kerb's rounded edge between (a tyre rolls up it over a few centimetres).
+    func kerbHeight(at p: CGPoint) -> CGFloat {
+        guard xs.count > 1, ys.count > 1 else { return 0 }
+        // The block whose streets surround the point
+        var i = 0
+        while i < xs.count - 2 && p.x > xs[i + 1] { i += 1 }
+        var j = 0
+        while j < ys.count - 2 && p.y > ys[j + 1] { j += 1 }
+        guard p.x >= xs[i], p.x <= xs[i + 1], p.y >= ys[j], p.y <= ys[j + 1] else { return 0 }
+        // The kerb's street face stands 22.5 cm out from the block
+        let edge = CityMap.roadHalf - 2.25
+        let inside = min(p.x - (xs[i] + edge), (xs[i + 1] - edge) - p.x, p.y - (ys[j] + edge), (ys[j + 1] - edge) - p.y)
+        let t = max(0, min(1, (inside + 0.6) / 2.2))
+        return CityMap.kerbTop * t * t * (3 - 2 * t)
+    }
+
     /// Building blocks between the streets (inner rectangles, without the street area).
     var blocks: [CGRect] {
         var result: [CGRect] = []

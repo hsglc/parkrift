@@ -89,10 +89,17 @@ enum CityDecor {
         roadDecals(city: city, world: level.world, ground: ground, rng: &rng)
         skyline(world: level.world, far: far, ground: ground, rng: &rng)
 
+        // Everything standing on the blocks stands on the raised pavement
+        let raised = Float(CityMap.kerbTop)
         if let geometry = solid.build() {
-            root.addChildNode(SCNNode(geometry: geometry))
+            let node = SCNNode(geometry: geometry)
+            node.position.y = raised
+            root.addChildNode(node)
         }
-        if let trees = takeTrees() { root.addChildNode(trees) }
+        if let trees = takeTrees() {
+            trees.position.y = raised
+            root.addChildNode(trees)
+        }
         if let geometry = ground.build() {
             let node = SCNNode(geometry: geometry)
             node.castsShadow = false

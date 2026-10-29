@@ -258,6 +258,14 @@ final class ParkingScene: SKScene {
     /// On a wet or snowy road at speed the body slides out of line: the angle between where the
     /// car points and where it travels (0 on a dry road and in a drift, which has its own).
     private var skid: CGFloat = 0
+    /// Kerbs: the body's height on its springs (metres) and how fast it moves, and its tilt
+    /// from the wheels standing at different heights.
+    private var kerbLift: CGFloat = 0
+    private var kerbLiftSpeed: CGFloat = 0
+    private var kerbPitch: CGFloat = 0
+    private var kerbRoll: CGFloat = 0
+    private var frontKerb: CGFloat = 0
+    private var rearKerb: CGFloat = 0
 
     private var carPosition = CGPoint.zero
     private var heading: CGFloat = 0
@@ -2569,7 +2577,8 @@ final class ParkingScene: SKScene {
         let reversing = gear == .reverse && velocity < -1
         let (lift, airPitch) = carLift()
         localCar?.update(position: carPosition, heading: heading, steer: steer,
-                         pitch: pitch + airPitch, roll: roll, braking: braking, reversing: reversing, lift: lift)
+                         pitch: pitch + airPitch + kerbPitch, roll: roll + kerbRoll, braking: braking, reversing: reversing,
+                         lift: lift + Float(kerbLift))
         localTag.position = world.project(carPosition, height: 2.6)
 
         let showRemote = friendPresent
@@ -2853,6 +2862,7 @@ final class ParkingScene: SKScene {
         }
 
         applyCrashMotion(dt)
+        updateKerb(dt)
         updateJump(dt)
         updateDriftDisplay(dt)
 
@@ -3029,6 +3039,54 @@ final class ParkingScene: SKScene {
     }
 
     /// The car's height above the ground (on a ramp or in the air) and its pitch in the air.
+    /// Up and down kerbs: each wheel finds the ground under it (road or raised pavement), the body
+    /// follows on springs (a jolt and a bounce as the front wheels climb, again for the rear), it
+    /// tilts with the wheels, and climbing at speed costs speed with a thud.
+    private func updateKerb(_ dt: CGFloat) {
+        guard let city = level.city, dt > 0 else {
+            kerbLift = 0; kerbLiftSpeed = 0; kerbPitch = 0; kerbRoll = 0
+            return
+        }
+        let c = cos(heading), s = sin(heading)
+        func ground(_ along: CGFloat, _ across: CGFloat) -> CGFloat {
+            city.kerbHeight(at: CGPoint(x: carPosition.x + c * along - s * across, y: carPosition.y + s * along + c * across))
+        }
+        let fl = ground(13.5, 8.2), fr = ground(13.5, -8.2), rl = ground(-13.5, 8.2), rr = ground(-13.5, -8.2)
+        let front = (fl + fr) / 2, rear = (rl + rr) / 2
+        let top = CityMap.kerbTop
+        let speed = abs(velocity)
+        // A wheel pair climbing (or dropping) the kerb: a jolt to the springs
+        func hit(_ before: CGFloat, _ now: CGFloat, strength: CGFloat) {
+            let climbed = before < top * 0.45 && now >= top * 0.45
+            let dropped = before > top * 0.55 && now <= top * 0.55
+            guard (climbed || dropped) && speed > 6 else { return }
+            let force = min(1, speed / 120)
+            if climbed {
+                kerbLiftSpeed += (0.35 + 0.9 * force) * strength
+                velocity *= 1 - (0.05 + 0.13 * force) * strength
+                bumpHaptic.impactOccurred(intensity: 0.35 + 0.5 * force * strength)
+                audio.play("bump", volume: Float(0.18 + 0.3 * force * strength))
+                if force > 0.4 { world?.shake(strength: 0.6 + 1.6 * force * strength) }
+            } else {
+                kerbLiftSpeed -= (0.25 + 0.5 * force) * strength
+                tickHaptic.impactOccurred(intensity: 0.3 + 0.4 * force)
+            }
+        }
+        hit(frontKerb, velocity >= 0 ? front : rear, strength: 1)
+        hit(rearKerb, velocity >= 0 ? rear : front, strength: 0.7)
+        frontKerb = velocity >= 0 ? front : rear
+        rearKerb = velocity >= 0 ? rear : front
+        // Springs and dampers
+        let target = (front + rear) / 2
+        kerbLiftSpeed += ((target - kerbLift) * 260 - kerbLiftSpeed * 18) * dt
+        kerbLift += kerbLiftSpeed * dt
+        kerbLift = max(-0.05, min(top + 0.12, kerbLift))
+        let pitchTarget = atan2(front - rear, 2.7) - kerbLiftSpeed * 0.02
+        let rollTarget = atan2((fl + rl) / 2 - (fr + rr) / 2, 1.64)
+        kerbPitch += (pitchTarget - kerbPitch) * min(1, dt * 16)
+        kerbRoll += (rollTarget - kerbRoll) * min(1, dt * 16)
+    }
+
     private func carLift() -> (Float, CGFloat) {
         if airTime > 0, airDuration > 0 {
             let t = 1 - airTime / airDuration
@@ -4165,7 +4223,7 @@ final class ParkingScene: SKScene {
                 node.geometry = PedestrianModels.geometry(pose: pose, outfit: person.outfit)
             }
             var p = World3D.vec(person.position)
-            p.y = lift
+            p.y = lift + Float(level.city?.kerbHeight(at: person.position) ?? 0)
             node.position = p
             node.eulerAngles = SCNVector3(0, Float(person.heading), tilt)
         }
