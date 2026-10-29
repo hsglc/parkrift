@@ -161,6 +161,10 @@ struct MenuView: View {
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showDaily) { DailyView().environmentObject(model) }
         .onAppear {
+            if PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-staydaily") {
+                // Store and design screenshots of the daily screen
+                DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration + 0.9) { showDaily = true }
+            }
             if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch && !PerfSettings.benchmark {
                 MenuView.giftShownThisLaunch = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration + 0.9) { showDaily = true }

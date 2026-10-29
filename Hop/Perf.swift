@@ -507,8 +507,17 @@ enum SceneStats {
                 if check.isHidden { return }
                 current = check.parent
             }
-            drawCalls += geometry.elements.count
-            triangles += geometry.elements.reduce(0) { $0 + $1.primitiveCount }
+            // The level of detail SceneKit draws at this distance (nil: nothing)
+            var drawn: SCNGeometry? = geometry
+            if let levels = geometry.levelsOfDetail, !levels.isEmpty {
+                let d = CGFloat(simd_distance(node.simdWorldPosition, camera))
+                for level in levels.sorted(by: { $0.worldSpaceDistance < $1.worldSpaceDistance }) where d >= level.worldSpaceDistance {
+                    drawn = level.geometry
+                }
+            }
+            guard let shown = drawn else { return }
+            drawCalls += shown.elements.count
+            triangles += shown.elements.reduce(0) { $0 + $1.primitiveCount }
         }
         return (drawCalls, triangles)
     }

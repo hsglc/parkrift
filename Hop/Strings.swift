@@ -93,6 +93,18 @@ enum Strings {
     static var go: String { t("BAŞLA!", "GO!", "¡YA!") }
     static var parked: String { t("Park edildi!", "Parked!", "¡Aparcado!") }
     static var hold: String { t("Kıpırdama", "Hold still", "No te muevas") }
+    static func resetsIn(_ time: String) -> String { t("Yenilenme \(time)", "Resets in \(time)", "Se renueva en \(time)") }
+    static func dayN(_ n: Int) -> String { t("\(n). gün ödülü", "Day \(n) reward", "Premio del día \(n)") }
+    static var taskDone: String { t("Tamamlandı", "Completed", "Completado") }
+    static var statTime: String { t("SÜRE", "TIME", "TIEMPO") }
+    static var statCrashes: String { t("KAZA", "CRASHES", "CHOQUES") }
+    static var statRound: String { t("TUR", "ROUND", "RONDA") }
+    static var statPlace: String { t("SIRA", "PLACE", "PUESTO") }
+    static var tabPark: String { t("Park", "Park", "Aparcar") }
+    static var tabCity: String { t("Şehir", "City", "Ciudad") }
+    static var tabRace: String { t("Yarış", "Race", "Carrera") }
+    static var tabOnline: String { t("Online", "Online", "Online") }
+    static var liveTag: String { t("CANLI", "LIVE", "EN VIVO") }
     static var spectatingFriend: String { t("Rakibini izliyorsun", "Watching your rival", "Viendo a tu rival") }
     static var waitingFriendPark: String { t("Arkadaşının park etmesi bekleniyor", "Waiting for your friend to park", "Esperando a que tu amigo aparque") }
     static var nextLevelSoon: String { t("Sıradaki bölüm geliyor…", "Next level coming up…", "Llega el siguiente nivel…") }

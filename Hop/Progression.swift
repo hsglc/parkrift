@@ -165,6 +165,16 @@ enum Progression {
             }
         }
 
+        /// Short name for a tab.
+        var short: String {
+            switch self {
+            case .park: return Strings.tabPark
+            case .city: return Strings.tabCity
+            case .race: return Strings.tabRace
+            case .online: return Strings.tabOnline
+            }
+        }
+
         var icon: String {
             switch self {
             case .park: return "parkingsign"

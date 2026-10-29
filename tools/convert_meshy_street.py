@@ -240,15 +240,17 @@ for name, (target, height) in PROPS.items():
     print('  ', info, flush=True)
     save_maps(name, colour, normal, mr)
     obj.name = name
-    lod = obj.copy()
-    lod.data = obj.data.copy()
-    lod.name = name + '_lod'
-    bpy.context.collection.objects.link(lod)
-    bpy.ops.object.select_all(action='DESELECT')
-    lod.select_set(True)
-    bpy.context.view_layer.objects.active = lod
-    decimate(lod, target // 5)
-    info['lod_triangles'] = len(lod.data.polygons)
+    # Lighter meshes for further away: "<name>_lod" (a fifth) and "<name>_far" (about 2,500
+    # triangles, also the shadow caster)
+    meshes = [obj]
+    for suffix, count in (('_lod', target // 5), ('_far', 2500)):
+        lod = meshes[-1].copy()
+        lod.data = meshes[-1].data.copy()
+        lod.name = name + suffix
+        bpy.context.collection.objects.link(lod)
+        decimate(lod, count)
+        info[suffix.strip('_') + '_triangles'] = len(lod.data.polygons)
+        meshes.append(lod)
     with open(os.path.join(SRC, name + '.json.out'), 'w') as f:
         json.dump(info, f)
-    export([obj, lod], name)
+    export(meshes, name)

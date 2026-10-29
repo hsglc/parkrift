@@ -260,10 +260,7 @@ final class ParkingScene: SKScene {
     private var skid: CGFloat = 0
     /// Kerbs: the body's height on its springs (metres) and how fast it moves, and its tilt
     /// from the wheels standing at different heights.
-    private var kerbLift: CGFloat = 0
-    private var kerbLiftSpeed: CGFloat = 0
-    private var kerbPitch: CGFloat = 0
-    private var kerbRoll: CGFloat = 0
+    private var suspension = Suspension()
     private var frontKerb: CGFloat = 0
     private var rearKerb: CGFloat = 0
 
@@ -366,6 +363,11 @@ final class ParkingScene: SKScene {
     /// Seconds since we finished while the friend is still driving; after a moment the camera
     /// follows their car so we watch them instead of waiting.
     private var spectateClock: CGFloat = 0
+    /// The rival's speed (world units/s), from their position updates, for the TV cameras.
+    private var spectateSpeed: CGFloat = 0
+    private var spectateLast: CGPoint?
+    /// Broadcast look while spectating: letterbox bars, a live tag and a quick dip at each cut.
+    private var spectateOverlay: SKNode?
     private var remoteParked = false
     private var remoteTime: Double = 0
     private var remoteHits = 0
@@ -896,9 +898,8 @@ final class ParkingScene: SKScene {
             for title in [Strings.youWon.uppercased(), Strings.finishBig, Strings.parkedBig] where finishGlyphs[title] == nil {
                 finishGlyphs[title] = CarArt.titleGlyphs(title, size: 74)
             }
-            _ = CarArt.statChip(icon: "stopwatch.fill", text: "0.0 s", accent: .white)
-            _ = CarArt.finishVignette
-            _ = CarArt.finishBand
+            _ = CarArt.finishStats([.init(icon: "stopwatch.fill", label: Strings.statTime, value: "0.0", unit: "s")], accent: .white)
+            _ = CarArt.finishScrim
             // The title's shine uses a crop node: draw one once so its mask pass is ready
             let warmCrop = SKCropNode()
             let warmMask = SKSpriteNode(texture: CarArt.sheenTexture)
@@ -943,15 +944,33 @@ final class ParkingScene: SKScene {
         // People on the sidewalks (each player simulates their own: they are scenery that reacts)
         pedestrians = nil
         pedestrianNodes.removeAll()
-        pedestrianLooks.removeAll()
+        pedestrianStates.removeAll()
+        pedestrianSince.removeAll()
         if let city = level.city {
             let people = PedestrianSystem(map: city, count: 44, seed: UInt64(levelIndex * 131 + 5))
             pedestrians = people
             for _ in people.people {
                 pedestrianNodes.append(world.addPedestrianNode())
-                pedestrianLooks.append(-1)
             }
             updatePedestrianNodes()
+        }
+        // Benchmark: a line-up of both people in every clip in front of the car (to check them)
+        if PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-pedtest") && level.city != nil {
+            let start = level.starts[slot]
+            let ahead = CGVector(dx: cos(start.heading), dy: sin(start.heading))
+            let side = CGVector(dx: -ahead.dy, dy: ahead.dx)
+            for (k, clip) in PedestrianModels.Clip.allCases.enumerated() {
+                for character in 0..<2 {
+                    let node = world.addPedestrianNode()
+                    node.geometry = PedestrianModels.geometry(character: character, clip: clip, time: 0.45)
+                    let along = 75 + CGFloat(character) * 22
+                    let across = (CGFloat(k) - 3) * 15
+                    let p = CGPoint(x: start.position.x + ahead.dx * along + side.dx * across,
+                                    y: start.position.y + ahead.dy * along + side.dy * across)
+                    node.position = World3D.vec(p)
+                    node.eulerAngles.y = Float(start.heading + .pi)
+                }
+            }
         }
         lap("pedestrians")
         // Arcade extras of the level
@@ -1010,6 +1029,9 @@ final class ParkingScene: SKScene {
         braking = false
         longitudinalAccel = 0
         lateralAccel = 0
+        suspension = Suspension()
+        frontKerb = 0
+        rearKerb = 0
         let remoteStart = level.starts[otherSlot]
         remotePosition = remoteStart.position
         remoteHeading = remoteStart.heading
@@ -1959,10 +1981,17 @@ final class ParkingScene: SKScene {
         let spectating = online && friendPresent && localParked && !remoteParked && !resultsShown && localTime >= 0
         spectateClock = spectating ? spectateClock + dt : 0
         if spectateClock > 1.4 {
-            // Watching the friend: the chase camera rides behind their car
-            world?.follow(position: remotePosition, heading: remoteHeading, dt: dt)
-            if statusLabel.text != Strings.spectatingFriend { statusLabel.text = Strings.spectatingFriend }
+            // Watching the friend through TV-style cameras
+            if let last = spectateLast, dt > 0 {
+                spectateSpeed += (remotePosition.distance(to: last) / dt - spectateSpeed) * min(1, dt * 3)
+            }
+            spectateLast = remotePosition
+            if spectateOverlay == nil { showSpectateOverlay() }
+            let cut = world?.spectate(position: remotePosition, heading: remoteHeading, speed: spectateSpeed, dt: dt) ?? false
+            if cut { spectateCut() }
+            if statusLabel.text != "" { statusLabel.text = "" }
         } else {
+            if spectateOverlay != nil { hideSpectateOverlay() }
             world?.follow(position: carPosition, heading: cameraHeading, dt: dt)
         }
         updateCarNodes()
@@ -2588,13 +2617,13 @@ final class ParkingScene: SKScene {
 
     private func updateCarNodes() {
         guard let world = world else { return }
-        let pitch = max(-0.07, min(0.07, longitudinalAccel * 0.00028))
-        let roll = max(-0.06, min(0.06, lateralAccel * 0.00035))
         let reversing = gear == .reverse && velocity < -1
-        let (lift, airPitch) = carLift()
+        let (_, airPitch) = carLift()
+        // The body rides on four springs; each wheel follows the ground under it
         localCar?.update(position: carPosition, heading: heading, steer: steer,
-                         pitch: pitch + airPitch + kerbPitch, roll: roll + kerbRoll, braking: braking, reversing: reversing,
-                         lift: lift + Float(kerbLift))
+                         pitch: suspension.pitch + airPitch, roll: suspension.roll, braking: braking, reversing: reversing,
+                         lift: Float(suspension.nodeLift), heave: Float(suspension.heave),
+                         wheelLift: suspension.wheelLift.map { Float($0) })
         localTag.position = world.project(carPosition, height: 2.6)
 
         let showRemote = friendPresent
@@ -2686,7 +2715,11 @@ final class ParkingScene: SKScene {
         // and the tyres squeal
         // Wet or snowy: less side grip, and on water at speed the tyres start to float (aquaplaning)
         let floating = isRaining ? max(0, abs(velocity) / maxForward - 0.7) * 1.2 : 0
-        let maxLateral = lateralGrip * surface.grip * (1 - min(0.35, floating))
+        // Weight transfer: braking loads the front tyres (sharper turn-in), the throttle unloads
+        // them (the nose pushes wide), and a car leaning hard in a corner loses a little grip
+        let frontShare = max(0.6, min(1.4, suspension.frontLoad / 0.5))
+        let loadGrip = (0.55 + 0.45 * pow(frontShare, 0.85)) * (1 - 0.15 * suspension.lateralTransfer)
+        let maxLateral = lateralGrip * surface.grip * (1 - min(0.35, floating)) * loadGrip
         understeer = 0
         let demand = velocity * steerYaw          // the sideways pull the steering asks for
         if !drifting && abs(demand) > maxLateral {
@@ -2696,7 +2729,11 @@ final class ParkingScene: SKScene {
         // Slippery road: past the grip the tail steps out and the car slides on its line, more
         // the faster it goes and the harder it is steered (snow far more than rain); even
         // straight on, a fast car on snow wanders a little. Easing off lets the tyres bite again.
-        let slippery: CGFloat = isSnowing ? 1 : (isRaining ? 0.6 : 0)
+        // A light rear (hard braking, lifting off mid-corner) lets the tail step out a little even
+        // on a dry road
+        let rearShare = 2 - frontShare
+        let lightRear = max(0, 0.86 - rearShare)
+        let slippery: CGFloat = (isSnowing ? 1 : (isRaining ? 0.6 : 0)) + lightRear * 1.4
         var line = heading - skid
         if drifting || airTime > 0 || slippery == 0 || velocity < 0 {
             skid += (0 - skid) * min(1, dt * 6)
@@ -2704,7 +2741,7 @@ final class ParkingScene: SKScene {
         } else {
             let fast = max(0, min(1, (abs(velocity) / maxForward - 0.3) / 0.6))
             let excess = max(0, abs(demand) / max(maxLateral, 1) - 0.55)
-            var target = (demand >= 0 ? 1 : -1) * min(0.55, excess * 0.32) * slippery * fast
+            var target = (demand >= 0 ? 1 : -1) * min(0.55, excess * 0.32) * slippery * fast * (1 + lightRear * 2)
             target += sin(CGFloat(elapsed) * 1.7) * 0.035 * slippery * fast * fast
             if gasDown && fast > 0.4 { target *= 1.25 }                      // power oversteer
             let rate: CGFloat = abs(target) > abs(skid) ? 2.6 : 1.4 + 2.2 * surface.grip
@@ -2878,7 +2915,7 @@ final class ParkingScene: SKScene {
         }
 
         applyCrashMotion(dt)
-        updateKerb(dt)
+        updateSuspension(dt)
         updateJump(dt)
         updateDriftDisplay(dt)
 
@@ -3055,52 +3092,56 @@ final class ParkingScene: SKScene {
     }
 
     /// The car's height above the ground (on a ramp or in the air) and its pitch in the air.
-    /// Up and down kerbs: each wheel finds the ground under it (road or raised pavement), the body
-    /// follows on springs (a jolt and a bounce as the front wheels climb, again for the rear), it
-    /// tilts with the wheels, and climbing at speed costs speed with a thud.
-    private func updateKerb(_ dt: CGFloat) {
-        guard let city = level.city, dt > 0 else {
-            kerbLift = 0; kerbLiftSpeed = 0; kerbPitch = 0; kerbRoll = 0
-            return
-        }
+    /// Four-corner suspension: each wheel finds the ground under it (road, raised pavement,
+    /// ramp), and the body rides on a spring and damper at every corner with an anti-roll bar.
+    /// Braking and accelerating pitch it, cornering rolls it, kerbs and landings compress it and
+    /// it settles with a bounce; the load on each axle feeds back into the grip.
+    private func updateSuspension(_ dt: CGFloat) {
+        guard dt > 0 else { return }
         let c = cos(heading), s = sin(heading)
+        let city = level.city
         func ground(_ along: CGFloat, _ across: CGFloat) -> CGFloat {
-            city.kerbHeight(at: CGPoint(x: carPosition.x + c * along - s * across, y: carPosition.y + s * along + c * across))
+            let p = CGPoint(x: carPosition.x + c * along - s * across, y: carPosition.y + s * along + c * across)
+            return (city?.kerbHeight(at: p) ?? 0) + rampHeight(at: p) - rampHeight(at: carPosition)
         }
-        let fl = ground(13.5, 8.2), fr = ground(13.5, -8.2), rl = ground(-13.5, 8.2), rr = ground(-13.5, -8.2)
-        let front = (fl + fr) / 2, rear = (rl + rr) / 2
+        let (lift, _) = carLift()
+        let airborne = airTime > 0
+        let grounds: [CGFloat] = airborne
+            ? [-0.07, -0.07, -0.07, -0.07]          // wheels hang on their springs in the air
+            : [ground(13.5, 8.2), ground(13.5, -8.2), ground(-13.5, 8.2), ground(-13.5, -8.2)]
+        // Inputs in metres per second squared, kept to what a real car reaches
+        let ax = max(-13, min(13, longitudinalAccel / 10))
+        let ay = max(-13, min(13, lateralAccel / 10))
+        suspension.step(dt, nodeLift: CGFloat(lift), grounds: grounds, ax: airborne ? 0 : ax, ay: airborne ? 0 : ay)
+
+        // Kerbs: a thud and a little speed lost as each axle climbs, a drop as it comes down
+        guard let city = city else { return }
+        func kerb(_ along: CGFloat) -> CGFloat {
+            (city.kerbHeight(at: CGPoint(x: carPosition.x + c * along - s * 8.2, y: carPosition.y + s * along + c * 8.2))
+             + city.kerbHeight(at: CGPoint(x: carPosition.x + c * along + s * 8.2, y: carPosition.y + s * along - c * 8.2))) / 2
+        }
+        let front = kerb(13.5), rear = kerb(-13.5)
         let top = CityMap.kerbTop
         let speed = abs(velocity)
-        // A wheel pair climbing (or dropping) the kerb: a jolt to the springs
         func hit(_ before: CGFloat, _ now: CGFloat, strength: CGFloat) {
             let climbed = before < top * 0.45 && now >= top * 0.45
             let dropped = before > top * 0.55 && now <= top * 0.55
             guard (climbed || dropped) && speed > 6 else { return }
             let force = min(1, speed / 120)
             if climbed {
-                kerbLiftSpeed += (0.35 + 0.9 * force) * strength
                 velocity *= 1 - (0.05 + 0.13 * force) * strength
                 bumpHaptic.impactOccurred(intensity: 0.35 + 0.5 * force * strength)
                 audio.play("bump", volume: Float(0.18 + 0.3 * force * strength))
                 if force > 0.4 { world?.shake(strength: 0.6 + 1.6 * force * strength) }
             } else {
-                kerbLiftSpeed -= (0.25 + 0.5 * force) * strength
                 tickHaptic.impactOccurred(intensity: 0.3 + 0.4 * force)
             }
         }
-        hit(frontKerb, velocity >= 0 ? front : rear, strength: 1)
-        hit(rearKerb, velocity >= 0 ? rear : front, strength: 0.7)
-        frontKerb = velocity >= 0 ? front : rear
-        rearKerb = velocity >= 0 ? rear : front
-        // Springs and dampers
-        let target = (front + rear) / 2
-        kerbLiftSpeed += ((target - kerbLift) * 260 - kerbLiftSpeed * 18) * dt
-        kerbLift += kerbLiftSpeed * dt
-        kerbLift = max(-0.05, min(top + 0.12, kerbLift))
-        let pitchTarget = atan2(front - rear, 2.7) - kerbLiftSpeed * 0.02
-        let rollTarget = atan2((fl + rl) / 2 - (fr + rr) / 2, 1.64)
-        kerbPitch += (pitchTarget - kerbPitch) * min(1, dt * 16)
-        kerbRoll += (rollTarget - kerbRoll) * min(1, dt * 16)
+        let leading = velocity >= 0 ? front : rear, trailing = velocity >= 0 ? rear : front
+        hit(frontKerb, leading, strength: 1)
+        hit(rearKerb, trailing, strength: 0.7)
+        frontKerb = leading
+        rearKerb = trailing
     }
 
     private func carLift() -> (Float, CGFloat) {
@@ -3843,13 +3884,14 @@ final class ParkingScene: SKScene {
         let won = together && place == 1
         let accent: UIColor = won ? UIColor(red: 1.0, green: 0.78, blue: 0.12, alpha: 1)
             : (together ? UIColor(red: 0.86, green: 0.88, blue: 0.92, alpha: 1) : UIColor(red: 0.22, green: 0.84, blue: 1.0, alpha: 1))
-        var stats: [(icon: String, text: String)] = [("stopwatch.fill", String(format: "%.1f s", localTime))]
-        if level.race { stats.append(("exclamationmark.triangle.fill", Strings.crashes(hits))) }
+        var stats: [CarArt.FinishStat] = [.init(icon: "stopwatch.fill", label: Strings.statTime, value: String(format: "%.1f", localTime), unit: "s")]
+        if level.race { stats.append(.init(icon: "exclamationmark.triangle.fill", label: Strings.statCrashes, value: "\(hits)", unit: "")) }
         let round = levelIndex - Levels.raceBase + 1
-        stats.append(("flag.checkered", together ? "P\(place)" : "\(max(1, round))/\(Levels.raceRounds)"))
+        stats.append(together ? .init(icon: "trophy.fill", label: Strings.statPlace, value: "P\(place)", unit: "")
+                              : .init(icon: "flag.checkered", label: Strings.statRound, value: "\(max(1, round))", unit: "/\(Levels.raceRounds)"))
         let title = won ? Strings.youWon.uppercased() : Strings.finishBig
         // Cinematic bars slide in for the replay-style shots and out before the results
-        let barHeight = size.height * 0.11
+        let barHeight = size.height * 0.08
         for top in [true, false] {
             let bar = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: barHeight))
             bar.anchorPoint = CGPoint(x: 0.5, y: top ? 0 : 1)
@@ -3884,96 +3926,77 @@ final class ParkingScene: SKScene {
         }
     }
 
-    /// Modern finish title: the scene dims at the edges, a light band opens behind the title, the
-    /// letters drop in one by one with a springy settle, a shine sweeps across them, the stats
-    /// chips rise in turn and golden sparks drift up. Everything eases out together after `hold`.
+    /// Finish title, laid out like a broadcast lower third so the car stays in view: a dark scrim
+    /// from the left, a kicker with an accent tick, the title's letters dropping in one by one
+    /// with a shine across them, and one glass panel of stats (label over a big number) sliding
+    /// up beneath. Golden sparks drift up; everything eases out together after `hold`.
     private func presentFinishTitle(in layer: SKNode, title: String, kicker: String,
-                                    stats: [(icon: String, text: String)], accent: UIColor, hold: TimeInterval) {
-        let center = CGPoint(x: size.width / 2, y: size.height * 0.58)
+                                    stats: [CarArt.FinishStat], accent: UIColor, hold: TimeInterval) {
+        let left = max(36, size.width * 0.075)
         let group = SKNode()
-        group.position = center
+        group.position = CGPoint(x: left, y: size.height * 0.5)
         layer.addChild(group)
 
-        let vignette = SKSpriteNode(texture: CarArt.finishVignette)
-        vignette.size = CGSize(width: size.width * 1.1, height: size.height * 1.1)
-        vignette.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        vignette.alpha = 0
-        layer.addChild(vignette)
-        vignette.zPosition = -2
-        vignette.run(.fadeAlpha(to: 0.9, duration: 0.45))
+        // Scrim: dark on the left where the text sits, clear over the car
+        let scrim = SKSpriteNode(texture: CarArt.finishScrim)
+        scrim.size = CGSize(width: size.width * 0.72, height: size.height)
+        scrim.anchorPoint = CGPoint(x: 0, y: 0.5)
+        scrim.position = CGPoint(x: 0, y: size.height / 2)
+        scrim.alpha = 0
+        scrim.zPosition = -2
+        layer.addChild(scrim)
+        scrim.run(.fadeAlpha(to: 1, duration: 0.4))
 
-        let band = SKSpriteNode(texture: CarArt.finishBand)
-        band.size = CGSize(width: size.width * 0.9, height: 120)
-        band.color = accent
-        band.colorBlendFactor = 1
-        band.blendMode = .add
-        band.alpha = 0.55
-        band.xScale = 0.05
-        band.zPosition = -1
-        group.addChild(band)
-        let open = SKAction.scaleX(to: 1, duration: 0.5)
-        open.timingMode = .easeOut
-        band.run(.sequence([open, .fadeAlpha(to: 0.3, duration: 0.8)]))
-
-        // Kicker with lines either side
+        // Kicker: an accent tick, then the label
+        let tick = SKSpriteNode(color: accent, size: CGSize(width: 28, height: 3))
+        tick.anchorPoint = CGPoint(x: 0, y: 0.5)
+        tick.position = CGPoint(x: 0, y: 62)
+        tick.xScale = 0
+        group.addChild(tick)
+        let grow = SKAction.scaleX(to: 1, duration: 0.3)
+        grow.timingMode = .easeOut
+        tick.run(.sequence([.wait(forDuration: 0.05), grow]))
         let kickerLabel = SKLabelNode(text: kicker)
         kickerLabel.fontName = "AvenirNext-Heavy"
         kickerLabel.fontSize = 13
         kickerLabel.fontColor = accent
+        kickerLabel.horizontalAlignmentMode = .left
         kickerLabel.verticalAlignmentMode = .center
-        kickerLabel.position = CGPoint(x: 0, y: 52)
+        kickerLabel.position = CGPoint(x: 38, y: 62)
         kickerLabel.alpha = 0
         group.addChild(kickerLabel)
-        kickerLabel.run(.sequence([.wait(forDuration: 0.1), .group([.fadeIn(withDuration: 0.3), .moveBy(x: 0, y: 6, duration: 0.3)])]))
-        for side: CGFloat in [-1, 1] {
-            let line = SKSpriteNode(color: accent, size: CGSize(width: 70, height: 2))
-            line.anchorPoint = CGPoint(x: side < 0 ? 1 : 0, y: 0.5)
-            line.position = CGPoint(x: side * (kickerLabel.frame.width / 2 + 12), y: 58)
-            line.xScale = 0
-            line.alpha = 0.8
-            group.addChild(line)
-            let grow = SKAction.scaleX(to: 1, duration: 0.4)
-            grow.timingMode = .easeOut
-            line.run(.sequence([.wait(forDuration: 0.2), grow]))
-        }
+        kickerLabel.run(.sequence([.wait(forDuration: 0.15), .group([.fadeIn(withDuration: 0.25), .moveBy(x: 6, y: 0, duration: 0.3)])]))
 
-        // Letters
+        // Letters, left-aligned
         let glyphs = finishGlyphs[title] ?? CarArt.titleGlyphs(title, size: 74)
         let total = glyphs.reduce(0) { $0 + $1.advance }
-        let lettersNode = SKNode()
-        group.addChild(lettersNode)
-        var x = -total / 2
+        let pad = glyphs.first.map { ($0.texture.size().width - $0.advance) / 2 } ?? 0
+        var x: CGFloat = -pad * 0.6
         for (index, glyph) in glyphs.enumerated() {
             let letter = SKSpriteNode(texture: glyph.texture)
             letter.size = glyph.texture.size()
-            let home = CGPoint(x: x + glyph.advance / 2, y: 0)
+            let home = CGPoint(x: x + glyph.advance / 2, y: 4)
             x += glyph.advance
-            letter.position = CGPoint(x: home.x, y: home.y + 26)
+            letter.position = CGPoint(x: home.x - 30, y: home.y)
             letter.alpha = 0
-            letter.setScale(1.7)
-            lettersNode.addChild(letter)
-            let delay = 0.12 + Double(index) * 0.045
-            let drop = SKAction.move(to: CGPoint(x: home.x, y: home.y - 3), duration: 0.2)
-            drop.timingMode = .easeOut
-            let shrink = SKAction.scale(to: 0.94, duration: 0.2)
-            shrink.timingMode = .easeOut
-            let settleScale = SKAction.scale(to: 1, duration: 0.16)
-            settleScale.timingMode = .easeInEaseOut
-            let settleMove = SKAction.move(to: home, duration: 0.16)
-            settleMove.timingMode = .easeInEaseOut
-            letter.run(.sequence([.wait(forDuration: delay),
-                                  .group([.fadeIn(withDuration: 0.12), drop, shrink]),
-                                  .group([settleScale, settleMove])]))
+            letter.xScale = 1.25
+            group.addChild(letter)
+            let delay = 0.12 + Double(index) * 0.04
+            let slide = SKAction.move(to: home, duration: 0.28)
+            slide.timingMode = .easeOut
+            let settle = SKAction.scaleX(to: 1, duration: 0.28)
+            settle.timingMode = .easeOut
+            letter.run(.sequence([.wait(forDuration: delay), .group([.fadeIn(withDuration: 0.14), slide, settle])]))
         }
 
         // Shine across the title (cropped to the letters)
         let crop = SKCropNode()
         let mask = SKNode()
-        x = -total / 2
+        x = -pad * 0.6
         for glyph in glyphs {
             let piece = SKSpriteNode(texture: glyph.texture)
             piece.size = glyph.texture.size()
-            piece.position = CGPoint(x: x + glyph.advance / 2, y: 0)
+            piece.position = CGPoint(x: x + glyph.advance / 2, y: 4)
             x += glyph.advance
             mask.addChild(piece)
         }
@@ -3983,58 +4006,52 @@ final class ParkingScene: SKScene {
         sheen.zRotation = -0.35
         sheen.blendMode = .add
         sheen.alpha = 0.9
-        sheen.position = CGPoint(x: -total / 2 - 80, y: 0)
+        sheen.position = CGPoint(x: -80, y: 0)
         crop.addChild(sheen)
         group.addChild(crop)
-        let lettersDone = 0.12 + Double(glyphs.count) * 0.045 + 0.3
-        let sweep = SKAction.moveTo(x: total / 2 + 80, duration: 0.55)
+        let lettersDone = 0.12 + Double(glyphs.count) * 0.04 + 0.3
+        let sweep = SKAction.moveTo(x: total + 80, duration: 0.55)
         sweep.timingMode = .easeInEaseOut
         sheen.run(.sequence([.wait(forDuration: lettersDone), sweep, .removeFromParent()]))
 
-        // Stats chips
-        let chips = stats.map { CarArt.statChip(icon: $0.icon, text: $0.text, accent: accent) }
-        let gap: CGFloat = 12
-        let chipsWidth = chips.reduce(0) { $0 + $1.size().width } + gap * CGFloat(max(0, chips.count - 1))
-        x = -chipsWidth / 2
-        for (index, texture) in chips.enumerated() {
-            let chip = SKSpriteNode(texture: texture)
-            chip.size = texture.size()
-            let home = CGPoint(x: x + chip.size.width / 2, y: -70)
-            x += chip.size.width + gap
-            chip.position = CGPoint(x: home.x, y: home.y - 18)
-            chip.alpha = 0
-            group.addChild(chip)
-            let rise = SKAction.move(to: home, duration: 0.35)
-            rise.timingMode = .easeOut
-            chip.run(.sequence([.wait(forDuration: lettersDone + 0.1 + Double(index) * 0.1),
-                                .group([.fadeIn(withDuration: 0.3), rise])]))
-        }
+        // Stats: one glass panel, label over value, hairline dividers
+        let panelTexture = CarArt.finishStats(stats, accent: accent)
+        let panel = SKSpriteNode(texture: panelTexture)
+        panel.size = panelTexture.size()
+        panel.anchorPoint = CGPoint(x: 0, y: 1)
+        let panelHome = CGPoint(x: 0, y: -42)
+        panel.position = CGPoint(x: panelHome.x, y: panelHome.y - 16)
+        panel.alpha = 0
+        group.addChild(panel)
+        let rise = SKAction.move(to: panelHome, duration: 0.4)
+        rise.timingMode = .easeOut
+        panel.run(.sequence([.wait(forDuration: lettersDone + 0.05), .group([.fadeIn(withDuration: 0.3), rise])]))
 
-        // Golden sparks drifting up
-        for index in 0..<26 {
+        // Golden sparks drifting up behind the title
+        for index in 0..<22 {
             let spark = SKSpriteNode(texture: dotTexture)
-            let s = CGFloat.random(in: 3...7)
+            let s = CGFloat.random(in: 3...6)
             spark.size = CGSize(width: s, height: s)
             spark.color = index % 3 == 0 ? .white : accent
             spark.colorBlendFactor = 1
             spark.blendMode = .add
             spark.alpha = 0
-            spark.position = CGPoint(x: CGFloat.random(in: -total * 0.7...total * 0.7), y: CGFloat.random(in: -90 ... -20))
+            spark.position = CGPoint(x: CGFloat.random(in: 0...max(40, total)), y: CGFloat.random(in: -60 ... 0))
+            spark.zPosition = -1
             group.addChild(spark)
-            let rise = SKAction.moveBy(x: CGFloat.random(in: -20...20), y: CGFloat.random(in: 70...150), duration: 1.6)
-            rise.timingMode = .easeOut
+            let up = SKAction.moveBy(x: CGFloat.random(in: -16...16), y: CGFloat.random(in: 60...130), duration: 1.6)
+            up.timingMode = .easeOut
             spark.run(.sequence([.wait(forDuration: 0.3 + Double.random(in: 0...1.2)),
-                                 .group([.sequence([.fadeAlpha(to: 0.9, duration: 0.25), .wait(forDuration: 0.7), .fadeOut(withDuration: 0.65)]),
-                                         rise]),
+                                 .group([.sequence([.fadeAlpha(to: 0.85, duration: 0.25), .wait(forDuration: 0.7), .fadeOut(withDuration: 0.65)]),
+                                         up]),
                                  .removeFromParent()]))
         }
 
-        // Breathe a little while held, then ease out together
-        group.run(.sequence([.wait(forDuration: 0.6), .scale(to: 1.03, duration: hold - 0.6)]))
-        let out = SKAction.group([.fadeOut(withDuration: 0.4), .scale(to: 1.08, duration: 0.4)])
+        // Ease out together, sliding left
+        let out = SKAction.group([.fadeOut(withDuration: 0.4), .moveBy(x: -30, y: 0, duration: 0.4)])
         out.timingMode = .easeIn
         group.run(.sequence([.wait(forDuration: hold + 0.2), out, .removeFromParent()]))
-        vignette.run(.sequence([.wait(forDuration: hold + 0.3), .fadeOut(withDuration: 0.4), .removeFromParent()]))
+        scrim.run(.sequence([.wait(forDuration: hold + 0.3), .fadeOut(withDuration: 0.4), .removeFromParent()]))
     }
 
     /// Parking levels: the same modern title, shorter, then the results.
@@ -4049,8 +4066,8 @@ final class ParkingScene: SKScene {
         let layer = SKNode()
         layer.zPosition = 300
         addChild(layer)
-        var stats: [(icon: String, text: String)] = [("stopwatch.fill", String(format: "%.1f s", localTime))]
-        stats.append(("exclamationmark.triangle.fill", Strings.crashes(hits)))
+        let stats: [CarArt.FinishStat] = [.init(icon: "stopwatch.fill", label: Strings.statTime, value: String(format: "%.1f", localTime), unit: "s"),
+                                          .init(icon: "exclamationmark.triangle.fill", label: Strings.statCrashes, value: "\(hits)", unit: "")]
         presentFinishTitle(in: layer, title: Strings.parkedBig, kicker: Strings.levelComplete,
                            stats: stats, accent: UIColor(red: 0.35, green: 0.95, blue: 0.6, alpha: 1), hold: 1.6)
         layer.run(.sequence([.wait(forDuration: 2.4), .removeFromParent()]))
@@ -4203,45 +4220,131 @@ final class ParkingScene: SKScene {
 
     private var pedestrians: PedestrianSystem?
     private var pedestrianNodes: [SCNNode] = []
-    /// Geometry key last shown per person (pose * 100 + outfit), to swap only on change.
-    private var pedestrianLooks: [Int] = []
     private var pendingHorn: CGPoint?
+
+    // MARK: Spectating
+
+    private func showSpectateOverlay() {
+        world?.resetSpectate()
+        spectateLast = nil
+        let overlay = SKNode()
+        overlay.zPosition = 250
+        let barHeight = size.height * 0.085
+        for top in [true, false] {
+            let bar = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: barHeight))
+            bar.anchorPoint = CGPoint(x: 0.5, y: top ? 0 : 1)
+            let edge = top ? size.height : 0
+            bar.position = CGPoint(x: size.width / 2, y: edge)
+            overlay.addChild(bar)
+            let slide = SKAction.moveTo(y: top ? edge - barHeight : barHeight, duration: 0.4)
+            slide.timingMode = .easeOut
+            bar.run(slide)
+        }
+        // "LIVE · watching your rival" tag, top left inside the bar
+        let tag = SKNode()
+        tag.position = CGPoint(x: max(30, size.width * 0.05), y: size.height - barHeight / 2)
+        let dot = SKShapeNode(circleOfRadius: 4)
+        dot.fillColor = UIColor(red: 1, green: 0.22, blue: 0.25, alpha: 1)
+        dot.strokeColor = .clear
+        dot.run(.repeatForever(.sequence([.fadeAlpha(to: 0.25, duration: 0.6), .fadeAlpha(to: 1, duration: 0.6)])))
+        tag.addChild(dot)
+        let live = SKLabelNode(text: Strings.liveTag)
+        live.fontName = "AvenirNext-Heavy"
+        live.fontSize = 12
+        live.fontColor = .white
+        live.horizontalAlignmentMode = .left
+        live.verticalAlignmentMode = .center
+        live.position = CGPoint(x: 12, y: 0)
+        tag.addChild(live)
+        let what = SKLabelNode(text: Strings.spectatingFriend.uppercased())
+        what.fontName = "AvenirNext-DemiBold"
+        what.fontSize = 12
+        what.fontColor = UIColor.white.withAlphaComponent(0.7)
+        what.horizontalAlignmentMode = .left
+        what.verticalAlignmentMode = .center
+        what.position = CGPoint(x: 22 + live.frame.width, y: 0)
+        tag.addChild(what)
+        tag.alpha = 0
+        tag.run(.sequence([.wait(forDuration: 0.3), .fadeIn(withDuration: 0.3)]))
+        overlay.addChild(tag)
+        // Cut dip
+        let dip = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: size.height + 40))
+        dip.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        dip.alpha = 0
+        dip.name = "dip"
+        dip.zPosition = -1
+        overlay.addChild(dip)
+        addChild(overlay)
+        spectateOverlay = overlay
+        controlsLayer.run(.fadeAlpha(to: 0, duration: 0.3))
+    }
+
+    private func spectateCut() {
+        guard let dip = spectateOverlay?.childNode(withName: "dip") else { return }
+        dip.removeAllActions()
+        dip.alpha = 0.55
+        dip.run(.fadeOut(withDuration: 0.22))
+    }
+
+    private func hideSpectateOverlay() {
+        spectateOverlay?.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
+        spectateOverlay = nil
+        world?.endSpectate()
+        controlsLayer.run(.fadeAlpha(to: 1, duration: 0.3))
+    }
+
+    /// Each person's state last frame and when it began (for the clips that play once).
+    private var pedestrianStates: [PedestrianSystem.State] = []
+    private var pedestrianSince: [TimeInterval] = []
 
     private func updatePedestrianNodes() {
         guard let people = pedestrians else { return }
-        // People are detailed meshes now: draw the ones within 45 m (tiny further away)
+        if pedestrianStates.count != people.people.count {
+            pedestrianStates = people.people.map { $0.state }
+            pedestrianSince = Array(repeating: lastUpdate, count: people.people.count)
+        }
+        // People are detailed meshes: draw the ones within 45 m, the light mesh past 18 m from
+        // the camera
         let range: CGFloat = 450
+        let eye = world?.cameraNode.simdWorldPosition ?? SIMD3<Float>(0, 0, 0)
         for (index, person) in people.people.enumerated() where index < pedestrianNodes.count {
             let node = pedestrianNodes[index]
-            let far = abs(person.position.x - carPosition.x) > range || abs(person.position.y - carPosition.y) > range
-            if node.isHidden != far { node.isHidden = far }
-            if far { continue }
-            let pose: PedestrianModels.Pose
-            var lift: Float = 0
-            var tilt: Float = 0
+            if pedestrianStates[index] != person.state {
+                pedestrianStates[index] = person.state
+                pedestrianSince[index] = lastUpdate
+            }
+            let outOfRange = abs(person.position.x - carPosition.x) > range || abs(person.position.y - carPosition.y) > range
+            if node.isHidden != outOfRange { node.isHidden = outOfRange }
+            if outOfRange { continue }
+            let character = person.outfit
+            let since = CGFloat(lastUpdate - pedestrianSince[index])
+            let spot = World3D.vec(person.position)
+            let far = simd_distance(eye, SIMD3<Float>(spot.x, spot.y, spot.z)) > 18
+            let geometry: SCNGeometry?
             switch person.state {
             case .walking, .crossing:
-                let cycle = PedestrianModels.Pose.walkCycle
-                let frame = Int(person.stride / PedestrianModels.cycleLength * CGFloat(cycle.count)) % cycle.count
-                pose = cycle[max(0, frame)]
+                // Hurrying people run; the clip follows the distance walked so the feet stick
+                if person.hurry > 1.3 {
+                    geometry = PedestrianModels.geometry(character: character, clip: .run, phase: person.stride / PedestrianModels.runCycle, far: far)
+                } else {
+                    geometry = PedestrianModels.geometry(character: character, clip: .walk, phase: person.stride / PedestrianModels.walkCycle, far: far)
+                }
             case .waiting, .browsing:
-                pose = .stand
+                // Some check their phone while they wait; each starts at its own point of the clip
+                let clip: PedestrianModels.Clip = index % 3 == 0 ? .phone : .idle
+                geometry = PedestrianModels.geometry(character: character, clip: clip, time: since + CGFloat(index) * 0.37, far: far)
             case .startled:
-                pose = .startled
+                geometry = PedestrianModels.geometry(character: character, clip: .dodge, time: since, far: far)
             case .fallen:
-                pose = .stand
-                tilt = Float.pi / 2
-                lift = 0.15
+                geometry = PedestrianModels.geometry(character: character, clip: .knockdown, time: since, far: far)
+            case .angry:
+                geometry = PedestrianModels.geometry(character: character, clip: .angry, time: since, far: far)
             }
-            let look = pose.rawValue * 100 + person.outfit
-            if pedestrianLooks[index] != look {
-                pedestrianLooks[index] = look
-                node.geometry = PedestrianModels.geometry(pose: pose, outfit: person.outfit)
-            }
+            if let geometry = geometry, node.geometry !== geometry { node.geometry = geometry }
             var p = World3D.vec(person.position)
-            p.y = lift + Float(level.city?.kerbHeight(at: person.position) ?? 0)
+            p.y = Float(level.city?.kerbHeight(at: person.position) ?? 0)
             node.position = p
-            node.eulerAngles = SCNVector3(0, Float(person.heading), tilt)
+            node.eulerAngles = SCNVector3(0, Float(person.heading), 0)
         }
     }
 

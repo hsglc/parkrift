@@ -1,0 +1,15 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "level-mode": "all"
+  },
+  "levels": [
+    {
+      "filename": "tree_green_rough.jpg",
+      "mipmap-level": "base"
+    }
+  ]
+}

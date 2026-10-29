@@ -18,6 +18,7 @@ final class PedestrianSystem {
         case crossing
         case startled      // jumped at a horn or a near miss
         case fallen
+        case angry         // shouting at the car after a scare or a knock
     }
 
     struct Person {
@@ -45,6 +46,8 @@ final class PedestrianSystem {
         /// Stop at the next waypoint to look at a shop window.
         var browseNext = false
         var resumeState: State = .walking
+        /// Got a fright (a horn, a car brushing past): gets angry once it has passed.
+        var scared = false
     }
 
     /// A car the people react to: position, velocity (world units/s), heading, and whether hits count.
@@ -198,7 +201,7 @@ final class PedestrianSystem {
         people.compactMap { person in
             switch person.state {
             case .crossing: return person.position
-            case .startled, .fallen: return isOnRoad(person.position) ? person.position : nil
+            case .startled, .fallen, .angry: return isOnRoad(person.position) ? person.position : nil
             default: return nil
             }
         }
@@ -220,10 +223,11 @@ final class PedestrianSystem {
             if let horn = horn, p.state != .fallen, p.position.distance(to: horn) < 160 {
                 if p.state == .crossing {
                     p.hurry = 1.5
-                } else if p.state != .startled {
+                } else if p.state != .startled && p.state != .angry {
                     p.resumeState = p.state
                     p.state = .startled
                     p.timer = 0.9
+                    p.scared = true
                     p.heading = atan2(horn.y - p.position.y, horn.x - p.position.x)
                 }
             }
@@ -240,7 +244,7 @@ final class PedestrianSystem {
                         p.lastHit = clock
                         p.resumeState = p.state == .startled ? p.resumeState : p.state
                         p.state = .fallen
-                        p.timer = 2.4
+                        p.timer = 2.9
                         p.heading = threat.heading + (across > 0 ? CGFloat.pi / 2 : -CGFloat.pi / 2)
                         p.dodge = CGVector(dx: cos(p.heading) * 60, dy: sin(p.heading) * 60)
                         p.dodgeTime = 0.35
@@ -254,9 +258,10 @@ final class PedestrianSystem {
                         let away = threat.heading + side * CGFloat.pi / 2
                         p.dodge = CGVector(dx: cos(away) * 75, dy: sin(away) * 75)
                         p.dodgeTime = 0.4
-                        if p.state != .startled { p.resumeState = p.state }
+                        if p.state != .startled && p.state != .angry { p.resumeState = p.state }
                         p.state = .startled
-                        p.timer = 0.7
+                        p.timer = 1.0
+                        p.scared = true
                     } else if timeToReach < 2.5 && abs(across) < 40 {
                         p.hurry = 1.6
                     }
@@ -274,11 +279,32 @@ final class PedestrianSystem {
             switch p.state {
             case .fallen:
                 p.timer -= dt
-                if p.timer <= 0 { p.state = p.resumeState == .fallen ? .walking : p.resumeState; p.hurry = 1.4 }
+                if p.timer <= 0 {
+                    // Back on their feet, and furious
+                    p.state = .angry
+                    p.timer = 2.6
+                    p.scared = false
+                }
                 continue
             case .startled:
                 p.timer -= dt
-                if p.timer <= 0 { p.state = p.resumeState == .startled ? .walking : p.resumeState }
+                if p.timer <= 0 {
+                    if p.scared {
+                        p.state = .angry
+                        p.timer = 2.0
+                        p.scared = false
+                    } else {
+                        p.state = p.resumeState == .startled ? .walking : p.resumeState
+                    }
+                }
+                continue
+            case .angry:
+                p.timer -= dt
+                if p.timer <= 0 {
+                    let resume = p.resumeState
+                    p.state = [.startled, .fallen, .angry].contains(resume) ? .walking : resume
+                    p.hurry = 1.4
+                }
                 continue
             case .browsing:
                 p.timer -= dt
@@ -343,76 +369,136 @@ final class PedestrianSystem {
 
 // MARK: - Models
 
-/// People: Polyfork's free low poly characters, animated with its Walk, Idle and Run clips (baked
-/// by tools/convert_polyfork_people.py).
-/// Each character is a set of pose meshes baked from its rigged walk and run clips; a person is
-/// one node whose geometry is swapped to animate (cheap for dozens of people, no skinning).
+/// People: two realistic characters made with Meshy (a woman and a man, 2K textures, about 14k
+/// triangles), rigged by Meshy and animated with its clips: walk, run, idle, phone call, angry,
+/// dodge and knock-down (tools/bake_meshy_people.py bakes every clip into frames of one shared
+/// mesh). A person is one node whose geometry is swapped to animate: cheap for dozens of people,
+/// no skinning on the device.
 enum PedestrianModels {
-    enum Pose: Int, CaseIterable {
-        case walk0, walk1, walk2, walk3, walk4, walk5, walk6, walk7
-        case stand
-        case startled
-
-        static let walkCycle: [Pose] = [.walk0, .walk1, .walk2, .walk3, .walk4, .walk5, .walk6, .walk7]
+    enum Clip: String, CaseIterable {
+        case walk, run, idle, phone, angry, dodge, knockdown
     }
 
-    static let outfitCount = 10
-    /// World units walked per full walk cycle (two steps).
-    static let cycleLength: CGFloat = 13
+    static let characters = ["woman", "man"]
+    static var outfitCount: Int { characters.count }
+    /// World units walked per full cycle (two steps) of the walk and the run.
+    static let walkCycle: CGFloat = 14
+    static let runCycle: CGFloat = 30
+
+    private struct Character {
+        var frames: [Clip: [SCNGeometry]] = [:]
+        var fps: [Clip: Float] = [:]
+        var loops: [Clip: Bool] = [:]
+    }
 
     private static let lock = NSLock()
-    private static var cache: [Int: SCNGeometry] = [:]
-    private static var loaded = Set<Int>()
+    private static var loaded: [Int: Character] = [:]
 
-    static func geometry(pose: Pose, outfit: Int) -> SCNGeometry? {
-        let character = outfit % outfitCount
+    /// A character's clips, close-up (`far` false) or the light mesh for further away.
+    private static func character(_ index: Int, far: Bool = false) -> Character? {
+        let k = (abs(index) % characters.count) * 2 + (far ? 1 : 0)
         lock.lock()
         defer { lock.unlock() }
-        if !loaded.contains(character) { load(character) }
-        return cache[character * 16 + pose.rawValue]
+        if let c = loaded[k] { return c }
+        let c = load(characters[k / 2] + (far ? "_far" : ""))
+        loaded[k] = c
+        return c
     }
 
-    /// Reads one character's pose meshes (each with its transform baked in).
-    private static func load(_ character: Int) {
-        loaded.insert(character)
-        guard let url = Bundle.main.url(forResource: "person_p\(character)", withExtension: "usdz"),
-              let scene = try? SCNScene(url: url, options: nil) else { return }
-        for pose in Pose.allCases {
-            let name = "p\(pose.rawValue)"
-            // A pose is a node named pK: one mesh, or one child mesh per colour (Polyfork characters)
-            var found: SCNNode?
-            scene.rootNode.enumerateHierarchy { node, stop in
-                if node.name == name { found = node; stop.pointee = true }
-            }
-            guard let node = found else { continue }
-            let baked = node.clone()
-            baked.transform = node.parent?.convertTransform(node.transform, to: nil) ?? node.transform
-            let wrapper = SCNNode()
-            wrapper.addChildNode(baked)
-            guard let flat = wrapper.flattenedClone().geometry else { continue }
-            for material in flat.materials {
-                material.lightingModel = .physicallyBased
-                material.roughness.contents = NSNumber(value: 0.85)
-                material.metalness.contents = NSNumber(value: 0)
-            }
-            cache[character * 16 + pose.rawValue] = flat
+    /// The frame of `clip` at `time` seconds into it (looping clips wrap, the others hold their
+    /// last frame).
+    static func geometry(character index: Int, clip: Clip, time: CGFloat, far: Bool = false) -> SCNGeometry? {
+        guard let c = character(index, far: far), let frames = c.frames[clip], !frames.isEmpty else { return nil }
+        let raw = Int(floor(time * CGFloat(c.fps[clip] ?? 12)))
+        let n = frames.count
+        let frame: Int
+        if clip == .idle || clip == .phone {
+            // A stretch of a long clip, played back and forth so it never jumps
+            let period = max(1, 2 * n - 2)
+            let k = ((raw % period) + period) % period
+            frame = k < n ? k : period - k
+        } else if c.loops[clip] ?? true {
+            frame = ((raw % n) + n) % n
+        } else {
+            frame = max(0, min(n - 1, raw))
         }
+        return frames[frame]
     }
 
-    /// Loads every character on a background thread (called at launch).
-    static func preload() {
-        DispatchQueue.global(qos: .utility).async {
-            for character in 0..<outfitCount { _ = geometry(pose: .stand, outfit: character) }
-        }
+    /// The frame at a point of a walking or running cycle (0...1), so the feet match the ground.
+    static func geometry(character index: Int, clip: Clip, phase: CGFloat, far: Bool = false) -> SCNGeometry? {
+        guard let c = character(index, far: far), let frames = c.frames[clip], !frames.isEmpty else { return nil }
+        let p = phase - floor(phase)
+        return frames[min(frames.count - 1, Int(p * CGFloat(frames.count)))]
     }
 
-    static var all: [SCNGeometry] {
-        var result: [SCNGeometry] = []
-        for outfit in 0..<outfitCount {
-            for pose in Pose.allCases {
-                if let geometry = geometry(pose: pose, outfit: outfit) { result.append(geometry) }
+    /// Reads one character's baked clips: UVs and triangles shared by every frame, positions and
+    /// normals (half floats) per frame.
+    private static func load(_ name: String) -> Character {
+        var result = Character()
+        guard let url = Bundle.main.url(forResource: "ped_\(name)", withExtension: "bin"),
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count > 16,
+              data.prefix(4) == Data("PED1".utf8) else { return result }
+        func u32(_ o: Int) -> Int { Int(data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: UInt32.self) }) }
+        func f32(_ o: Int) -> Float { data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: Float.self) } }
+        let vertexCount = u32(4), indexCount = u32(8), clipCount = u32(12)
+        var o = 16
+        let uvData = data.subdata(in: o..<(o + vertexCount * 8)); o += vertexCount * 8
+        let indexData = data.subdata(in: o..<(o + indexCount * 4)); o += indexCount * 4
+        let uvSource = SCNGeometrySource(data: uvData, semantic: .texcoord, vectorCount: vertexCount, usesFloatComponents: true,
+                                         componentsPerVector: 2, bytesPerComponent: 4, dataOffset: 0, dataStride: 8)
+        let element = SCNGeometryElement(data: indexData, primitiveType: .triangles, primitiveCount: indexCount / 3, bytesPerIndex: 4)
+        let material = Scenery.modelMaterial("ped_" + (name.hasSuffix("_far") ? String(name.dropLast(4)) : name))
+        let frameBytes = vertexCount * 6
+        for _ in 0..<clipCount {
+            guard o < data.count else { break }
+            let nameLength = Int(data[o]); o += 1
+            let clipName = String(decoding: data.subdata(in: o..<(o + nameLength)), as: UTF8.self); o += nameLength
+            let frameCount = u32(o); o += 4
+            let fps = f32(o); o += 4
+            let loop = data[o] != 0; o += 1
+            var frames: [SCNGeometry] = []
+            for _ in 0..<frameCount {
+                guard o + frameBytes * 2 <= data.count else { break }
+                // Half floats straight to the GPU: half the memory of float32 frames
+                let positions = data.subdata(in: o..<(o + frameBytes)); o += frameBytes
+                let normals = data.subdata(in: o..<(o + frameBytes)); o += frameBytes
+                let vertexSource = SCNGeometrySource(data: positions, semantic: .vertex, vectorCount: vertexCount,
+                                                     usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: 2,
+                                                     dataOffset: 0, dataStride: 6)
+                let normalSource = SCNGeometrySource(data: normals, semantic: .normal, vectorCount: vertexCount,
+                                                     usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: 2,
+                                                     dataOffset: 0, dataStride: 6)
+                let geometry = SCNGeometry(sources: [vertexSource, normalSource, uvSource], elements: [element])
+                geometry.materials = [material]
+                // Bounds for culling, wide enough for a fall (the clip carries the body back)
+                geometry.boundingBox = (SCNVector3(-3.5, -0.2, -3.5), SCNVector3(3.5, 2.1, 3.5))
+                frames.append(geometry)
+            }
+            if let clip = Clip(rawValue: clipName) {
+                result.frames[clip] = frames
+                result.fps[clip] = fps
+                result.loops[clip] = loop
             }
         }
         return result
+    }
+
+    /// Loads both characters on a background thread (called at launch).
+    static func preload() {
+        DispatchQueue.global(qos: .utility).async {
+            for index in characters.indices {
+                _ = character(index)
+                _ = character(index, far: true)
+            }
+        }
+    }
+
+    /// One frame of each character, for the loading warm-up (they share one material, so one
+    /// compiles the shader; the other frames upload on first sight, a few hundred KB each).
+    static var all: [SCNGeometry] {
+        characters.indices.flatMap { index -> [SCNGeometry] in
+            [character(index)?.frames[.walk]?.first, character(index, far: true)?.frames[.walk]?.first].compactMap { $0 }
+        }
     }
 }

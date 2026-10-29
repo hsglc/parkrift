@@ -1,5 +1,6 @@
 import SceneKit
 import UIKit
+import MetalKit
 
 /// Photo-scanned ground, walls and skies (Poly Haven, CC0): asphalt, paving slabs, concrete and
 /// grass PBR sets (colour, normal and roughness maps, 1K, tiled in metres) and two sky panoramas
@@ -43,45 +44,121 @@ enum Scenery {
         return result
     }
 
-    /// A street prop modelled with Meshy from the reference sheet (tools/convert_meshy_street.py):
-    /// the close-up mesh "<name>" with its lighter "<name>_lod" swapped in from `lodDistance`
-    /// metres, textured with its own colour, normal and roughness maps. Clones share all of it.
-    static func prop(_ name: String, lodDistance: CGFloat) -> SCNNode? {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
-              let scene = try? SCNScene(url: url, options: nil) else { return nil }
-        var full: SCNNode?
-        var lod: SCNNode?
-        scene.rootNode.enumerateHierarchy { node, _ in
-            guard node.geometry != nil else { return }
-            if node.name == name + "_lod" { lod = node } else if node.name == name { full = node }
+    /// GPU textures from the asset catalog's texture sets (tools/make_texture_sets.py): stored
+    /// ASTC-compressed with their mipmaps, so a 2K map takes a quarter of the memory of a decoded
+    /// JPEG and nothing is kept in CPU memory. Falls back to a bundle JPEG of the same name.
+    private static let textureLock = NSLock()
+    private static var textures: [String: Any] = [:]
+    private static let textureLoader: MTKTextureLoader? = MTLCreateSystemDefaultDevice().map { MTKTextureLoader(device: $0) }
+
+    static func texture(_ name: String) -> Any? {
+        textureLock.lock()
+        defer { textureLock.unlock() }
+        if let cached = textures[name] { return cached }
+        var result: Any?
+        if let loader = textureLoader {
+            let options: [MTKTextureLoader.Option: Any] = [
+                .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+                .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue)
+            ]
+            do {
+                result = try loader.newTexture(name: name, scaleFactor: 1, bundle: .main, options: options)
+            } catch {
+                if PerfSettings.benchmark {
+                    FileHandle.standardError.write("PPTEX \(name) failed: \(error)\n".data(using: .utf8)!)
+                }
+            }
         }
-        guard let mesh = full, let geometry = mesh.geometry else { return nil }
+        if result == nil { result = UIImage(named: name + ".jpg") }
+        textures[name] = result
+        return result
+    }
+
+    /// The material of a Meshy prop or person: its own colour, normal and roughness maps.
+    static func modelMaterial(_ name: String) -> SCNMaterial {
         let material = SCNMaterial()
         material.lightingModel = .physicallyBased
-        material.diffuse.contents = image("\(name)_diff.jpg")
-        material.normal.contents = image("\(name)_nor.jpg")
-        material.roughness.contents = image("\(name)_rough.jpg")
+        material.diffuse.contents = texture("\(name)_diff")
+        material.normal.contents = texture("\(name)_nor")
+        material.roughness.contents = texture("\(name)_rough")
         material.metalness.contents = NSNumber(value: 0)
         for property in [material.diffuse, material.normal, material.roughness] {
             property.mipFilter = .linear
-            property.maxAnisotropy = 8
+            property.maxAnisotropy = 4
+            // Texture-set textures come in bottom-up (Metal's order), images top-down: flip v
+            // for those so the model's UVs land where they were painted
+            if property.contents is MTLTexture {
+                property.wrapS = .repeat
+                property.wrapT = .repeat
+                property.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(1, -1, 1), SCNMatrix4MakeTranslation(0, 1, 0))
+            }
         }
+        return material
+    }
+
+    /// Draws nothing on screen but casts the shadow: a prop's light mesh stands in for its
+    /// detailed one in the shadow map.
+    static let shadowCaster: SCNMaterial = {
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.colorBufferWriteMask = []
+        return material
+    }()
+
+    /// A street prop modelled with Meshy from the reference sheet (tools/convert_meshy_street.py):
+    /// the close-up mesh "<name>", "<name>_lod" (a fifth of it) from `near` metres and
+    /// "<name>_far" (about 2,500 triangles) from `far` metres. The shadow is cast by the far mesh
+    /// alone, so the detail costs nothing in the shadow pass. Clones share all of it.
+    static func prop(_ name: String, near: CGFloat, far: CGFloat, hidden: CGFloat = 150) -> SCNNode? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil) else { return nil }
+        var meshes: [String: SCNNode] = [:]
+        scene.rootNode.enumerateHierarchy { node, _ in
+            if node.geometry != nil, let n = node.name { meshes[n] = node }
+        }
+        guard let mesh = meshes[name], let geometry = mesh.geometry else { return nil }
+        let material = modelMaterial(name)
         geometry.materials = [material]
-        if let far = lod?.geometry {
-            far.materials = [material]
-            geometry.levelsOfDetail = [SCNLevelOfDetail(geometry: far, worldSpaceDistance: lodDistance)]
+        var levels: [SCNLevelOfDetail] = []
+        if let mid = meshes[name + "_lod"]?.geometry {
+            mid.materials = [material]
+            levels.append(SCNLevelOfDetail(geometry: mid, worldSpaceDistance: near))
         }
+        let farGeometry = meshes[name + "_far"]?.geometry
+        if let low = farGeometry {
+            low.materials = [material]
+            levels.append(SCNLevelOfDetail(geometry: low, worldSpaceDistance: far))
+        }
+        // Past `hidden` metres (deep in the fog, mostly behind buildings) the prop is not drawn
+        levels.append(SCNLevelOfDetail(geometry: nil, worldSpaceDistance: hidden))
+        geometry.levelsOfDetail = levels
+        let transform = mesh.simdConvertTransform(matrix_identity_float4x4, to: scene.rootNode)
         let node = SCNNode(geometry: geometry)
-        node.simdTransform = mesh.simdConvertTransform(matrix_identity_float4x4, to: scene.rootNode)
-        node.castsShadow = true
+        node.simdTransform = transform
         let holder = SCNNode()
         holder.addChildNode(node)
+        node.categoryBitMask = World3D.propCategory
+        if let low = farGeometry?.copy() as? SCNGeometry {
+            low.materials = [shadowCaster]
+            // The shadow only matters within the shadow distance
+            low.levelsOfDetail = [SCNLevelOfDetail(geometry: nil, worldSpaceDistance: 70)]
+            let shadow = SCNNode(geometry: low)
+            shadow.simdTransform = transform
+            shadow.castsShadow = true
+            // Drawn after the scene's solids, so its depth never hides the visible mesh
+            shadow.renderingOrder = 50
+            shadow.categoryBitMask = World3D.propCategory
+            node.castsShadow = false
+            holder.addChildNode(shadow)
+        } else {
+            node.castsShadow = true
+        }
         return holder
     }
 
     /// The four street trees in their kerbed planters: green, light green, yellow, blossom.
     static let trees: [SCNNode] = ["tree_green", "tree_light", "tree_yellow", "tree_pink"]
-        .compactMap { prop($0, lodDistance: 38) }
+        .compactMap { prop($0, near: 16, far: 42) }
 
     private static var cache: [String: SCNMaterial] = [:]
 
