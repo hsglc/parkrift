@@ -215,6 +215,11 @@ extension Array {
 /// The model is the Meshy police car (TrafficVehicles); its light bar flashes and its wheels turn.
 final class PoliceChase {
     enum Outcome { case none, caught, escaped }
+    /// Chasing; pulling over across the front of a caught car; driving away after letting it go.
+    enum Mode { case chasing, pullingOver, leaving }
+    private(set) var mode = Mode.chasing
+    private var stopPose: (position: CGPoint, heading: CGFloat) = (.zero, 0)
+    private var leaveClock: CGFloat = 0
 
     let node: SCNNode
     private let map: CityMap
@@ -285,9 +290,80 @@ final class PoliceChase {
         for wheel in wheels { wheel.eulerAngles.x = Float(spin) }
     }
 
-    /// `trail`: the player's recent positions, oldest first.
-    func step(_ dt: CGFloat, player: CGPoint, playerSpeed: CGFloat, trail: [CGPoint]) -> Outcome {
+    /// Caught: the cruiser swings in diagonally across the front of the car (on the side it
+    /// came from), nose in, boxing it in.
+    func pullOver(player: CGPoint, heading playerHeading: CGFloat) {
+        mode = .pullingOver
+        let side: CGFloat = (cos(playerHeading) * (position.y - player.y) - sin(playerHeading) * (position.x - player.x)) >= 0 ? 1 : -1
+        let ahead = CGPoint(x: player.x + cos(playerHeading) * 50 - sin(playerHeading) * 16 * side,
+                            y: player.y + sin(playerHeading) * 50 + cos(playerHeading) * 16 * side)
+        stopPose = (ahead, playerHeading + CGFloat.pi + side * 0.85)
+        waypoints = []
+    }
+
+    /// Let go: the cruiser backs off and drives away down the streets, then is gone.
+    func driveOff(from player: CGPoint) {
+        mode = .leaving
+        leaveClock = 0
+        // The farthest intersection makes a believable "back on patrol" route
+        var far = position
+        for x in map.xs { for y in map.ys where CGPoint(x: x, y: y).distance(to: player) > far.distance(to: player) { far = CGPoint(x: x, y: y) } }
+        waypoints = Array(map.route(from: position, to: far).dropFirst())
+        speed = 40
+    }
+
+    /// The pull-over and drive-off moves (no catching or escaping in these).
+    private func stepScripted(_ dt: CGFloat, player: CGPoint) {
+        clock += dt
+        distance = position.distance(to: player)
+        flashLights()
+        let before = position
+        switch mode {
+        case .pullingOver:
+            let d = position.distance(to: stopPose.position)
+            let wanted = min(220, d * 3)
+            speed += (wanted - speed) * min(1, dt * 6)
+            let move = min(d, speed * dt)
+            if d > 0.5 {
+                let toward = atan2(stopPose.position.y - position.y, stopPose.position.x - position.x)
+                position = CGPoint(x: position.x + cos(toward) * move, y: position.y + sin(toward) * move)
+                // Faces where it goes while far, then turns into its stopping angle
+                let face = d > 25 ? toward : stopPose.heading
+                heading += CGFloat.angleDelta(heading, face) * min(1, dt * 7)
+            } else {
+                heading += CGFloat.angleDelta(heading, stopPose.heading) * min(1, dt * 7)
+            }
+        case .leaving:
+            leaveClock += dt
+            speed += (min(190, 60 + leaveClock * 70) - speed) * min(1, dt * 2)
+            var move = speed * dt
+            while move > 0, let next = waypoints.first {
+                let d = position.distance(to: next)
+                if d <= move { position = next; waypoints.removeFirst(); move -= d; continue }
+                let desired = atan2(next.y - position.y, next.x - position.x)
+                heading += CGFloat.angleDelta(heading, desired) * min(1, dt * 6)
+                position = CGPoint(x: position.x + (next.x - position.x) / d * move, y: position.y + (next.y - position.y) / d * move)
+                move = 0
+            }
+            if leaveClock > 4 || waypoints.isEmpty { finished = true }
+        case .chasing:
+            break
+        }
+        node.position = World3D.vec(position)
+        node.eulerAngles.y = Float(heading)
+        spin += position.distance(to: before) / 10 / 0.32
+        for wheel in wheels { wheel.eulerAngles.x = Float(spin) }
+    }
+
+    /// `trail`: the player's recent positions, oldest first; `playerVelocity` lets the cruiser
+    /// aim where the car is going rather than where it is (it cuts corners and comes alongside
+    /// instead of trailing straight behind).
+    func step(_ dt: CGFloat, player: CGPoint, playerSpeed: CGFloat, playerVelocity: CGVector = .zero, trail: [CGPoint]) -> Outcome {
         guard !finished else { return .none }
+        if mode != .chasing {
+            stepScripted(dt, player: player)
+            return .none
+        }
         clock += dt
         distance = position.distance(to: player)
         flashLights()
@@ -301,12 +377,20 @@ final class PoliceChase {
                 waypoints = Array(map.route(from: position, to: player).dropFirst())
             } else {
                 pursuing = true
-                if let nearest = trail.indices.min(by: { trail[$0].distance(to: position) < trail[$1].distance(to: position) }) {
-                    waypoints = Array(trail[nearest...]) + [player]
+                // Where the car will be by the time we get there (at most a second ahead)
+                let lead = min(1.0, distance / max(speed, 120))
+                let predicted = CGPoint(x: player.x + playerVelocity.dx * lead, y: player.y + playerVelocity.dy * lead)
+                if distance < 140 {
+                    // Close: straight for it, cutting the corner to come alongside
+                    waypoints = [predicted]
+                } else if let nearest = trail.indices.min(by: { trail[$0].distance(to: position) < trail[$1].distance(to: position) }) {
+                    waypoints = Array(trail[nearest...]) + [predicted]
                 } else {
-                    waypoints = [player]
+                    waypoints = [predicted]
                 }
             }
+            // Re-plan more often in the final approach
+            if distance < 140 { planClock = 0.15 }
         }
         let target: CGFloat = clock < 1.0 ? 120 : (pursuing ? max(playerSpeed * 1.08, 175) : 210)
         speed += (target - speed) * min(1, dt * 1.5)

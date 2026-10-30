@@ -129,7 +129,22 @@ enum CityDecor {
     /// The town round the parking lot (100 x 50 m, level units 0...1000 x 0...500): a paved
     /// pavement with trees and benches, then a ring of shop and office buildings with gaps for
     /// side streets, and the skyline beyond. Built once; every parking level shares it.
-    static let lotSurroundings: SCNNode = {
+    static let lotSurroundings: SCNNode = surroundings(skipping: [])
+
+    private static var surroundingsCache: [String: SCNNode] = [:]
+
+    /// The town round the parking lot without the rows on some sides ("n", "s", "w", "e"): a
+    /// venue puts its own buildings there (the mall, the warehouses) or water (the harbour).
+    static func lotSurroundings(skipping sides: Set<String>) -> SCNNode {
+        let key = sides.sorted().joined()
+        if key.isEmpty { return lotSurroundings }
+        if let cached = surroundingsCache[key] { return cached }
+        let node = surroundings(skipping: sides)
+        surroundingsCache[key] = node
+        return node
+    }
+
+    private static func surroundings(skipping sides: Set<String>) -> SCNNode {
         let root = SCNNode()
         let solid = MeshBuilder()
         let ground = MeshBuilder()
@@ -152,15 +167,15 @@ enum CityDecor {
         }
         let depth: CGFloat = 150
         let gap: CGFloat = 110   // pavement + a lane from the lot's edge to the buildings
-        row(from: -200, to: 1200, fixed: 500 + gap + depth / 2, alongX: true, depth: depth)
-        row(from: -200, to: 1200, fixed: -gap - depth / 2, alongX: true, depth: depth)
-        row(from: -40, to: 540, fixed: -gap - depth / 2, alongX: false, depth: depth)
-        row(from: -40, to: 540, fixed: 1000 + gap + depth / 2, alongX: false, depth: depth)
+        if !sides.contains("n") { row(from: -200, to: 1200, fixed: 500 + gap + depth / 2, alongX: true, depth: depth) }
+        if !sides.contains("s") { row(from: -200, to: 1200, fixed: -gap - depth / 2, alongX: true, depth: depth) }
+        if !sides.contains("w") { row(from: -40, to: 540, fixed: -gap - depth / 2, alongX: false, depth: depth) }
+        if !sides.contains("e") { row(from: -40, to: 540, fixed: 1000 + gap + depth / 2, alongX: false, depth: depth) }
         // Trees in front of the buildings, well back from the lot (the chase camera swings out
         // past the lot's edge and a tree close by filled the screen)
         var i = 0
         for x in stride(from: CGFloat(60), to: 1000, by: 110) {
-            for y in [CGFloat(-96), 596] {
+            for y in [CGFloat(-96), 596] where !sides.contains(y < 0 ? "s" : "n") {
                 tree(solid, ground, at: v(CGPoint(x: x + CGFloat(rng.range(-12, 12)), y: y)), size: Float(rng.range(0.9, 1.15)), variant: i)
                 i += 1
             }
@@ -176,7 +191,7 @@ enum CityDecor {
             }
         }
         return root
-    }()
+    }
 
     // MARK: Helpers
 

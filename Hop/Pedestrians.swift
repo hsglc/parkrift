@@ -178,6 +178,9 @@ final class PedestrianSystem {
             p.state = .walking   // walks to the curb first, then waits
             return
         }
+        // Now and then someone does not bother with the crossing: they wait for a gap and run
+        // across mid-block (the traffic stops for them like for anyone on the road)
+        if rng.unit() < 0.12, jaywalk(&p) { return }
         // Keep going around the block, sometimes stopping at a shop window on the way
         p.corner = (p.corner + p.direction + 4) % 4
         let target = cornerPoint(block: p.block, corner: p.corner, direction: p.direction)
@@ -188,6 +191,45 @@ final class PedestrianSystem {
         } else {
             p.waypoints = [target]
         }
+    }
+
+    /// Across the street from the middle of the side it is about to walk: to the curb, over the
+    /// road, onto the block opposite. False when there is no block there (the map's edge).
+    private func jaywalk(_ p: inout Person) -> Bool {
+        let next = (p.corner + p.direction + 4) % 4
+        let a = cornerPoint(block: p.block, corner: p.corner, direction: p.direction)
+        let b = cornerPoint(block: p.block, corner: next, direction: p.direction)
+        let pair = Set([p.corner, next])
+        let normal: CGVector
+        switch pair {
+        case [0, 1]: normal = CGVector(dx: 0, dy: -1)
+        case [1, 2]: normal = CGVector(dx: 1, dy: 0)
+        case [2, 3]: normal = CGVector(dx: 0, dy: 1)
+        default: normal = CGVector(dx: -1, dy: 0)
+        }
+        let (bi, bj) = blockCell(p.block)
+        guard let other = blockIndex(bi + Int(normal.dx), bj + Int(normal.dy)) else { return false }
+        let t = rng.range(0.3, 0.7)
+        let start = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+        let rect = blocks[p.block]
+        // Curb: the block's own edge on that side; the road is 2 x roadHalf wide
+        let edge: CGFloat = normal.dx != 0 ? (normal.dx > 0 ? rect.maxX : rect.minX) : (normal.dy > 0 ? rect.maxY : rect.minY)
+        let curb = normal.dx != 0 ? CGPoint(x: edge - normal.dx * 4, y: start.y) : CGPoint(x: start.x, y: edge - normal.dy * 4)
+        let road = CityMap.roadHalf * 2
+        let far = CGPoint(x: curb.x + normal.dx * (road + 8), y: curb.y + normal.dy * (road + 8))
+        let land = CGPoint(x: far.x + normal.dx * inset(p.direction), y: far.y + normal.dy * inset(p.direction))
+        p.waypoints = [start, curb, far, land]
+        // On the other block: carry on round it from the corner nearest to where it lands
+        var nearest = 0
+        var best = CGFloat.greatestFiniteMagnitude
+        for k in 0..<4 {
+            let d = cornerPoint(block: other, corner: k, direction: p.direction).distance(to: land)
+            if d < best { best = d; nearest = k }
+        }
+        p.afterCrossing = (other, nearest)
+        p.crossingNode = -2
+        p.state = .walking
+        return true
     }
 
     /// Walks on to the next corner of the current block.
@@ -310,6 +352,16 @@ final class PedestrianSystem {
                 p.timer -= dt
                 if p.timer <= 0 { p.state = .walking }
                 continue
+            case .waiting where p.crossingNode == -2:
+                // No light to wait for: goes when no car is coming fast, at a run
+                let carComing = threats.contains { threat in
+                    hypot(threat.velocity.dx, threat.velocity.dy) > 30 && threat.position.distance(to: p.position) < 200
+                }
+                if !carComing {
+                    p.state = .crossing
+                    p.hurry = 1.6
+                }
+                continue
             case .waiting:
                 // Wait for red for the cars on this street, with enough of it left to get across
                 let needed = 200 / PedestrianSystem.crossSpeed * 0.85
@@ -350,6 +402,10 @@ final class PedestrianSystem {
                     p.timer = rng.range(1.5, 4)
                     p.state = .browsing
                     p.heading += CGFloat(p.direction) * CGFloat.pi / 2
+                } else if p.crossingNode == -2 && p.state == .walking && p.waypoints.count == 2 {
+                    // Jaywalker at the curb: looks for a gap in the traffic
+                    p.state = .waiting
+                    if let next = p.waypoints.first { p.heading = atan2(next.y - p.position.y, next.x - p.position.x) }
                 } else if p.crossingNode >= 0 && p.state == .walking && p.waypoints.count == 2 {
                     // At the curb: face the street and wait for the light
                     p.state = .waiting

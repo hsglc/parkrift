@@ -55,7 +55,7 @@ jobs:
           mkdir -p shots
           rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
           DATA=""
-          for RUN in "daily" "fail" "card" "-parklevel 2" "streets" "city"; do
+          for RUN in "daily" "venues" "fail" "card" "-parklevel 2" "streets" "city"; do
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
             if [ "$RUN" = "daily" ]; then
@@ -64,6 +64,29 @@ jobs:
               xcrun simctl io "$UDID" screenshot shots/splash.png || true
               sleep 7.6
               xcrun simctl io "$UDID" screenshot shots/daily.png || true
+              continue
+            elif [ "$RUN" = "venues" ]; then
+              # One level in each place: rooftop, mall, harbour, yard
+              for L in 3 6 9 12; do
+                xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+                sleep 2
+                DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
+                rm -f "$DATA/Documents/shot-start.png"
+                for TRY in 1 2; do
+                  xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -playpark -parklevel $L -AppleLanguages "(tr)" > /dev/null 2>&1
+                  for i in $(seq 1 30); do
+                    [ -f "$DATA/Documents/shot-start.png" ] && break
+                    sleep 2
+                  done
+                  [ -f "$DATA/Documents/shot-start.png" ] && break
+                  # Still on the menu (a slow first launch): once more
+                  xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+                  sleep 2
+                done
+                sleep 3
+                xcrun simctl io "$UDID" screenshot "shots/venue-$L.png" || true
+                cp "$DATA/Documents/shot-start.png" "shots/venue-$L-3d.png" 2>/dev/null || true
+              done
               continue
             elif [ "$RUN" = "fail" ]; then
               # A park level failed on purpose: the result card in its failed state
@@ -102,6 +125,14 @@ jobs:
               xcrun simctl io "$UDID" screenshot shots/streets-1.png || true
               sleep 4
               xcrun simctl io "$UDID" screenshot shots/streets-2.png || true
+              # Then the police catches the standing car: the busted scene
+              for i in $(seq 1 20); do
+                [ -f "$DATA/Documents/shot-busted.png" ] && break
+                sleep 2
+              done
+              xcrun simctl io "$UDID" screenshot shots/busted.png || true
+              sleep 2
+              xcrun simctl io "$UDID" screenshot shots/busted-2.png || true
               # What every thread is doing (shows a hang, if there is one)
               PID=$(pgrep -x Hop | head -1); [ -n "$PID" ] && sample "$PID" 2 -file shots/sample-streets.txt > /dev/null 2>&1 || true
             elif [ "$RUN" = "city" ]; then
