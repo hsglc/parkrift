@@ -36,9 +36,14 @@ enum Venue: Int, CaseIterable {
     var lotSurface: String? {
         switch self {
         case .town, .mall: return nil
-        case .rooftop: return "v_deck"
+        case .rooftop: return "v_wall"
         case .harbor, .yard: return "v_yard"
         }
+    }
+
+    /// Darkens a light surface so the painted bays still stand out on it
+    var lotTint: UIColor? {
+        self == .rooftop ? UIColor(white: 0.72, alpha: 1) : nil
     }
 }
 
@@ -144,7 +149,7 @@ enum VenueDecor {
     /// towers at its corners, lamp posts, and the town (dropped by `townDrop`) all round below.
     private static func rooftop(_ root: SCNNode) {
         let mesh = MeshBuilder()
-        let deck = surface("v_deck")
+        let deck = surface("v_wall", tint: UIColor(white: 0.72, alpha: 1))
         let wall = surface("v_wall")
         let halfX: Float = 70, halfZ: Float = 44, thick: Float = 1.2
         // The slab (its top a hair under the lot's surface) and its edge

@@ -1242,7 +1242,7 @@ final class World3D {
         if let set = next.lotSurface {
             if let made = venueLots[next] {
                 lot = made
-            } else if let made = VenueDecor.surface(set).copy() as? SCNMaterial {
+            } else if let made = VenueDecor.surface(set, tint: next.lotTint).copy() as? SCNMaterial {
                 for property in [made.diffuse, made.normal, made.roughness] {
                     property.contentsTransform = SCNMatrix4MakeScale(20, -10, 1)
                 }
@@ -1405,12 +1405,12 @@ final class World3D {
     func bustedShot(position: CGPoint, heading: CGFloat, t: CGFloat) {
         let p = World3D.vec(position)
         let car = SIMD3<Float>(p.x, 0, p.z)
-        // From high behind one side, swinging slowly round towards the front (where the cruiser
-        // stands); pulled in when a building is in the way, as the chase camera is
-        let angle = Float(heading) + .pi - 0.6 + Float(t) * 0.22
-        let distance: Float = 10.5 - min(1.5, Float(t) * 0.45)
-        let look = car + SIMD3<Float>(0, 0.9, 0)
-        var eye = car + SIMD3<Float>(cos(angle) * distance, 6.2 - Float(t) * 0.5, -sin(angle) * distance)
+        // High up straight behind the car (along the road, clear of the trees and fronts at the
+        // kerbs), looking steeply down on it and the cruiser, with a slow sway and push in
+        let angle = Float(heading) + .pi + 0.3 * sin(Float(t) * 0.6)
+        let distance: Float = 8.5 - min(1.5, Float(t) * 0.45)
+        let look = car + SIMD3<Float>(0, 0.6, 0)
+        var eye = car + SIMD3<Float>(cos(angle) * distance, 10.5 - min(1.5, Float(t) * 0.4), -sin(angle) * distance)
         let from = car + SIMD3<Float>(0, 1.4, 0)
         if let hit = hitDistance(from: from, to: eye, margin: 0.8) {
             let length = simd_length(eye - from)
