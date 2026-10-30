@@ -611,6 +611,10 @@ struct Bot {
     var offset: CGFloat = 0
     var passing = false
     var honkedAt: CGFloat = -10
+    /// The bot it is waiting for this step (-1: none, or not a bot).
+    var blocker = -1
+    /// Rolling back a little to untangle from cars that wait for each other.
+    var backing: CGFloat = 0
 
     var box: OBB { OBB(center: position, size: Levels.carSize, angle: heading) }
 }
@@ -618,7 +622,8 @@ struct Bot {
 /// Lane-following traffic with drivers of their own: each keeps a following distance to the car
 /// ahead (slowing smoothly rather than stopping dead), slows down before a turn, stops at red
 /// lights and for people on the road, honks at a car blocking its lane and, after a while, pulls
-/// out round it when the oncoming lane is clear.
+/// out round it when the oncoming lane is clear. Where two paths cross, whoever gets there later
+/// waits short of the crossing, and cars are never drawn inside each other.
 final class Traffic {
     let map: CityMap
     private(set) var bots: [Bot] = []
@@ -630,6 +635,16 @@ final class Traffic {
     private let cornerSpeed: CGFloat = 40
     /// Where bots honked this step (the scene plays the horns it can hear).
     private(set) var honks: [CGPoint] = []
+    /// For the traffic check: cars found inside each other (and pushed apart), cars let through
+    /// others out of sight, and untangling roll-backs.
+    private(set) var overlaps = 0
+    private(set) var ghosts = 0
+    private(set) var backoffs = 0
+    /// Out of the players' sight (past the fog): only there may a long-stuck car slip through.
+    private let sight: CGFloat = 2400
+    /// The traffic check only: the old drivers (no giving way, slipping through after 2.5 s,
+    /// overlaps counted but left as they are), to compare with.
+    var legacy = false
 
     init(map: CityMap, starts: [BotStart], seed: UInt64) {
         self.map = map
@@ -695,6 +710,27 @@ final class Traffic {
                 bots[index] = bot
                 continue
             }
+            if bot.backing > 0 {
+                // Rolls back slowly to make room, unless a car is right behind it
+                bot.backing -= dt
+                bot.speed = 0
+                bot.braking = true
+                bot.blocker = -1
+                let ch = cos(bot.heading), sh = sin(bot.heading)
+                var room = true
+                for other in bots.indices where other != index {
+                    let vx = bots[other].position.x - bot.position.x, vy = bots[other].position.y - bot.position.y
+                    guard abs(vx) < 80 && abs(vy) < 80 else { continue }
+                    let forward = vx * ch + vy * sh
+                    if forward < 0 && forward > -60 && abs(-vx * sh + vy * ch) < 26 { room = false; break }
+                }
+                if room {
+                    bot.position.x -= ch * 24 * dt
+                    bot.position.y -= sh * 24 * dt
+                }
+                bots[index] = bot
+                continue
+            }
             if bot.waypoints.isEmpty {
                 planNext(&bot)
                 bot.from = bot.to
@@ -746,10 +782,12 @@ final class Traffic {
             var gap = CGFloat.greatestFiniteMagnitude
             var leaderSpeed: CGFloat = 0
             var blockedByPlayer = false
+            var blocker = -1
+            let ch = cos(bot.heading), sh = sin(bot.heading)
             func inPath(_ point: CGPoint) -> CGFloat? {
                 let vx = point.x - bot.position.x, vy = point.y - bot.position.y
-                let forward = vx * cos(bot.heading) + vy * sin(bot.heading)
-                let lateral = abs(-vx * sin(bot.heading) + vy * cos(bot.heading))
+                let forward = vx * ch + vy * sh
+                let lateral = abs(-vx * sh + vy * ch)
                 return forward > 0 && forward < 200 && lateral < 24 ? forward : nil
             }
             for (k, point) in blockers.enumerated() {
@@ -757,15 +795,60 @@ final class Traffic {
                     gap = f - 46
                     leaderSpeed = 0
                     blockedByPlayer = k < playerCars
+                    blocker = -1
                 }
             }
             if bot.ignoreBots <= 0 {
                 for other in bots.indices where other != index {
-                    if let f = inPath(bots[other].position), f - 46 < gap {
-                        gap = f - 46
-                        // Only the part of its speed along our way
-                        leaderSpeed = max(0, bots[other].speed * cos(CGFloat.angleDelta(bot.heading, bots[other].heading)))
+                    let o = bots[other]
+                    let vx = o.position.x - bot.position.x, vy = o.position.y - bot.position.y
+                    guard abs(vx) < 220 && abs(vy) < 220 else { continue }
+                    let forward = vx * ch + vy * sh
+                    let lateral = -vx * sh + vy * ch
+                    let co = cos(o.heading), so = sin(o.heading)
+                    // The room the other car takes across and along our way, as it is turned to us
+                    // (a car standing across the lane is much wider to us than one in it)
+                    let c = abs(co * ch + so * sh), s = abs(so * ch - co * sh)
+                    let across = 11 + 11 * c + 22 * s + 3
+                    let along = 22 + 22 * c + 11 * s + 2
+                    if forward > 0 && forward < 200 && abs(lateral) < across {
+                        if forward - along < gap {
+                            gap = forward - along
+                            // Only the part of its speed along our way
+                            leaderSpeed = max(0, o.speed * (co * ch + so * sh))
+                            blockedByPlayer = false
+                            blocker = other
+                        }
+                        continue
+                    }
+                    // Paths that cross ahead (a junction, a turn across the other lane): whoever
+                    // gets to the crossing later waits short of it, like a driver giving way
+                    let cross = ch * so - sh * co
+                    guard !legacy, abs(cross) > 0.35, o.stunned <= 0 else { continue }
+                    let mine = (vx * so - vy * co) / cross       // our way to the crossing point
+                    let theirs = (vx * sh - vy * ch) / cross     // and theirs
+                    let room: CGFloat = 36
+                    guard mine > -room, mine < 170, theirs > -room, theirs < 170 else { continue }
+                    let weAreIn = abs(mine) < room, theyAreIn = abs(theirs) < room
+                    let giveWay: Bool
+                    if weAreIn && theyAreIn {
+                        giveWay = other < index
+                    } else if weAreIn {
+                        giveWay = false
+                    } else if theyAreIn {
+                        giveWay = true
+                    } else if o.speed < 3 {
+                        giveWay = false                          // it waits (a light, its own turn)
+                    } else {
+                        let tMine = (mine - room) / max(bot.speed, 20)
+                        let tTheirs = (theirs - room) / max(o.speed, 20)
+                        giveWay = tTheirs < 2.5 && (tTheirs < tMine - 0.1 || (abs(tTheirs - tMine) <= 0.1 && other < index))
+                    }
+                    if giveWay && mine - room < gap {
+                        gap = max(0, mine - room)
+                        leaderSpeed = 0
                         blockedByPlayer = false
+                        blocker = other
                     }
                 }
             }
@@ -773,7 +856,10 @@ final class Traffic {
                 gap = max(0, line)
                 leaderSpeed = 0
                 blockedByPlayer = false
+                blocker = -1
             }
+            bot.blocker = blocker
+            bots[index].blocker = blocker
 
             // Intelligent-driver following: free road acceleration, braking to keep the gap
             let aMax: CGFloat = 95, comfortable: CGFloat = 210
@@ -797,9 +883,23 @@ final class Traffic {
                     bot.honkedAt = clock
                     honks.append(bot.position)
                 }
-                if !blockedByPlayer && bot.waiting > 2.5 {
+                // Cars waiting for each other in a ring (nose to nose in a junction): the first of
+                // them rolls back a little to make room. Never through each other where a player
+                // could see it; far out of sight a long-stuck car may slip through
+                if legacy && !blockedByPlayer && bot.waiting > 2.5 {
                     bot.ignoreBots = 1.6
                     bot.waiting = 0
+                    ghosts += 1
+                }
+                if !legacy && !blockedByPlayer && blocker >= 0 && bot.waiting > 2.5, let first = waitRing(from: index), first == index {
+                    bot.backing = 1.1
+                    bot.waiting = 0
+                    backoffs += 1
+                }
+                if !legacy && !blockedByPlayer && bot.waiting > 8 && outOfSight(bot.position, players: blockers.prefix(playerCars)) {
+                    bot.ignoreBots = 1.6
+                    bot.waiting = 0
+                    ghosts += 1
                 }
                 if blockedByPlayer && bot.waiting > 2.5 && !bot.passing && oncomingClear(bot) {
                     bot.passing = true
@@ -826,6 +926,123 @@ final class Traffic {
             bot.position.y += sin(bot.heading) * bot.speed * dt
             bots[index] = bot
         }
+        separate(players: blockers.prefix(playerCars))
+    }
+
+    /// The lowest-numbered car of a ring of cars each waiting for the next, if `start` is in one.
+    private func waitRing(from start: Int) -> Int? {
+        var lowest = start
+        var next = bots[start].blocker
+        var hops = 0
+        while next >= 0 && hops < 8 {
+            if next == start { return lowest }
+            lowest = min(lowest, next)
+            next = bots[next].blocker
+            hops += 1
+        }
+        return nil
+    }
+
+    private func outOfSight(_ point: CGPoint, players: ArraySlice<CGPoint>) -> Bool {
+        players.allSatisfy { $0.distance(to: point) > sight }
+    }
+
+    /// Cars must never stand inside each other: any that overlap (a knocked car sliding into
+    /// another, a squeeze in a junction) are pushed apart, and the one that drove in stops.
+    private func separate(players: ArraySlice<CGPoint>) {
+        let count = bots.count
+        guard count > 1 else { return }
+        for i in 0..<(count - 1) {
+            for j in (i + 1)..<count {
+                let dx = bots[j].position.x - bots[i].position.x
+                let dy = bots[j].position.y - bots[i].position.y
+                guard abs(dx) < 50 && abs(dy) < 50 else { continue }
+                // A car let through out of sight is not pushed (no one can see it)
+                if (bots[i].ignoreBots > 0 || bots[j].ignoreBots > 0) && outOfSight(bots[i].position, players: players) { continue }
+                guard let push = Traffic.penetration(bots[i].box, bots[j].box) else { continue }
+                overlaps += 1
+                if legacy { continue }
+                let movingI = bots[i].speed > 2 || bots[i].stunned > 0
+                let movingJ = bots[j].speed > 2 || bots[j].stunned > 0
+                let shareI: CGFloat = movingI == movingJ ? 0.5 : (movingI ? 1 : 0)
+                let shareJ = 1 - shareI
+                bots[i].position.x -= push.dx * shareI
+                bots[i].position.y -= push.dy * shareI
+                bots[j].position.x += push.dx * shareJ
+                bots[j].position.y += push.dy * shareJ
+                // The one heading into the other stops; a sliding one loses its slide into it
+                if cos(bots[i].heading) * push.dx + sin(bots[i].heading) * push.dy > 0 { bots[i].speed = 0 }
+                if cos(bots[j].heading) * push.dx + sin(bots[j].heading) * push.dy < 0 { bots[j].speed = 0 }
+                for (k, sign) in [(i, CGFloat(1)), (j, CGFloat(-1))] where bots[k].stunned > 0 {
+                    let length = max(hypot(push.dx, push.dy), 0.001)
+                    let nx = push.dx / length * sign, ny = push.dy / length * sign
+                    let into = bots[k].shove.dx * nx + bots[k].shove.dy * ny
+                    if into > 0 {
+                        bots[k].shove.dx -= nx * into
+                        bots[k].shove.dy -= ny * into
+                    }
+                }
+            }
+        }
+    }
+
+    /// How far `b` must move (along the returned vector, `a` the other way) to stop overlapping `a`.
+    static func penetration(_ a: OBB, _ b: OBB) -> CGVector? {
+        let d = CGVector(dx: b.center.x - a.center.x, dy: b.center.y - a.center.y)
+        var best = CGFloat.greatestFiniteMagnitude
+        var bestAxis = CGVector.zero
+        for axis in [a.axisU, a.axisV, b.axisU, b.axisV] {
+            func reach(_ o: OBB) -> CGFloat {
+                let u = o.axisU, v = o.axisV
+                return o.halfSize.width * abs(u.dx * axis.dx + u.dy * axis.dy) + o.halfSize.height * abs(v.dx * axis.dx + v.dy * axis.dy)
+            }
+            let distance = d.dx * axis.dx + d.dy * axis.dy
+            let overlap = reach(a) + reach(b) - abs(distance)
+            if overlap <= 0 { return nil }
+            if overlap < best {
+                best = overlap
+                bestAxis = distance < 0 ? CGVector(dx: -axis.dx, dy: -axis.dy) : axis
+            }
+        }
+        return CGVector(dx: bestAxis.dx * best, dy: bestAxis.dy * best)
+    }
+
+    #if BENCHMARK
+    /// The traffic check: three minutes of each city's traffic around a standing player, old
+    /// drivers against new: cars inside each other, cars slipping through, how much stands still.
+    static func check() -> [String] {
+        var lines: [String] = []
+        for (round, race) in [(0, true), (1, false), (2, true)] {
+            let level = Levels.city(round: round, race: race)
+            guard let map = level.city else { continue }
+            let player = level.starts.first?.position ?? .zero
+            for legacy in [true, false] {
+                let traffic = Traffic(map: map, starts: level.bots, seed: UInt64(round * 31 + 7))
+                traffic.legacy = legacy
+                var stopped: CGFloat = 0
+                var overlapFrames = 0
+                let steps = 60 * 180
+                let started = Date()
+                for _ in 0..<steps {
+                    let before = traffic.overlaps
+                    traffic.step(1.0 / 60, blockers: [player], playerCars: 1)
+                    if traffic.overlaps > before { overlapFrames += 1 }
+                    stopped += traffic.stoppedShare
+                }
+                let ms = Date().timeIntervalSince(started) * 1000 / Double(steps)
+                lines.append(String(format: "PPTRAFFIC %@ r%d %@ bots=%d overlaps=%d overlapFrames=%d slips=%d backoffs=%d stopped=%.0f%% step=%.3fms",
+                                    race ? "race" : "city", round, legacy ? "old" : "new", traffic.bots.count, traffic.overlaps,
+                                    overlapFrames, traffic.ghosts, traffic.backoffs, Double(stopped / CGFloat(steps) * 100), ms))
+            }
+        }
+        return lines
+    }
+    #endif
+
+    /// Fraction of cars standing still (for the traffic check).
+    var stoppedShare: CGFloat {
+        guard !bots.isEmpty else { return 0 }
+        return CGFloat(bots.filter { $0.speed < 2 }.count) / CGFloat(bots.count)
     }
 
     /// Nothing coming the other way in the next 25 m of the oncoming lane.

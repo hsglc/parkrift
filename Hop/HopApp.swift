@@ -845,6 +845,20 @@ struct RootView: View {
             #endif
             // Store screenshots (simulator, taken from outside with simctl): stay on a screen
             let args = ProcessInfo.processInfo.arguments
+            #if BENCHMARK
+            if args.contains("-traffictest") {
+                // The traffic check: written where the check workflow picks it up
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let report = Traffic.check().joined(separator: "\n")
+                    print(report)
+                    if let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                        try? report.write(to: folder.appendingPathComponent("traffic.txt"), atomically: true, encoding: .utf8)
+                    }
+                }
+                AudioManager.shared.isMuted = true
+                return
+            }
+            #endif
             if PerfSettings.benchmark && (args.contains("-staymenu") || args.contains("-staydaily")) {
                 AudioManager.shared.isMuted = true
                 return
