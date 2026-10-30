@@ -549,7 +549,7 @@ final class ParkingScene: SKScene {
         // The parked ticket and its stamp are drawn now, not on the frame the car parks
         _ = CarArt.parkTicket(size: CGSize(width: 340, height: 190), stub: 62)
         _ = CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 20)
+                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 17)
 
         let vignette = SKSpriteNode(texture: CarArt.vignette(size: size))
         vignette.size = size
@@ -588,7 +588,7 @@ final class ParkingScene: SKScene {
         load(level: levelIndex)
     }
 
-    private func makeLabel(_ text: String, size fontSize: CGFloat, color: UIColor, font: String = "AvenirNext-Heavy") -> SKLabelNode {
+    private func makeLabel(_ text: String, size fontSize: CGFloat, color: UIColor, font: String = "Barlow-ExtraBold") -> SKLabelNode {
         let label = SKLabelNode(fontNamed: font)
         label.text = text
         label.fontSize = fontSize
@@ -636,7 +636,7 @@ final class ParkingScene: SKScene {
         let center = makeGlass(width: 330, height: 38)
         center.position = CGPoint(x: size.width / 2 + 40, y: top)
         hud.addChild(center)
-        levelLabel = makeLabel("", size: 14, color: .white, font: "AvenirNext-Bold")
+        levelLabel = makeLabel("", size: 14, color: .white, font: "Barlow-Bold")
         levelLabel.horizontalAlignmentMode = .left
         levelLabel.position = CGPoint(x: -150, y: 0)
         center.addChild(levelLabel)
@@ -658,7 +658,7 @@ final class ParkingScene: SKScene {
         hitsLabel.position = CGPoint(x: 12, y: 0)
         bumps.addChild(hitsLabel)
 
-        codeLabel = makeLabel("", size: 11, color: UIColor.white.withAlphaComponent(0.85), font: "AvenirNext-Bold")
+        codeLabel = makeLabel("", size: 11, color: UIColor.white.withAlphaComponent(0.85), font: "Barlow-Bold")
         codeLabel.position = CGPoint(x: size.width - right - 46, y: top - 30)
         hud.addChild(codeLabel)
 
@@ -691,22 +691,28 @@ final class ParkingScene: SKScene {
         navNode.isHidden = true
         hud.addChild(navNode)
 
-        // Start module: one slim glass capsule under the top bar (never over the car): three start
-        // lights, the count, and a hairline that fills over the three seconds. GO turns it green
-        // and it fades away.
+        // Start lights: in the middle of the view while the car waits (nothing to drive round
+        // yet), no box: a big slanted count over three LED bars that light red one by one and all
+        // green on GO, on a soft shade for contrast. GO punches out and the whole thing lifts away
+        // before the car moves.
         countdownNode = SKNode()
         countdownNode.position = countdownHome
         countdownNode.zPosition = 5
-        let capsule = makeGlass(width: 214, height: 50)
-        countdownNode.addChild(capsule)
+        let shade = SKSpriteNode(texture: dotTexture)
+        shade.size = CGSize(width: 360, height: 220)
+        shade.color = .black
+        shade.colorBlendFactor = 1
+        shade.alpha = 0.38
+        shade.position = CGPoint(x: 0, y: -8)
+        shade.zPosition = -2
+        countdownNode.addChild(shade)
         countdownLamps = (0..<3).map { index in
-            let lamp = SKShapeNode(circleOfRadius: 7)
-            lamp.position = CGPoint(x: -76 + CGFloat(index) * 22, y: 2)
-            lamp.fillColor = UIColor(white: 1, alpha: 0.12)
-            lamp.strokeColor = UIColor(white: 1, alpha: 0.22)
-            lamp.lineWidth = 1
+            let lamp = SKShapeNode(rect: CGRect(x: -27, y: -5, width: 54, height: 10), cornerRadius: 5)
+            lamp.position = CGPoint(x: CGFloat(index - 1) * 66, y: -58)
+            lamp.fillColor = UIColor(white: 1, alpha: 0.16)
+            lamp.strokeColor = .clear
             let glow = SKSpriteNode(texture: dotTexture)
-            glow.size = CGSize(width: 34, height: 34)
+            glow.size = CGSize(width: 84, height: 26)
             glow.blendMode = .add
             glow.alpha = 0
             glow.name = "glow"
@@ -715,33 +721,23 @@ final class ParkingScene: SKScene {
             countdownNode.addChild(lamp)
             return lamp
         }
-        let divider = SKSpriteNode(color: UIColor(white: 1, alpha: 0.16), size: CGSize(width: 1, height: 24))
-        divider.position = CGPoint(x: -4, y: 2)
-        countdownNode.addChild(divider)
-        countdownShadow = makeLabel("", size: 30, color: .white, font: "AvenirNextCondensed-Heavy")
-        countdownShadow.position = CGPoint(x: 46, y: 2)
+        countdownShadow = makeLabel("", size: 104, color: .white, font: "BarlowCondensed-BlackItalic")
+        countdownShadow.position = CGPoint(x: 0, y: 8)
         countdownNode.addChild(countdownShadow)
-        countdownLabel = makeLabel("3", size: 30, color: .white, font: "AvenirNextCondensed-Heavy")
-        countdownLabel.position = CGPoint(x: 46, y: 2)
+        countdownLabel = makeLabel("3", size: 104, color: .white, font: "BarlowCondensed-BlackItalic")
+        countdownLabel.position = CGPoint(x: 0, y: 8)
         countdownNode.addChild(countdownLabel)
-        let track = SKSpriteNode(color: UIColor(white: 1, alpha: 0.12), size: CGSize(width: 176, height: 2))
-        track.position = CGPoint(x: 0, y: -18)
-        countdownNode.addChild(track)
-        let fill = SKSpriteNode(color: .white, size: CGSize(width: 176, height: 2))
-        fill.anchorPoint = CGPoint(x: 0, y: 0.5)
-        fill.position = CGPoint(x: -88, y: 0)
-        fill.xScale = 0.001
-        track.addChild(fill)
-        countdownBar = fill
+        // (the old fill bar, kept off screen: the lights show the count now)
+        countdownBar = SKSpriteNode(color: .clear, size: CGSize(width: 1, height: 1))
         hud.addChild(countdownNode)
 
         // Hold module: the same capsule, shown while the car sits in its bay: what to do in two
         // words and a bar that fills to the park
         holdModule = SKNode()
-        holdModule.position = countdownHome
+        holdModule.position = holdHome
         holdModule.zPosition = 6
         holdModule.addChild(makeGlass(width: 196, height: 46))
-        holdLabel = makeLabel(Strings.hold.uppercased(), size: 13, color: .white, font: "AvenirNext-Heavy")
+        holdLabel = makeLabel(Strings.hold.uppercased(), size: 13, color: .white, font: "Barlow-ExtraBold")
         holdLabel.position = CGPoint(x: 0, y: 6)
         holdModule.addChild(holdLabel)
         let holdTrack = SKSpriteNode(color: UIColor(white: 1, alpha: 0.14), size: CGSize(width: 156, height: 4))
@@ -756,8 +752,10 @@ final class ParkingScene: SKScene {
         hud.addChild(holdModule)
     }
 
-    /// Under the top bar and the rules chip, well above the car.
-    private var countdownHome: CGPoint { CGPoint(x: size.width / 2 + 40, y: size.height - 124) }
+    /// The start lights: in the middle of the view, above the car.
+    private var countdownHome: CGPoint { CGPoint(x: size.width / 2, y: size.height * 0.6) }
+    /// The hold capsule: under the top bar and the rules chip, well above the car.
+    private var holdHome: CGPoint { CGPoint(x: size.width / 2 + 40, y: size.height - 124) }
     private var countdownLamps: [SKShapeNode] = []
     private var holdModule = SKNode()
     private var holdLabel = SKLabelNode()
@@ -969,7 +967,7 @@ final class ParkingScene: SKScene {
             // Draws once with the plate's fonts so the finish moment does not lay out glyphs cold
             // Letters and chips of the finish title are drawn now, so the finish starts without a hitch
             for title in [Strings.youWon.uppercased(), Strings.finishBig, Strings.parkedBig] where finishGlyphs[title] == nil {
-                finishGlyphs[title] = CarArt.titleGlyphs(title, size: 74)
+                finishGlyphs[title] = CarArt.titleGlyphs(title, size: 88)
             }
             _ = CarArt.finishStats([.init(icon: "stopwatch.fill", label: Strings.statTime, value: "0.0", unit: "s")], accent: .white)
             _ = CarArt.finishScrim
@@ -1213,24 +1211,24 @@ final class ParkingScene: SKScene {
             countdownNode.setScale(0.94)
             countdownNode.run(.group([.fadeIn(withDuration: 0.2), .scale(to: 1, duration: 0.2)]))
         }
-        // The old number slides up and out, the new one rises in
+        // The old number shrinks away, the new one slams in from big
         countdownShadow.removeAllActions()
-        countdownShadow.position = CGPoint(x: 46, y: 2)
+        countdownShadow.setScale(1)
         countdownShadow.alpha = countdownShadow.text?.isEmpty == false ? 1 : 0
-        let out = SKAction.group([.moveBy(x: 0, y: 12, duration: 0.16), .fadeOut(withDuration: 0.16)])
+        let out = SKAction.group([.scale(to: 0.6, duration: 0.18), .fadeOut(withDuration: 0.18)])
         out.timingMode = .easeIn
         countdownShadow.run(out)
         countdownLabel.removeAllActions()
-        countdownLabel.position = CGPoint(x: 46, y: -10)
+        countdownLabel.setScale(1.7)
         countdownLabel.alpha = 0
-        let rise = SKAction.group([.move(to: CGPoint(x: 46, y: 2), duration: 0.2), .fadeIn(withDuration: 0.16)])
-        rise.timingMode = .easeOut
-        countdownLabel.run(rise)
+        let slam = SKAction.group([.scale(to: 1, duration: 0.22), .fadeIn(withDuration: 0.12)])
+        slam.timingMode = .easeOut
+        countdownLabel.run(slam)
         // The new light comes on with a soft pulse
         let litIndex = go ? -1 : max(0, 3 - (Int(countdownLabel.text ?? "3") ?? 3))
         for (index, lamp) in countdownLamps.enumerated() where index == litIndex || go {
             lamp.removeAllActions()
-            lamp.setScale(1.3)
+            lamp.setScale(1.25)
             let back = SKAction.scale(to: 1, duration: 0.22)
             back.timingMode = .easeOut
             lamp.run(back)
@@ -1248,10 +1246,10 @@ final class ParkingScene: SKScene {
         }
         if go {
             countdownBar.xScale = 1
-            let pulse = SKAction.sequence([.scale(to: 1.06, duration: 0.1), .scale(to: 1.0, duration: 0.12)])
-            let leave = SKAction.group([.fadeOut(withDuration: 0.35), .moveBy(x: 0, y: 14, duration: 0.35)])
+            let pulse = SKAction.sequence([.scale(to: 1.08, duration: 0.1), .scale(to: 1.0, duration: 0.12)])
+            let leave = SKAction.group([.fadeOut(withDuration: 0.3), .scale(to: 1.25, duration: 0.3)])
             leave.timingMode = .easeIn
-            countdownNode.run(.sequence([pulse, .wait(forDuration: 0.5), leave, .hide()]), withKey: "leave")
+            countdownNode.run(.sequence([pulse, .wait(forDuration: 0.4), leave, .hide()]), withKey: "leave")
         }
     }
 
@@ -1400,17 +1398,16 @@ final class ParkingScene: SKScene {
         let green = UIColor(red: 0.3, green: 1.0, blue: 0.55, alpha: 1)
         countdownColor = go ? green : red
         countdownLabel.fontColor = go ? green : .white
-        countdownLabel.fontSize = go ? 22 : 30
-        countdownBar.color = go ? green : .white
+        countdownLabel.fontSize = go ? 76 : 104
+        countdownShadow.fontSize = countdownLabel.fontSize
         let lit = go ? 3 : max(0, 4 - (Int(text) ?? 3))
         for (index, lamp) in countdownLamps.enumerated() {
             let on = index < lit
-            lamp.fillColor = on ? countdownColor : UIColor(white: 1, alpha: 0.12)
-            lamp.strokeColor = on ? countdownColor : UIColor(white: 1, alpha: 0.22)
+            lamp.fillColor = on ? countdownColor : UIColor(white: 1, alpha: 0.16)
             if let glow = lamp.childNode(withName: "glow") as? SKSpriteNode {
                 glow.color = countdownColor
                 glow.colorBlendFactor = 1
-                glow.alpha = on ? 0.7 : 0
+                glow.alpha = on ? 0.45 : 0
             }
         }
     }
@@ -2265,6 +2262,8 @@ final class ParkingScene: SKScene {
             policeTestDone = true
             phase = .finished
             resultsShown = true
+            controlsLayer.alpha = 0
+            hud.alpha = 0
             model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex, online: onlineMatch) + " · " + level.name,
                                          entries: [ResultEntry(name: Strings.you, slot: 0, time: nil, hits: 15, isMe: true, isWinner: false, score: -1),
                                                    ResultEntry(name: Strings.friend, slot: 1, time: 31.9, hits: 10, isMe: false, isWinner: true, score: 61.9)],
@@ -2312,10 +2311,10 @@ final class ParkingScene: SKScene {
                       UIColor(red: 1, green: 0.55, blue: 0.25, alpha: 1), UIColor(red: 1, green: 0.32, blue: 0.35, alpha: 1),
                       UIColor(red: 0.78, green: 0.45, blue: 1, alpha: 1)]
         let color = colors[min(challenge.tier, colors.count - 1)]
-        let tier = makeLabel(challenge.tierName, size: 12, color: color, font: "AvenirNext-Heavy")
+        let tier = makeLabel(challenge.tierName, size: 12, color: color, font: "Barlow-ExtraBold")
         tier.horizontalAlignmentMode = .left
         let rules = makeLabel(challenge.rules.map { $0.text }.joined(separator: "  ·  "), size: 12,
-                              color: UIColor.white.withAlphaComponent(0.85), font: "AvenirNext-DemiBold")
+                              color: UIColor.white.withAlphaComponent(0.85), font: "Barlow-SemiBold")
         rules.horizontalAlignmentMode = .left
         let gap: CGFloat = rules.text?.isEmpty == false ? 12 : 0
         let width = tier.frame.width + gap + rules.frame.width + 32
@@ -2578,13 +2577,13 @@ final class ParkingScene: SKScene {
         speedBar.strokeColor = UIColor(red: 0.45, green: 0.88, blue: 0.82, alpha: 1)
         speedDial.addChild(speedBar)
 
-        speedLabel = makeLabel("0", size: 30, color: .white, font: "AvenirNext-DemiBold")
+        speedLabel = makeLabel("0", size: 30, color: .white, font: "Barlow-SemiBold")
         speedLabel.position = CGPoint(x: 0, y: 5)
         speedDial.addChild(speedLabel)
-        let unit = makeLabel("km/h", size: 9, color: UIColor.white.withAlphaComponent(0.5), font: "AvenirNext-Medium")
+        let unit = makeLabel("km/h", size: 9, color: UIColor.white.withAlphaComponent(0.5), font: "Barlow-Medium")
         unit.position = CGPoint(x: 0, y: -13)
         speedDial.addChild(unit)
-        dialGear = makeLabel("1", size: 13, color: UIColor(red: 0.45, green: 0.88, blue: 0.82, alpha: 1), font: "AvenirNext-Bold")
+        dialGear = makeLabel("1", size: 13, color: UIColor(red: 0.45, green: 0.88, blue: 0.82, alpha: 1), font: "Barlow-Bold")
         dialGear.position = CGPoint(x: 0, y: -speedRadius + 4)
         speedDial.addChild(dialGear)
     }
@@ -2848,7 +2847,7 @@ final class ParkingScene: SKScene {
             let angle = CGFloat(k) * .pi / 2
             let label = makeLabel(letter, size: letter == "N" ? 10 : 8,
                                   color: letter == "N" ? UIColor(red: 1, green: 0.35, blue: 0.35, alpha: 1) : UIColor.white.withAlphaComponent(0.6),
-                                  font: "AvenirNext-Heavy")
+                                  font: "Barlow-ExtraBold")
             label.position = CGPoint(x: cos(angle) * (radius - 7), y: sin(angle) * (radius - 7))
             label.name = "letter"
             mapCompass.addChild(label)
@@ -2868,7 +2867,7 @@ final class ParkingScene: SKScene {
         pill.lineWidth = 1
         pill.position = CGPoint(x: 0, y: -radius - 10)
         minimap.addChild(pill)
-        mapDistance = makeLabel("", size: 9.5, color: .white, font: "AvenirNext-Heavy")
+        mapDistance = makeLabel("", size: 9.5, color: .white, font: "Barlow-ExtraBold")
         mapDistance.verticalAlignmentMode = .center
         mapDistance.position = pill.position
         minimap.addChild(mapDistance)
@@ -3695,7 +3694,7 @@ final class ParkingScene: SKScene {
         back.lineWidth = 3
         back.name = "back"
         node.addChild(back)
-        let title = makeLabel(Strings.bustedTitle, size: 30, color: .white, font: "AvenirNext-Heavy")
+        let title = makeLabel(Strings.bustedTitle, size: 30, color: .white, font: "Barlow-ExtraBold")
         title.position = CGPoint(x: 0, y: 8)
         node.addChild(title)
         let detail = makeLabel(Strings.bustedPenalty, size: 12, color: UIColor(white: 1, alpha: 0.85))
@@ -3879,15 +3878,15 @@ final class ParkingScene: SKScene {
         let key = "\(title)|\(reason)|\(meters)"
         guard key != policeTextKey else { return }
         policeTextKey = key
-        let kickerFont = UIFont.systemFont(ofSize: 10, weight: .heavy, width: .expanded)
+        let kickerFont = UIFont.ui(10, .heavy)
         policeKicker.attributedText = NSAttributedString(string: Strings.upper(reason), attributes: [
             .font: kickerFont, .foregroundColor: UIColor(white: 1, alpha: 0.72), .kern: 1.6])
         policeTitle.attributedText = NSAttributedString(string: title.replacingOccurrences(of: "!", with: ""), attributes: [
             .font: CarArt.raceFont(25), .foregroundColor: UIColor.white, .kern: 0.4])
         let distance = NSMutableAttributedString(string: "\(meters)", attributes: [
-            .font: UIFont.monospacedDigitSystemFont(ofSize: 22, weight: .heavy), .foregroundColor: UIColor.white])
+            .font: UIFont.ui(22, .heavy).tabular, .foregroundColor: UIColor.white])
         distance.append(NSAttributedString(string: " M", attributes: [
-            .font: UIFont.systemFont(ofSize: 10, weight: .heavy, width: .expanded), .foregroundColor: UIColor(white: 1, alpha: 0.6)]))
+            .font: UIFont.ui(10, .heavy), .foregroundColor: UIColor(white: 1, alpha: 0.6)]))
         policeDistance.attributedText = distance
     }
 
@@ -4453,7 +4452,7 @@ final class ParkingScene: SKScene {
                 }
                 holdLabel.text = Strings.hold.uppercased()
                 holdModule.removeAllActions()
-                holdModule.position = countdownHome
+                holdModule.position = holdHome
                 holdModule.setScale(0.95)
                 holdModule.run(.group([.fadeIn(withDuration: 0.15), .scale(to: 1, duration: 0.15)]))
             }
@@ -4546,7 +4545,7 @@ final class ParkingScene: SKScene {
                               : .init(icon: "flag.checkered", label: Strings.statRound, value: "\(max(1, round))", unit: "/\(Levels.raceRounds)"))
         let title = won ? Strings.youWon.uppercased() : Strings.finishBig
         // Cinematic bars slide in for the replay-style shots and out before the results
-        let barHeight = size.height * 0.08
+        let barHeight = size.height * 0.06
         for top in [true, false] {
             let bar = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: barHeight))
             bar.anchorPoint = CGPoint(x: 0.5, y: top ? 0 : 1)
@@ -4559,12 +4558,6 @@ final class ParkingScene: SKScene {
             let outside = SKAction.moveTo(y: edge, duration: 0.3)
             outside.timingMode = .easeIn
             bar.run(.sequence([inside, .wait(forDuration: 3.3), outside]))
-            // Thin accent line on the inner edge of each bar
-            let line = SKSpriteNode(color: accent, size: CGSize(width: size.width + 40, height: 2))
-            line.position = CGPoint(x: 0, y: top ? 1 : -1)
-            line.alpha = 0.7
-            line.blendMode = .add
-            bar.addChild(line)
         }
         presentFinishTitle(in: layer, title: title, kicker: Strings.raceComplete, stats: stats, accent: accent, hold: 3.0)
 
@@ -4602,28 +4595,29 @@ final class ParkingScene: SKScene {
         layer.addChild(scrim)
         scrim.run(.fadeAlpha(to: 1, duration: 0.4))
 
-        // Kicker: an accent tick, then the label
-        let tick = SKSpriteNode(color: accent, size: CGSize(width: 28, height: 3))
-        tick.anchorPoint = CGPoint(x: 0, y: 0.5)
-        tick.position = CGPoint(x: 0, y: 62)
-        tick.xScale = 0
-        group.addChild(tick)
-        let grow = SKAction.scaleX(to: 1, duration: 0.3)
-        grow.timingMode = .easeOut
-        tick.run(.sequence([.wait(forDuration: 0.05), grow]))
+        // Kicker: dark text on an accent capsule, unrolling from the left
         let kickerLabel = SKLabelNode(text: kicker)
-        kickerLabel.fontName = "AvenirNext-Heavy"
-        kickerLabel.fontSize = 13
-        kickerLabel.fontColor = accent
+        kickerLabel.fontName = "Barlow-ExtraBold"
+        kickerLabel.fontSize = 12
+        kickerLabel.fontColor = UIColor(red: 0.06, green: 0.07, blue: 0.12, alpha: 1)
         kickerLabel.horizontalAlignmentMode = .left
         kickerLabel.verticalAlignmentMode = .center
-        kickerLabel.position = CGPoint(x: 38, y: 62)
-        kickerLabel.alpha = 0
-        group.addChild(kickerLabel)
-        kickerLabel.run(.sequence([.wait(forDuration: 0.15), .group([.fadeIn(withDuration: 0.25), .moveBy(x: 6, y: 0, duration: 0.3)])]))
+        let kickerWidth = kickerLabel.frame.width + 26
+        let chip = SKShapeNode(rect: CGRect(x: 0, y: -12, width: kickerWidth, height: 24), cornerRadius: 12)
+        chip.fillColor = accent
+        chip.strokeColor = .clear
+        chip.position = CGPoint(x: 2, y: 70)
+        kickerLabel.position = CGPoint(x: 13, y: 0)
+        chip.addChild(kickerLabel)
+        chip.xScale = 0.001
+        chip.alpha = 0
+        group.addChild(chip)
+        let unroll = SKAction.scaleX(to: 1, duration: 0.3)
+        unroll.timingMode = .easeOut
+        chip.run(.sequence([.wait(forDuration: 0.05), .group([.fadeIn(withDuration: 0.12), unroll])]))
 
         // Letters, left-aligned
-        let glyphs = finishGlyphs[title] ?? CarArt.titleGlyphs(title, size: 74)
+        let glyphs = finishGlyphs[title] ?? CarArt.titleGlyphs(title, size: 88)
         let total = glyphs.reduce(0) { $0 + $1.advance }
         let pad = glyphs.first.map { ($0.texture.size().width - $0.advance) / 2 } ?? 0
         var x: CGFloat = -pad * 0.6
@@ -4669,12 +4663,22 @@ final class ParkingScene: SKScene {
         sweep.timingMode = .easeInEaseOut
         sheen.run(.sequence([.wait(forDuration: lettersDone), sweep, .removeFromParent()]))
 
+        // An accent rule under the title, drawn out to its width as the letters land
+        let rule = SKSpriteNode(color: accent, size: CGSize(width: max(60, total * 0.92), height: 4))
+        rule.anchorPoint = CGPoint(x: 0, y: 0.5)
+        rule.position = CGPoint(x: 4, y: -40)
+        rule.xScale = 0.001
+        group.addChild(rule)
+        let draw = SKAction.scaleX(to: 1, duration: 0.45)
+        draw.timingMode = .easeOut
+        rule.run(.sequence([.wait(forDuration: lettersDone - 0.2), draw]))
+
         // Stats: one glass panel, label over value, hairline dividers
         let panelTexture = CarArt.finishStats(stats, accent: accent)
         let panel = SKSpriteNode(texture: panelTexture)
         panel.size = panelTexture.size()
         panel.anchorPoint = CGPoint(x: 0, y: 1)
-        let panelHome = CGPoint(x: 0, y: -42)
+        let panelHome = CGPoint(x: 4, y: -54)
         panel.position = CGPoint(x: panelHome.x, y: panelHome.y - 16)
         panel.alpha = 0
         group.addChild(panel)
@@ -4754,7 +4758,7 @@ final class ParkingScene: SKScene {
         // Kicker
         let kicker = SKLabelNode()
         kicker.attributedText = NSAttributedString(string: Strings.precisionCheck, attributes: [
-            .font: UIFont.systemFont(ofSize: 11, weight: .heavy, width: .expanded), .foregroundColor: cyan, .kern: 3])
+            .font: UIFont.ui(11, .heavy), .foregroundColor: cyan, .kern: 3])
         kicker.position = CGPoint(x: size.width / 2, y: size.height - max(insets.top, 12) - 28)
         kicker.alpha = 0
         node.addChild(kicker)
@@ -4876,13 +4880,13 @@ final class ParkingScene: SKScene {
         dial.addChild(percent)
         let caption = SKLabelNode()
         caption.attributedText = NSAttributedString(string: Strings.upper(Strings.precision), attributes: [
-            .font: UIFont.systemFont(ofSize: 8, weight: .heavy, width: .expanded), .foregroundColor: UIColor(white: 1, alpha: 0.6), .kern: 1.4])
+            .font: UIFont.ui(8, .heavy), .foregroundColor: UIColor(white: 1, alpha: 0.6), .kern: 1.4])
         caption.verticalAlignmentMode = .center
         caption.position = CGPoint(x: 0, y: -17)
         dial.addChild(caption)
         func setScore(_ value: Int) {
             percent.attributedText = NSAttributedString(string: "\(value)", attributes: [
-                .font: UIFont.monospacedDigitSystemFont(ofSize: 26, weight: .heavy), .foregroundColor: UIColor.white])
+                .font: UIFont.ui(26, .heavy).tabular, .foregroundColor: UIColor.white])
             let path = CGMutablePath()
             path.addArc(center: .zero, radius: 46, startAngle: .pi / 2, endAngle: .pi / 2 - CGFloat(value) / 100 * .pi * 2, clockwise: true)
             ring.path = path
@@ -4951,9 +4955,9 @@ final class ParkingScene: SKScene {
         let tag = SKNode()
         let text = SKLabelNode()
         let string = NSMutableAttributedString(string: label + "  ", attributes: [
-            .font: UIFont.systemFont(ofSize: 9, weight: .heavy, width: .expanded), .foregroundColor: color, .kern: 1.2])
+            .font: UIFont.ui(9, .heavy), .foregroundColor: color, .kern: 1.2])
         string.append(NSAttributedString(string: value, attributes: [
-            .font: UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .heavy), .foregroundColor: UIColor.white]))
+            .font: UIFont.ui(14, .heavy).tabular, .foregroundColor: UIColor.white]))
         text.attributedText = string
         text.verticalAlignmentMode = .center
         let width = text.frame.width + 20
@@ -5006,7 +5010,7 @@ final class ParkingScene: SKScene {
         let main = left + stubWidth
         // Header beside the P sign: the garage (the level) and its number
         text(level.name, CarArt.raceFont(20, italic: false), ink, at: CGPoint(x: main + 62, y: top - 40))
-        text(Levels.title(levelIndex, online: onlineMatch), .systemFont(ofSize: 11, weight: .semibold), grey,
+        text(Levels.title(levelIndex, online: onlineMatch), UIFont.ui(11, .semibold), grey,
              at: CGPoint(x: main + 62, y: top - 57))
         // Printed lines: entry and exit times from the clock, then the round's figures
         let clock = DateFormatter()
@@ -5025,7 +5029,7 @@ final class ParkingScene: SKScene {
             text(row.1, index >= 2 ? monoBold : mono, ink, at: CGPoint(x: main + 104, y: y))
         }
         // Stub: the name down its length and a serial number in red
-        text("PARKRIFT", .systemFont(ofSize: 8, weight: .heavy, width: .expanded), grey, kern: 1.6,
+        text("PARKRIFT", UIFont.ui(8, .heavy), grey, kern: 1.6,
              at: CGPoint(x: left + stubWidth / 2, y: top - 140), align: .center, rotate: .pi / 2)
         text(String(format: "№ %05d", 1000 + (levelIndex * 7919 + Int(localTime * 10)) % 89_000),
              .monospacedSystemFont(ofSize: 8, weight: .bold), red, at: CGPoint(x: left + stubWidth / 2, y: -top + 9), align: .center)
@@ -5067,8 +5071,9 @@ final class ParkingScene: SKScene {
 
         // The stamp lands over the right of the ticket
         let stamp = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 20))
-        stamp.position = CGPoint(x: right - 64, y: 2)
+                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 17))
+        // Low on the right, over the QR code: clear of the printed figures
+        stamp.position = CGPoint(x: right - 66, y: -top + 36)
         stamp.zRotation = -0.22
         stamp.alpha = 0
         stamp.setScale(2.6)
@@ -5293,9 +5298,12 @@ final class ParkingScene: SKScene {
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine, reward: reward,
                                      outcome: outcome, roundLine: roundLine)
-        // The results own the screen: the pedals and the HUD step aside (back on the next load)
-        controlsLayer.run(.fadeAlpha(to: 0, duration: 0.25))
-        hud.run(.fadeAlpha(to: 0, duration: 0.25))
+        // The results own the screen: the pedals and the HUD step aside (back on the next load).
+        // At once, not faded: the frame freezes just below and would keep a half-faded HUD
+        controlsLayer.removeAllActions()
+        hud.removeAllActions()
+        controlsLayer.alpha = 0
+        hud.alpha = 0
         // The card covers the world: stop drawing it (a frozen frame) until the next level loads
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self, self.model?.results != nil else { return }
@@ -5340,7 +5348,7 @@ final class ParkingScene: SKScene {
         dot.run(.repeatForever(.sequence([.fadeAlpha(to: 0.25, duration: 0.6), .fadeAlpha(to: 1, duration: 0.6)])))
         tag.addChild(dot)
         let live = SKLabelNode(text: Strings.liveTag)
-        live.fontName = "AvenirNext-Heavy"
+        live.fontName = "Barlow-ExtraBold"
         live.fontSize = 12
         live.fontColor = .white
         live.horizontalAlignmentMode = .left
@@ -5348,7 +5356,7 @@ final class ParkingScene: SKScene {
         live.position = CGPoint(x: 12, y: 0)
         tag.addChild(live)
         let what = SKLabelNode(text: Strings.spectatingFriend.uppercased())
-        what.fontName = "AvenirNext-DemiBold"
+        what.fontName = "Barlow-SemiBold"
         what.fontSize = 12
         what.fontColor = UIColor.white.withAlphaComponent(0.7)
         what.horizontalAlignmentMode = .left

@@ -45,7 +45,7 @@ struct ChunkyButtonStyle: ButtonStyle {
         let pressed = configuration.isPressed
         let depth: CGFloat = 5
         configuration.label
-            .font(.system(size: fontSize, weight: .black, design: .rounded))
+            .font(.ui(fontSize, .black))
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.28), radius: 0, x: 0, y: 1.5)
             .padding(.horizontal, 14)
@@ -170,12 +170,12 @@ struct SoundToggle: View {
 extension Font {
     /// Heavy condensed italic, the racing-game display face.
     static func race(_ size: CGFloat, weight: Font.Weight = .black) -> Font {
-        .system(size: size, weight: weight).width(.condensed).italic()
+        .custom(Typeface.race(Typeface.uiWeight(weight)), fixedSize: size)
     }
 
     /// Small wide caps for labels above titles.
     static func kicker(_ size: CGFloat = 11) -> Font {
-        .system(size: size, weight: .heavy).width(.expanded)
+        .ui(size, .heavy)
     }
 }
 

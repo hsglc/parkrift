@@ -165,7 +165,7 @@ enum CarArt {
     static func glowTitle(_ text: String, fontSize: CGFloat, color: UIColor) -> SKTexture {
         let key = "\(text)-\(fontSize)"
         if let cached = glowTitles[key] { return cached }
-        let font = UIFont(name: "AvenirNext-Heavy", size: fontSize) ?? UIFont.systemFont(ofSize: fontSize, weight: .heavy)
+        let font = UIFont(name: "Barlow-ExtraBold", size: fontSize) ?? UIFont.ui(fontSize, .heavy)
         let plain: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
         let textSize = (text as NSString).size(withAttributes: plain)
         let pad: CGFloat = 40
@@ -186,9 +186,8 @@ enum CarArt {
 
     /// Racing-game font: heavy, condensed and italic.
     static func raceFont(_ size: CGFloat, weight: UIFont.Weight = .black, italic: Bool = true) -> UIFont {
-        let base = UIFont.systemFont(ofSize: size, weight: weight, width: .condensed)
-        guard italic, let descriptor = base.fontDescriptor.withSymbolicTraits(.traitItalic) else { return base }
-        return UIFont(descriptor: descriptor, size: size)
+        guard !italic else { return UIFont.race(size, weight) }
+        return UIFont(name: weight.rawValue >= 0.5 ? "BarlowCondensed-Black" : "BarlowCondensed-ExtraBold", size: size) ?? .race(size, weight)
     }
 
     /// Soft glowing ring for the nitro shockwave (a sprite: SKShapeNode glow compiles a shader
@@ -289,7 +288,7 @@ enum CarArt {
             context.setStrokeColor(UIColor.white.cgColor)
             context.setLineWidth(1.4)
             context.strokePath()
-            let pFont = UIFont.systemFont(ofSize: 26, weight: .black)
+            let pFont = UIFont.ui(26, .black)
             let pSize = ("P" as NSString).size(withAttributes: [.font: pFont])
             ("P" as NSString).draw(at: CGPoint(x: sign.midX - pSize.width / 2, y: sign.midY - pSize.height / 2),
                                    withAttributes: [.font: pFont, .foregroundColor: UIColor.white])
@@ -451,14 +450,14 @@ enum CarArt {
             context.restoreGState()
 
             let left: CGFloat = skew + 22
-            let kickerFont = UIFont.systemFont(ofSize: 12, weight: .heavy, width: .expanded)
+            let kickerFont = UIFont.ui(12, .heavy)
             (kicker as NSString).draw(at: CGPoint(x: left + 4, y: plate.minY + 12),
                                       withAttributes: [.font: kickerFont, .foregroundColor: accent, .kern: 2.2])
             (title as NSString).draw(at: CGPoint(x: left, y: plate.minY + 24),
                                      withAttributes: [.font: raceFont(48), .foregroundColor: UIColor.white, .kern: 0.5])
             // Stats: icon + text pairs
             var x = left - 4
-            let statFont = UIFont.monospacedDigitSystemFont(ofSize: 16, weight: .bold)
+            let statFont = UIFont.ui(16, .bold).tabular
             let statY = plate.maxY - 28
             for stat in stats {
                 if let icon = UIImage(systemName: stat.icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))?
@@ -487,7 +486,7 @@ enum CarArt {
             (big as NSString).draw(in: CGRect(x: badge.minX, y: badge.midY - bigSize.height / 2 - 10, width: badge.width, height: bigSize.height),
                                    withAttributes: [.font: bigFont, .foregroundColor: badgeText, .paragraphStyle: centered])
             (badgeBottom as NSString).draw(in: CGRect(x: badge.minX, y: badge.maxY - 30, width: badge.width, height: 16),
-                                           withAttributes: [.font: UIFont.systemFont(ofSize: 11, weight: .heavy, width: .expanded),
+                                           withAttributes: [.font: UIFont.ui(11, .heavy),
                                                             .foregroundColor: badgeText.withAlphaComponent(0.8), .kern: 1.6,
                                                             .paragraphStyle: centered])
         }
@@ -497,8 +496,13 @@ enum CarArt {
 
     /// One texture per letter of a big finish title (race font, white, with a soft dark shadow so
     /// it reads over any scene), plus each letter's advance, for letter-by-letter animation.
+    /// The racing font for big titles: Barlow Condensed Black Italic.
+    static func raceDisplay(_ size: CGFloat) -> UIFont {
+        UIFont.race(size, .black)
+    }
+
     static func titleGlyphs(_ text: String, size: CGFloat) -> [(texture: SKTexture, advance: CGFloat)] {
-        let font = raceFont(size)
+        let font = raceDisplay(size)
         let pad: CGFloat = size * 0.3
         var result: [(SKTexture, CGFloat)] = []
         for character in text {
@@ -518,7 +522,7 @@ enum CarArt {
 
     /// Rounded glass chip with an SF Symbol and a value, for the finish stats.
     static func statChip(icon: String, text: String, accent: UIColor) -> SKTexture {
-        let font = UIFont.monospacedDigitSystemFont(ofSize: 17, weight: .heavy)
+        let font = UIFont.ui(17, .heavy).tabular
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
         let textSize = (text as NSString).size(withAttributes: attributes)
         let symbol = UIImage(systemName: icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .bold))?
@@ -693,55 +697,41 @@ enum CarArt {
         let unit: String
     }
 
-    /// The finish stats as one dark glass panel: per stat a small label with its icon over a big
-    /// number (with its unit smaller beside it), hairline dividers between, an accent edge on the
-    /// left.
+    /// The finish figures, broadcast style with no box: per stat a small spaced label over a big
+    /// slanted number (its unit smaller beside it), hairlines between.
     static func finishStats(_ stats: [FinishStat], accent: UIColor) -> SKTexture {
-        let labelFont = UIFont.systemFont(ofSize: 10, weight: .heavy)
-        let valueFont = UIFont.monospacedDigitSystemFont(ofSize: 26, weight: .heavy)
-        let unitFont = UIFont.systemFont(ofSize: 13, weight: .bold)
-        let labelAttr: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: UIColor.white.withAlphaComponent(0.55), .kern: 1.4]
-        let valueAttr: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: UIColor.white]
-        let unitAttr: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: UIColor.white.withAlphaComponent(0.6)]
+        let labelFont = UIFont.ui(11, .heavy)
+        let valueFont = raceDisplay(40)
+        let unitFont = raceDisplay(18)
+        let shadow = NSShadow()
+        shadow.shadowColor = UIColor.black.withAlphaComponent(0.5)
+        shadow.shadowOffset = CGSize(width: 0, height: 2)
+        shadow.shadowBlurRadius = 6
+        let labelAttr: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: UIColor.white.withAlphaComponent(0.62),
+                                                        .kern: 1.6, .shadow: shadow]
+        let valueAttr: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: UIColor.white, .shadow: shadow]
+        let unitAttr: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: UIColor.white.withAlphaComponent(0.6), .shadow: shadow]
         let columns: [CGFloat] = stats.map { stat in
-            let label = (stat.label as NSString).size(withAttributes: labelAttr).width + 16
-            let value = (stat.value as NSString).size(withAttributes: valueAttr).width + (stat.unit as NSString).size(withAttributes: unitAttr).width + 3
-            return max(label, value) + 36
+            let label = (stat.label as NSString).size(withAttributes: labelAttr).width
+            let value = (stat.value as NSString).size(withAttributes: valueAttr).width + (stat.unit as NSString).size(withAttributes: unitAttr).width + 4
+            return max(label, value) + 34
         }
-        let height: CGFloat = 70
-        let size = CGSize(width: ceil(columns.reduce(0, +) + 10), height: height)
+        let height: CGFloat = 76
+        let size = CGSize(width: ceil(columns.reduce(0, +) + 8), height: height)
         return render(size, scale: 2) { context, s in
-            let rect = CGRect(origin: .zero, size: s).insetBy(dx: 1, dy: 1)
-            let path = UIBezierPath(roundedRect: rect, cornerRadius: 14)
-            context.setFillColor(UIColor(red: 0.04, green: 0.05, blue: 0.09, alpha: 0.78).cgColor)
-            context.addPath(path.cgPath)
-            context.fillPath()
-            context.setStrokeColor(UIColor.white.withAlphaComponent(0.12).cgColor)
-            context.setLineWidth(1)
-            context.addPath(path.cgPath)
-            context.strokePath()
-            // Accent edge
-            context.saveGState()
-            context.addPath(path.cgPath)
-            context.clip()
-            context.setFillColor(accent.cgColor)
-            context.fill(CGRect(x: 0, y: 0, width: 4, height: s.height))
-            context.restoreGState()
-            var x: CGFloat = 10
+            var x: CGFloat = 4
             for (index, stat) in stats.enumerated() {
-                let left = x + 18
-                if let symbol = UIImage(systemName: stat.icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .bold))?
-                    .withTintColor(accent, renderingMode: .alwaysOriginal) {
-                    symbol.draw(at: CGPoint(x: left, y: 14))
-                }
-                (stat.label as NSString).draw(at: CGPoint(x: left + 15, y: 12), withAttributes: labelAttr)
+                let left = x + (index == 0 ? 0 : 18)
+                (stat.label as NSString).draw(at: CGPoint(x: left, y: 6), withAttributes: labelAttr)
                 let valueSize = (stat.value as NSString).size(withAttributes: valueAttr)
-                (stat.value as NSString).draw(at: CGPoint(x: left, y: 28), withAttributes: valueAttr)
-                (stat.unit as NSString).draw(at: CGPoint(x: left + valueSize.width + 3, y: 28 + valueSize.height - 22), withAttributes: unitAttr)
-                x += columns[index]
+                (stat.value as NSString).draw(at: CGPoint(x: left, y: 20), withAttributes: valueAttr)
+                let unitSize = (stat.unit as NSString).size(withAttributes: unitAttr)
+                (stat.unit as NSString).draw(at: CGPoint(x: left + valueSize.width + 4, y: 20 + valueSize.height * 0.78 - unitSize.height * 0.78),
+                                             withAttributes: unitAttr)
+                x += columns[index] - (index == 0 ? 18 : 0)
                 if index < stats.count - 1 {
-                    context.setFillColor(UIColor.white.withAlphaComponent(0.1).cgColor)
-                    context.fill(CGRect(x: x, y: 14, width: 1, height: s.height - 28))
+                    context.setFillColor(UIColor.white.withAlphaComponent(0.22).cgColor)
+                    context.fill(CGRect(x: x, y: 12, width: 1, height: s.height - 22))
                 }
             }
         }
@@ -1145,7 +1135,7 @@ enum CarArt {
             context.stroke(rect.insetBy(dx: 1.25, dy: 1.25))
             let fontSize = min(s.width, s.height) * 0.58
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: fontSize, weight: .black),
+                .font: UIFont.ui(fontSize, .black),
                 .foregroundColor: UIColor.white.withAlphaComponent(0.42)
             ]
             let text = "P" as NSString

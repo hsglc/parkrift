@@ -789,7 +789,7 @@ struct GarageView: View {
                                     Text("\(Progression.price(car.id))")
                                         .monospacedDigit()
                                 }
-                                .font(.system(size: 10, weight: .black, design: .rounded))
+                                .font(.ui(10, .black))
                                 .foregroundStyle(Palette.gold)
                             }
                         }
@@ -880,7 +880,7 @@ struct GarageView: View {
                             Image(systemName: "wrench.and.screwdriver.fill")
                             Text(Strings.upgrade.uppercased())
                         }
-                        .font(.system(size: 11, weight: .black, design: .rounded))
+                        .font(.ui(11, .black))
                         .foregroundStyle(Palette.ink)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -1146,7 +1146,7 @@ struct UnlockReveal: View {
 
                 // Tap hint, lower right
                 Text(Strings.tapToContinue)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(.ui(12, .semibold))
                     .foregroundStyle(.white.opacity(hint ? 0.65 : 0))
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.trailing, max(28, geo.safeAreaInsets.trailing + 12))

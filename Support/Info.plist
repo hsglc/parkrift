@@ -4,12 +4,6 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
-	<key>CFBundleLocalizations</key>
-	<array>
-		<string>en</string>
-		<string>tr</string>
-		<string>es</string>
-	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Parkrift</string>
 	<key>CFBundleExecutable</key>
@@ -18,6 +12,12 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>tr</string>
+		<string>es</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
@@ -26,10 +26,29 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Parkrift never uses the camera. The online play network library (WebRTC) contains camera code, so iOS requires this description; the game never asks for camera access.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Parkrift never uses the microphone. The online play network library (WebRTC) contains audio code, so iOS requires this description; the game never asks for microphone access.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Barlow-Black.ttf</string>
+		<string>Barlow-Bold.ttf</string>
+		<string>Barlow-ExtraBold.ttf</string>
+		<string>Barlow-Medium.ttf</string>
+		<string>Barlow-Regular.ttf</string>
+		<string>Barlow-SemiBold.ttf</string>
+		<string>BarlowCondensed-Black.ttf</string>
+		<string>BarlowCondensed-BlackItalic.ttf</string>
+		<string>BarlowCondensed-BoldItalic.ttf</string>
+		<string>BarlowCondensed-ExtraBold.ttf</string>
+		<string>BarlowCondensed-ExtraBoldItalic.ttf</string>
+		<string>BarlowCondensed-SemiBoldItalic.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -44,9 +63,5 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Parkrift never uses the camera. The online play network library (WebRTC) contains camera code, so iOS requires this description; the game never asks for camera access.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Parkrift never uses the microphone. The online play network library (WebRTC) contains audio code, so iOS requires this description; the game never asks for microphone access.</string>
 </dict>
 </plist>
