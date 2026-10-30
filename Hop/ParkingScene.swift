@@ -692,55 +692,19 @@ final class ParkingScene: SKScene {
         navNode.isHidden = true
         hud.addChild(navNode)
 
-        // Start lights, as at a real race start: a gantry of five columns, two red lamps each, at
-        // the top of the screen (the top bar steps aside). They come on column by column with the
-        // count; when they all go out, it is GO. Nothing over the car or the road.
+        // The count: one big slanted number up the road ahead (well above the car, below the top
+        // bar), nothing else. Each number slams in; GO is green and lifts away at once.
         countdownNode = SKNode()
         countdownNode.position = countdownHome
         countdownNode.zPosition = 5
-        let pod: CGSize = CGSize(width: 36, height: 62)
-        let gap: CGFloat = 7
-        let housingWidth = pod.width * 5 + gap * 4 + 20
-        let housing = SKShapeNode(rect: CGRect(x: -housingWidth / 2, y: -39, width: housingWidth, height: 78), cornerRadius: 11)
-        housing.fillColor = UIColor(red: 0.043, green: 0.047, blue: 0.06, alpha: 0.96)
-        housing.strokeColor = UIColor(white: 1, alpha: 0.1)
-        housing.lineWidth = 1.5
-        countdownNode.addChild(housing)
-        startLamps = (0..<5).map { column in
-            let x = -housingWidth / 2 + 10 + pod.width / 2 + CGFloat(column) * (pod.width + gap)
-            let podNode = SKShapeNode(rect: CGRect(x: -pod.width / 2, y: -pod.height / 2, width: pod.width, height: pod.height), cornerRadius: 8)
-            podNode.position = CGPoint(x: x, y: 0)
-            podNode.fillColor = UIColor(red: 0.08, green: 0.09, blue: 0.105, alpha: 1)
-            podNode.strokeColor = UIColor(white: 1, alpha: 0.07)
-            podNode.lineWidth = 1
-            countdownNode.addChild(podNode)
-            return [14, -14].map { y in
-                let lamp = SKSpriteNode(texture: CarArt.startLamp(on: false))
-                lamp.size = CGSize(width: 26, height: 26)
-                lamp.position = CGPoint(x: x, y: CGFloat(y))
-                let glow = SKSpriteNode(texture: dotTexture)
-                glow.size = CGSize(width: 54, height: 54)
-                glow.color = UIColor(red: 1, green: 0.16, blue: 0.1, alpha: 1)
-                glow.colorBlendFactor = 1
-                glow.blendMode = .add
-                glow.alpha = 0
-                glow.name = "glow"
-                glow.zPosition = -1
-                lamp.addChild(glow)
-                countdownNode.addChild(lamp)
-                return lamp
-            }
-        }
-        // GO: over the dark lamps, once they are out
-        countdownLabel = makeLabel("", size: 40, color: .white, font: "BarlowCondensed-BlackItalic")
-        countdownLabel.position = CGPoint(x: 0, y: 0)
-        countdownLabel.zPosition = 2
-        countdownNode.addChild(countdownLabel)
-        countdownShadow = makeLabel("", size: 40, color: .white, font: "BarlowCondensed-BlackItalic")
-        countdownShadow.isHidden = true
+        countdownShadow = makeLabel("", size: 118, color: UIColor(white: 0, alpha: 0.28), font: "BarlowCondensed-BlackItalic")
+        countdownShadow.position = CGPoint(x: 0, y: -5)
         countdownNode.addChild(countdownShadow)
+        countdownLabel = makeLabel("", size: 118, color: .white, font: "BarlowCondensed-BlackItalic")
+        countdownNode.addChild(countdownLabel)
         countdownCaption = makeLabel("", size: 1, color: .clear)
         countdownLamps = []
+        startLamps = []
         // (the old fill bar, kept off screen)
         countdownBar = SKSpriteNode(color: .clear, size: CGSize(width: 1, height: 1))
         hud.addChild(countdownNode)
@@ -766,8 +730,8 @@ final class ParkingScene: SKScene {
         hud.addChild(holdModule)
     }
 
-    /// The start gantry: at the top, over the top bar's place.
-    private var countdownHome: CGPoint { CGPoint(x: size.width / 2 + 40, y: size.height - 8 - 39) }
+    /// The count: up the road ahead, between the top bar and the car.
+    private var countdownHome: CGPoint { CGPoint(x: size.width / 2, y: size.height * 0.64) }
     /// The gantry's lamps, by column (two each).
     private var startLamps: [[SKSpriteNode]] = []
     private var countdownCaption = SKLabelNode()
@@ -1230,39 +1194,21 @@ final class ParkingScene: SKScene {
         }
         countdownNode.isHidden = false
         if countdownNode.alpha < 0.99 || countdownNode.action(forKey: "leave") != nil {
-            // Grows out of the top bar: from its height down to the full capsule
             countdownNode.removeAllActions()
-            countdownNode.position = CGPoint(x: countdownHome.x, y: countdownHome.y + 40)
-            countdownNode.alpha = 0
-            topBar.removeAllActions()
-            topBar.run(.fadeOut(withDuration: 0.12))
+            countdownNode.position = countdownHome
+            countdownNode.setScale(1)
+            countdownNode.alpha = 1
+            // The radar line (just under the top bar) waits until the count is over
             statusLabel.removeAllActions()
             statusLabel.alpha = 0
-            countdownNode.setScale(1)
-            // Drops in from above the screen
-            let grow = SKAction.group([.fadeIn(withDuration: 0.16), .move(to: countdownHome, duration: 0.3)])
-            grow.timingMode = .easeOut
-            countdownNode.run(grow)
         }
-        // The columns that just came on flare; GO slams in over the dark lamps
-        let litColumns = go ? 0 : [3: 2, 2: 4, 1: 5][countdownStep] ?? 2
-        for (column, lamps) in startLamps.enumerated() where !go && column < litColumns && column >= litColumns - 2 {
-            for lamp in lamps {
-                lamp.removeAllActions()
-                lamp.setScale(1.22)
-                let back = SKAction.scale(to: 1, duration: 0.2)
-                back.timingMode = .easeOut
-                lamp.run(back)
-            }
-        }
-        countdownLabel.removeAllActions()
-        if go {
-            countdownLabel.setScale(1.5)
-            countdownLabel.alpha = 0
-            let slam = SKAction.group([.scale(to: 1, duration: 0.18), .fadeIn(withDuration: 0.1)])
-            slam.timingMode = .easeOut
-            countdownLabel.run(slam)
-        }
+        // Each number slams in from big
+        countdownNode.removeAction(forKey: "slam")
+        countdownNode.setScale(1.5)
+        countdownNode.alpha = 0
+        let slam = SKAction.group([.scale(to: 1, duration: 0.2), .fadeIn(withDuration: 0.12)])
+        slam.timingMode = .easeOut
+        countdownNode.run(slam, withKey: "slam")
         if benchmark {
             // Test runs: the whole screen and the 3D view alone, during the count and after GO
             let tag = "\(levelIndex)-\(go ? "go" : "\(countdownStep)")"
@@ -1276,13 +1222,11 @@ final class ParkingScene: SKScene {
         }
         if go {
             countdownBar.xScale = 1
-            let pulse = SKAction.wait(forDuration: 0.1)
-            // Up and away, quickly: the road ahead and the radar line are free at once
-            let leave = SKAction.group([.fadeOut(withDuration: 0.25), .moveBy(x: 0, y: 60, duration: 0.25)])
+            // Grows a little and fades: the road ahead is free at once
+            let leave = SKAction.group([.fadeOut(withDuration: 0.25), .scale(to: 1.25, duration: 0.25)])
             leave.timingMode = .easeIn
-            countdownNode.run(.sequence([pulse, .wait(forDuration: 0.35), leave, .hide()]), withKey: "leave")
-            topBar.run(.sequence([.wait(forDuration: 0.6), .fadeIn(withDuration: 0.2)]))
-            statusLabel.run(.sequence([.wait(forDuration: 0.6), .fadeIn(withDuration: 0.2)]))
+            countdownNode.run(.sequence([.wait(forDuration: 0.45), leave, .hide()]), withKey: "leave")
+            statusLabel.run(.sequence([.wait(forDuration: 0.7), .fadeIn(withDuration: 0.2)]))
         }
     }
 
@@ -1424,20 +1368,13 @@ final class ParkingScene: SKScene {
 
     private func setCountdown(_ text: String) {
         let go = Int(text) == nil
-        let green = UIColor(red: 0.3, green: 1.0, blue: 0.55, alpha: 1)
-        countdownColor = go ? green : UIColor(red: 1.0, green: 0.27, blue: 0.3, alpha: 1)
-        // 3: two columns, 2: four, 1: all five; GO: all out
         countdownStep = Int(text) ?? 0
-        let lit = go ? 0 : [3: 2, 2: 4, 1: 5][countdownStep] ?? 2
-        for (column, lamps) in startLamps.enumerated() {
-            let on = column < lit
-            for lamp in lamps {
-                lamp.texture = CarArt.startLamp(on: on)
-                (lamp.childNode(withName: "glow") as? SKSpriteNode)?.alpha = on ? 0.55 : 0
-            }
-        }
-        countdownLabel.text = go ? text : ""
-        countdownLabel.fontColor = green
+        countdownColor = go ? UIColor(red: 0.3, green: 1.0, blue: 0.55, alpha: 1) : .white
+        countdownLabel.text = text
+        countdownShadow.text = text
+        countdownLabel.fontColor = countdownColor
+        countdownLabel.fontSize = go ? 92 : 118
+        countdownShadow.fontSize = countdownLabel.fontSize
     }
 
     /// Plays the other car back `interpolationDelay` behind the newest state, blending between
@@ -2355,8 +2292,7 @@ final class ParkingScene: SKScene {
         challengeCard.addChild(tier)
         rules.position = CGPoint(x: tier.position.x + tier.frame.width + gap, y: 0)
         challengeCard.addChild(rules)
-        // (under the start gantry, which hangs where the top bar is)
-        challengeCard.position = CGPoint(x: size.width / 2 + 40, y: size.height - 8 - 78 - 22)
+        challengeCard.position = CGPoint(x: size.width / 2 + 40, y: size.height - 24 - 40)
         challengeCard.zPosition = 120
         challengeCard.alpha = 0
         addChild(challengeCard)

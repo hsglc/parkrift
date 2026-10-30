@@ -98,6 +98,9 @@ enum Strings {
     static var go: String { t("BAŞLA!", "GO!", "¡YA!") }
     static var resultSlip: String { t("SONUÇ FİŞİ", "RESULT SLIP", "TICKET DE RESULTADO") }
     static var totalLabel: String { t("TOPLAM", "TOTAL", "TOTAL") }
+    static var secondsShort: String { t("sn", "s", "s") }
+    static var coinsWord: String { t("altın", "coins", "monedas") }
+    static var raceFailedTitle: String { t("BİTİREMEDİN", "DID NOT FINISH", "SIN TERMINAR") }
     static var getReady: String { t("HAZIR OL", "GET READY", "PREPÁRATE") }
     static var parked: String { t("Park edildi!", "Parked!", "¡Aparcado!") }
     static var hold: String { t("Kıpırdama", "Hold still", "No te muevas") }
