@@ -181,6 +181,8 @@ enum Strings {
     static var finishBig: String { t("FİNİŞ!", "FINISH!", "¡META!") }
     static var parkedBig: String { t("PARK EDİLDİ!", "PARKED!", "¡APARCADO!") }
     static var levelComplete: String { t("BÖLÜM TAMAMLANDI", "LEVEL COMPLETE", "NIVEL COMPLETADO") }
+    static var parkTicket: String { t("Otopark fişi", "Parking ticket", "Ticket de aparcamiento") }
+    static var newBestShort: String { t("Yeni rekor", "New best", "Nuevo récord") }
     static func place(_ n: Int) -> String { t("\(n). sırada", "Place \(n)", "Puesto \(n)") }
     // Parking challenge
     static var tierNames: [String] {

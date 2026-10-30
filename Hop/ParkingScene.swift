@@ -192,6 +192,7 @@ final class ParkingScene: SKScene {
     static let failTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-failtest")
     static let policeTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-policetest")
     static let cardTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-cardtest")
+    static let parkedTest = PerfSettings.benchmark && ProcessInfo.processInfo.arguments.contains("-parkedtest")
     /// Online check (benchmark builds, two simulators in one room): the guest drives into the host.
     static let netRole: String? = {
         guard PerfSettings.benchmark else { return nil }
@@ -542,6 +543,10 @@ final class ParkingScene: SKScene {
 
         world?.fit(size: size, insets: insets, topReserved: 50)
         dotTexture = CarArt.dot()
+        // The parked ticket and its stamp are drawn now, not on the frame the car parks
+        _ = CarArt.parkTicket(size: CGSize(width: 300, height: 176), perforationY: 120)
+        _ = CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
+                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1))
 
         let vignette = SKSpriteNode(texture: CarArt.vignette(size: size))
         vignette.size = size
@@ -2222,6 +2227,19 @@ final class ParkingScene: SKScene {
             run(.wait(forDuration: 0.6)) { Task { @MainActor in saveWindowSnapshot(named: "shot-police") } }
         }
         // Benchmark builds (-cardtest): the last card of a match won after failing the last round
+        // Benchmark builds (-parkedtest): the parked ticket and stamp, frames saved by the app
+        if benchmark && ParkingScene.parkedTest && !policeTestDone && phase == .driving && elapsed > 2 {
+            policeTestDone = true
+            phase = .finished
+            localParked = true
+            localTime = 23.7
+            hits = 1
+            newBest = true
+            playParkedSequence()
+            for at in [0.3, 0.7, 1.2, 1.9] {
+                run(.wait(forDuration: at)) { Task { @MainActor in saveWindowSnapshot(named: "shot-parked-\(Int(at * 10))") } }
+            }
+        }
         if benchmark && ParkingScene.cardTest && !policeTestDone && phase == .driving && elapsed > 2 {
             policeTestDone = true
             phase = .finished
@@ -4665,10 +4683,12 @@ final class ParkingScene: SKScene {
         scrim.run(.sequence([.wait(forDuration: hold + 0.3), .fadeOut(withDuration: 0.4), .removeFromParent()]))
     }
 
-    /// Parking levels: the same modern title, shorter, then the results.
+    /// Parking levels: a parking ticket springs in from the lower left, a green rubber stamp
+    /// slams PARKED onto it (thud, haptic, flecks of ink), the stars are punched in one by one
+    /// and a red NEW BEST stamp follows a record; then the ticket slides away to the results.
     private func playParkedSequence() {
         finishAnimating = true
-        // A clean frame for the title: no status text over it, controls and HUD fade away
+        // A clean frame: no status text over it, controls and HUD fade away
         statusLabel.text = ""
         challengeCard.removeAllActions()
         challengeCard.alpha = 0
@@ -4677,12 +4697,156 @@ final class ParkingScene: SKScene {
         let layer = SKNode()
         layer.zPosition = 300
         addChild(layer)
-        let stats: [CarArt.FinishStat] = [.init(icon: "stopwatch.fill", label: Strings.statTime, value: String(format: "%.1f", localTime), unit: "s"),
-                                          .init(icon: "exclamationmark.triangle.fill", label: Strings.statCrashes, value: "\(hits)", unit: "")]
-        presentFinishTitle(in: layer, title: Strings.parkedBig, kicker: Strings.levelComplete,
-                           stats: stats, accent: UIColor(red: 0.35, green: 0.95, blue: 0.6, alpha: 1), hold: 1.6)
-        layer.run(.sequence([.wait(forDuration: 2.4), .removeFromParent()]))
-        run(.wait(forDuration: 2.1)) { [weak self] in
+
+        // Soft shade on the left so the ticket stands off the scene
+        let shade = SKSpriteNode(texture: CarArt.glowParticle().cgImage.map { SKTexture(cgImage: $0) })
+        shade.color = .black
+        shade.colorBlendFactor = 1
+        shade.size = CGSize(width: size.width * 1.1, height: size.height * 1.5)
+        shade.position = CGPoint(x: size.width * 0.18, y: size.height * 0.45)
+        shade.alpha = 0
+        layer.addChild(shade)
+        shade.run(.fadeAlpha(to: 0.55, duration: 0.3))
+
+        let paper = CGSize(width: 300, height: 176)
+        let ticket = SKNode()
+        let target = CGPoint(x: max(insets.left + 24, 20) + paper.width / 2 + 24, y: size.height * 0.48)
+        ticket.position = CGPoint(x: target.x - 60, y: -paper.height)
+        ticket.zRotation = -0.42
+        layer.addChild(ticket)
+        let base = SKSpriteNode(texture: CarArt.parkTicket(size: paper, perforationY: 120))
+        base.size = CGSize(width: paper.width + 32, height: paper.height + 32)
+        ticket.addChild(base)
+        let top = paper.height / 2, left = -paper.width / 2, right = paper.width / 2
+        let ink = UIColor(red: 0.1, green: 0.11, blue: 0.14, alpha: 1)
+        let grey = UIColor(red: 0.42, green: 0.44, blue: 0.48, alpha: 1)
+        func text(_ string: String, _ font: UIFont, _ color: UIColor, kern: CGFloat = 0, at point: CGPoint,
+                  align: SKLabelHorizontalAlignmentMode = .left) {
+            let label = SKLabelNode()
+            label.attributedText = NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color, .kern: kern])
+            label.horizontalAlignmentMode = align
+            label.verticalAlignmentMode = .center
+            label.position = point
+            ticket.addChild(label)
+        }
+        // Header beside the P sign: what kind of ticket, the level, its number
+        text(Strings.upper(Strings.parkTicket), .systemFont(ofSize: 9, weight: .heavy, width: .expanded), grey, kern: 1.6,
+             at: CGPoint(x: left + 74, y: top - 24))
+        text(level.name, CarArt.raceFont(21, italic: false), ink, at: CGPoint(x: left + 73, y: top - 43))
+        text(Levels.title(levelIndex, online: onlineMatch), .systemFont(ofSize: 11, weight: .semibold), grey,
+             at: CGPoint(x: left + 74, y: top - 61))
+        // Receipt rows with dotted leaders
+        let rows: [(String, String)] = [(Strings.statTime, String(format: "%.1f s", localTime)), (Strings.statCrashes, "\(hits)")]
+        for (index, row) in rows.enumerated() {
+            let y = top - 86 - CGFloat(index) * 19
+            text(Strings.upper(row.0), .systemFont(ofSize: 10, weight: .heavy, width: .expanded), grey, kern: 1.2,
+                 at: CGPoint(x: left + 18, y: y))
+            text(row.1, .monospacedDigitSystemFont(ofSize: 15, weight: .heavy), ink, at: CGPoint(x: right - 18, y: y), align: .right)
+            let dots = SKShapeNode(path: {
+                let path = CGMutablePath()
+                path.move(to: CGPoint(x: left + 84, y: y - 4))
+                path.addLine(to: CGPoint(x: right - 64, y: y - 4))
+                return path.copy(dashingWithPhase: 0, lengths: [1.5, 3.5])
+            }())
+            dots.strokeColor = UIColor(white: 0.6, alpha: 0.8)
+            dots.lineWidth = 1.2
+            ticket.addChild(dots)
+        }
+        // Stars, punched in after the stamp (solo levels only)
+        var stars: [SKSpriteNode] = []
+        let earned = isCity ? 0 : AppModel.stars(forHits: hits)
+        if !isCity {
+            for index in 0..<3 {
+                let slot = makeIcon("star.fill", size: 20, color: UIColor(white: 0.82, alpha: 1))
+                slot.position = CGPoint(x: left + 30 + CGFloat(index) * 28, y: top - 148)
+                ticket.addChild(slot)
+                if index < earned {
+                    let star = makeIcon("star.fill", size: 22, color: UIColor(red: 1, green: 0.74, blue: 0.1, alpha: 1))
+                    star.position = slot.position
+                    star.setScale(0)
+                    ticket.addChild(star)
+                    stars.append(star)
+                }
+            }
+        }
+
+        // In: sweeps up from below and settles at a slight tilt
+        let rise = SKAction.move(to: target, duration: 0.42)
+        rise.timingMode = .easeOut
+        let tilt = SKAction.rotate(toAngle: -0.05, duration: 0.42)
+        tilt.timingMode = .easeOut
+        ticket.run(.sequence([.group([rise, tilt]), .rotate(toAngle: -0.075, duration: 0.12), .rotate(toAngle: -0.06, duration: 0.1)]))
+
+        // The stamp lands
+        let stamp = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
+                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1)))
+        stamp.position = CGPoint(x: 34, y: -2)
+        stamp.zRotation = -0.2
+        stamp.alpha = 0
+        stamp.setScale(2.6)
+        ticket.addChild(stamp)
+        let slam = SKAction.group([.scale(to: 0.94, duration: 0.11), .fadeAlpha(to: 0.92, duration: 0.08)])
+        slam.timingMode = .easeIn
+        stamp.run(.sequence([.wait(forDuration: 0.5), slam, .scale(to: 1.0, duration: 0.08)]))
+        run(.wait(forDuration: 0.61)) { [weak self] in
+            guard let self = self else { return }
+            self.audio.play("bump", volume: 0.9)
+            self.bumpHaptic.impactOccurred(intensity: 1)
+            // The ticket gives under the blow
+            ticket.run(.sequence([.scale(to: 0.965, duration: 0.05), .scale(to: 1.0, duration: 0.12)]))
+            // Flecks of ink
+            for _ in 0..<10 {
+                let fleck = SKSpriteNode(texture: self.dotTexture)
+                let r = CGFloat.random(in: 2...4.5)
+                fleck.size = CGSize(width: r, height: r)
+                fleck.color = UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1)
+                fleck.colorBlendFactor = 1
+                fleck.position = stamp.position
+                ticket.addChild(fleck)
+                let angle = CGFloat.random(in: 0 ... .pi * 2)
+                let reach = CGFloat.random(in: 70...120)
+                let fly = SKAction.moveBy(x: cos(angle) * reach, y: sin(angle) * reach * 0.6, duration: 0.25)
+                fly.timingMode = .easeOut
+                fleck.run(.sequence([fly, .wait(forDuration: 0.6), .fadeOut(withDuration: 0.3)]))
+            }
+        }
+        // Stars punched in
+        for (index, star) in stars.enumerated() {
+            let at = 0.95 + Double(index) * 0.2
+            star.run(.sequence([.wait(forDuration: at), .scale(to: 1.35, duration: 0.1), .scale(to: 1.0, duration: 0.1)]))
+            run(.wait(forDuration: at)) { [weak self] in
+                self?.tickHaptic.impactOccurred()
+                self?.audio.play("click", volume: 0.7)
+            }
+        }
+        // A record: a smaller red stamp across the corner
+        var hold = 2.1 + Double(stars.count) * 0.12
+        if newBest {
+            let best = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.newBestShort), color: UIColor(red: 0.85, green: 0.12, blue: 0.16, alpha: 1),
+                                                          check: false, fontSize: 18))
+            best.position = CGPoint(x: right - 70, y: top - 146)
+            best.zRotation = 0.14
+            best.alpha = 0
+            best.setScale(2.2)
+            ticket.addChild(best)
+            let land = SKAction.group([.scale(to: 1.0, duration: 0.1), .fadeAlpha(to: 0.9, duration: 0.07)])
+            land.timingMode = .easeIn
+            let at = 1.05 + Double(stars.count) * 0.2
+            best.run(.sequence([.wait(forDuration: at), land]))
+            run(.wait(forDuration: at + 0.1)) { [weak self] in
+                self?.audio.play("bump", volume: 0.6)
+                self?.bumpHaptic.impactOccurred(intensity: 0.7)
+            }
+            hold += 0.35
+        }
+        // Out: drops away, then the results
+        let away = SKAction.group([.moveBy(x: -40, y: -size.height * 0.7, duration: 0.35), .rotate(byAngle: 0.25, duration: 0.35),
+                                   .fadeOut(withDuration: 0.3)])
+        away.timingMode = .easeIn
+        ticket.run(.sequence([.wait(forDuration: hold), away]))
+        shade.run(.sequence([.wait(forDuration: hold + 0.1), .fadeOut(withDuration: 0.3)]))
+        layer.run(.sequence([.wait(forDuration: hold + 0.5), .removeFromParent()]))
+        run(.wait(forDuration: hold + 0.3)) { [weak self] in
             guard let self = self else { return }
             self.finishAnimating = false
             self.checkLevelDone()
