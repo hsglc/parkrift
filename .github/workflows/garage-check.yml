@@ -54,9 +54,9 @@ jobs:
               xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
               sleep 2
               xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -staygarage -unlocktest -pp.car $CAR -pp.paint 0 -AppleLanguages "(tr)" > /dev/null 2>&1
-              # The reveal starts 4 s after the garage opens (about 5 s after launch)
-              sleep 5.4
-              for T in 1 2 3 4 5 6 7 8; do
+              # The reveal starts 1.5 s after the garage opens
+              sleep 6
+              for T in 01 02 03 04 05 06 07 08 09 10 11 12 13 14; do
                 xcrun simctl io "$UDID" screenshot --mask=ignored "garage/unlock-car$CAR-$T.png" > /dev/null 2>&1 || true
                 sleep 0.45
               done

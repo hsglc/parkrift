@@ -689,7 +689,7 @@ struct GarageView: View {
             #if BENCHMARK
             // Test hook: the unlock reveal on the shown car
             if ProcessInfo.processInfo.arguments.contains("-unlocktest") {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     stage.celebrateUnlock(choice)
                     withAnimation(.easeOut(duration: 0.25)) { unlocked = choice.spec }
                 }
