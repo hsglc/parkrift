@@ -343,6 +343,13 @@ enum Strings {
     static var rewardNearMiss: String { t("Kıl payı", "Near miss", "Por los pelos") }
     static var rewardEscape: String { t("Polisten kaçış", "Police escape", "Fuga") }
     static var taskComplete: String { t("GÖREV TAMAM", "TASK DONE", "TAREA HECHA") }
+    static var taskReadyTag: String { t("GÖREV TAMAM · MENÜDEN TOPLA", "TASK DONE · COLLECT IN MENU", "TAREA HECHA · RECÓGELA EN EL MENÚ") }
+    static var collect: String { t("TOPLA", "COLLECT", "RECOGER") }
+    static var collectAll: String { t("Hepsini topla", "Collect all", "Recoger todo") }
+    static var claimed: String { t("Toplandı", "Collected", "Recogido") }
+    static func rewardsReady(_ n: Int) -> String {
+        t("\(n) görev ödülü hazır", n == 1 ? "1 task reward ready" : "\(n) task rewards ready", n == 1 ? "1 premio listo" : "\(n) premios listos")
+    }
     static var dailyTitle: String { t("Günlük", "Daily", "Diario") }
     static var dailyTasks: String { t("Bugünün görevleri", "Today's tasks", "Tareas de hoy") }
     static var dailyTasksHint: String { t("Her gün yenilenir; tamamlanınca para otomatik eklenir.", "New every day; coins are added as soon as a task is done.", "Nuevas cada día; las monedas se suman al completarlas.") }

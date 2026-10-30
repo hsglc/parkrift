@@ -569,6 +569,14 @@ final class AppModel: ObservableObject {
         return bought
     }
 
+    /// Collects a done daily task's coins.
+    @discardableResult
+    func claimTask(_ index: Int) -> Int {
+        let amount = Progression.claim(index)
+        objectWillChange.send()
+        return amount
+    }
+
     @discardableResult
     func collectGift() -> Int {
         let amount = Progression.collectGift()

@@ -288,7 +288,7 @@ struct ResultsOverlay: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 ForEach(reward.tasksDone.indices, id: \.self) { index in
-                    Text("\(Strings.taskComplete) +\(reward.tasksDone[index].coins)")
+                    Text("\(Strings.taskReadyTag) +\(reward.tasksDone[index].coins)")
                         .font(.system(size: 10, weight: .black, design: .rounded))
                         .foregroundStyle(Palette.ink)
                         .padding(.horizontal, 6)
