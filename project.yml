@@ -6,6 +6,11 @@ options:
   createIntermediateGroups: true
   developmentLanguage: en
 
+packages:
+  WebRTC:
+    url: https://github.com/stasel/WebRTC
+    exactVersion: 155.0.0
+
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -18,6 +23,8 @@ targets:
     platform: iOS
     sources:
       - path: Hop
+    dependencies:
+      - package: WebRTC
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.huseyingulcu.hop

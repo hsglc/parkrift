@@ -24,6 +24,22 @@ jobs:
           XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
           sudo xcode-select -s "$XCODE"
 
+      - name: Boot the online check's simulators (while the app builds)
+        if: ${{ inputs.net != 'false' }}
+        run: |
+          read A B <<< $(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          phones = []
+          for runtime, devices in data.items():
+              if "iOS" in runtime:
+                  phones = [d["udid"] for d in devices if d["name"].startswith("iPhone") and "Pro" in d["name"]] or phones
+          print(phones[-1], phones[-2])
+          ')
+          echo "NET_A=$A" >> $GITHUB_ENV
+          echo "NET_B=$B" >> $GITHUB_ENV
+          for D in $A $B; do perl -e 'alarm 120; exec @ARGV' xcrun simctl boot "$D" || echo "boot $D: $?"; done
+
       - name: Build for simulator
         run: |
           brew install xcodegen
@@ -150,24 +166,16 @@ jobs:
 
       - name: Online check (two simulators in one room)
         if: ${{ inputs.net != 'false' }}
-        timeout-minutes: 12
+        timeout-minutes: 16
         run: |
           mkdir -p shots
-          read A B <<< $(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
-          data = json.load(sys.stdin)["devices"]
-          phones = []
-          for runtime, devices in data.items():
-              if "iOS" in runtime:
-                  phones = [d["udid"] for d in devices if d["name"].startswith("iPhone") and "Pro" in d["name"]] or phones
-          print(phones[-1], phones[-2])
-          ')
+          A=$NET_A; B=$NET_B
           echo "host $A guest $B"
           for D in $A $B; do
             echo "boot $D"
-            xcrun simctl boot "$D" 2>/dev/null || true
-            timeout 240 xcrun simctl bootstatus "$D" -b > /dev/null || echo "bootstatus timed out"
-            xcrun simctl install "$D" build/Build/Products/Release-iphonesimulator/Hop.app
+            # (macOS has no `timeout`: perl's alarm bounds the wait)
+            perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$D" -b > /dev/null || echo "bootstatus timed out"
+            perl -e 'alarm 180; exec @ARGV' xcrun simctl install "$D" build/Build/Products/Release-iphonesimulator/Hop.app || echo "install $D failed"
             xcrun simctl terminate "$D" com.huseyingulcu.hop 2>/dev/null || true
             echo "ready $D"
           done
@@ -178,9 +186,12 @@ jobs:
           xcrun simctl launch --console-pty "$B" com.huseyingulcu.hop -benchmark -netjoin $CODE -dayweather -AppleLanguages "(tr)" > shots/net-guest.log 2>&1 &
           for t in 30 45 60 75; do
             sleep 15
-            xcrun simctl io "$A" screenshot "shots/net-host-$t.png" || true
-            xcrun simctl io "$B" screenshot "shots/net-guest-$t.png" || true
+            perl -e 'alarm 20; exec @ARGV' xcrun simctl io "$A" screenshot "shots/net-host-$t.png" || true
+            perl -e 'alarm 20; exec @ARGV' xcrun simctl io "$B" screenshot "shots/net-guest-$t.png" || true
           done
+          # What the machine is busy with (a slow runner or our app)
+          top -l 1 -o cpu -n 8 -stats pid,command,cpu,threads | tail -12 || true
+          PID=$(pgrep -x Hop | head -1); [ -n "$PID" ] && perl -e 'alarm 30; exec @ARGV' sample "$PID" 2 -file shots/sample-net.txt > /dev/null 2>&1 || true
           # The apps hold the console: close them so the step ends
           xcrun simctl terminate "$A" com.huseyingulcu.hop 2>/dev/null || true
           xcrun simctl terminate "$B" com.huseyingulcu.hop 2>/dev/null || true
@@ -188,7 +199,7 @@ jobs:
           kill %1 %2 2>/dev/null || true
           echo "--- host"; grep -a "PPNET" shots/net-host.log | head -40
           echo "--- guest"; grep -a "PPNET" shots/net-guest.log | head -40
-          grep -a "PPNET hit" shots/net-*.log | while read -r line; do echo "::notice::$line"; done || true
+          grep -a "PPNET hit\|PPNET fast\|path=" shots/net-*.log | while read -r line; do echo "::notice::$line"; done || true
           cp ~/Library/Logs/DiagnosticReports/Hop* shots/ 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4

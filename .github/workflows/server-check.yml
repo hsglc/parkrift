@@ -25,3 +25,12 @@ jobs:
           cat result.txt
           while IFS= read -r line; do echo "::notice::$line"; done < result.txt
           exit $status
+      - name: Fast path (Cloudflare Realtime DataChannels)
+        run: |
+          set +e
+          npm i --no-save werift@0.25.0 > /dev/null 2>&1
+          node server/test-rtc.mjs > rtc.txt 2>&1
+          status=$?
+          cat rtc.txt
+          while IFS= read -r line; do echo "::notice::$line"; done < rtc.txt
+          exit $status
