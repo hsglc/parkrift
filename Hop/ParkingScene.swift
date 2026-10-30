@@ -205,8 +205,9 @@ final class ParkingScene: SKScene {
         netLogClock += dt
         if netLogClock > 2 {
             netLogClock = 0
-            netLog(String(format: "%@ delay=%.0fms friend=%@ seen=%.0f speed=%.0f", role, oneWayDelay * 1000,
-                          friendPresent ? "yes" : "no", carPosition.distance(to: remotePosition), velocity))
+            netLog(String(format: "%@ delay=%.0fms friend=%@ seen=%.0f speed=%.0f path=%@", role, oneWayDelay * 1000,
+                          friendPresent ? "yes" : "no", carPosition.distance(to: remotePosition), velocity,
+                          model?.net.fastActive == true ? "udp" : "ws"))
         }
         guard role == "join", friendPresent, remoteTarget != nil else { return }
         let relative = CGFloat.angleDelta(heading, atan2(remotePosition.y - carPosition.y, remotePosition.x - carPosition.x))
@@ -1328,14 +1329,15 @@ final class ParkingScene: SKScene {
             friendHitUs(message)
         case "pi":
             // Echoed straight back so the friend can time the round trip
-            model?.send(["t": "po", "ts": message["ts"] as? Double ?? 0])
+            model?.sendFast(["t": "po", "ts": message["ts"] as? Double ?? 0])
         case "po":
             guard let sent = message["ts"] as? Double, sent > 0 else { return }
             let half = max(0, min(0.4, (CACurrentMediaTime() - sent) / 2))
             oneWayDelay += (half - oneWayDelay) * 0.3
             // The delay beside the room code, for testing on real phones
             if online, let code = model?.roomCode {
-                codeLabel.text = "\(Strings.roomCode): \(code) · \(Int((oneWayDelay * 1000).rounded())) ms"
+                let path = model?.net.fastActive == true ? " · UDP" : ""
+                codeLabel.text = "\(Strings.roomCode): \(code) · \(Int((oneWayDelay * 1000).rounded())) ms\(path)"
             }
         case "b":
             guard messageLevel == levelIndex, !isHost, let data = message["d"] as? [Int] else { return }
@@ -1775,7 +1777,7 @@ final class ParkingScene: SKScene {
     }
 
     private func sendState() {
-        model?.send(["t": "s", "l": levelIndex, "ts": CACurrentMediaTime(),
+        model?.sendFast(["t": "s", "l": levelIndex, "ts": CACurrentMediaTime(),
                      "x": Double(carPosition.x), "y": Double(carPosition.y),
                      "h": Double(heading), "v": Double(velocity), "st": Double(steer),
                      "b": braking ? 1 : 0, "r": (gear == .reverse && velocity < -1) ? 1 : 0, "n": isBoosting ? 1 : 0,
@@ -2005,7 +2007,7 @@ final class ParkingScene: SKScene {
             pingClock += TimeInterval(dt)
             if pingClock >= 2 {
                 pingClock = 0
-                model?.send(["t": "pi", "ts": CACurrentMediaTime()])
+                model?.sendFast(["t": "pi", "ts": CACurrentMediaTime()])
             }
         }
 

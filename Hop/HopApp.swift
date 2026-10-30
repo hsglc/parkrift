@@ -525,6 +525,12 @@ final class AppModel: ObservableObject {
         net.send(message)
     }
 
+    /// Replaceable messages (car states, pings): the UDP-like path when it is up.
+    func sendFast(_ message: [String: Any]) {
+        guard online else { return }
+        net.sendFast(message)
+    }
+
     func levelCompleted(_ index: Int) {
         if index + 2 > unlockedLevels { unlockedLevels = index + 2 }
         // The home screen offers the next level from now on
