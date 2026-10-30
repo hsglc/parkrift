@@ -344,11 +344,22 @@ final class ParkingScene: SKScene {
         let position: CGPoint
         let heading: CGFloat
         let velocity: CGFloat
+        /// The sender's own turn rate and acceleration (smoothed there), when it sends them.
+        var yawRate: CGFloat? = nil
+        var accel: CGFloat? = nil
     }
     private var remoteSnapshots: [RemoteSnapshot] = []
+    /// Smoothed turn rate and acceleration used to carry the friend's car ahead.
+    private var remoteYawRate: CGFloat = 0
+    private var remoteAccel: CGFloat = 0
+    /// Our own smoothed turn rate, sent with each state.
+    private var sentYawRate: CGFloat = 0
+    private var yawRateHeading: CGFloat?
     private var clockOffset: TimeInterval?
     /// States arrive 30 times a second; played back this late they always have one on each side.
-    private let interpolationDelay: TimeInterval = 0.1
+    /// Played back this late; shorter over the UDP-like path (states come 60 times a second and
+    /// never queue up behind a lost one), so less has to be predicted.
+    private var interpolationDelay: TimeInterval { model?.net.fastActive == true ? 0.06 : 0.1 }
 
     // MARK: Level state
 
@@ -905,11 +916,8 @@ final class ParkingScene: SKScene {
         tickHaptic.prepare()
         notifyHaptic.prepare()
 
-        let gearDisc = makeGlass(width: 36, height: 36)
-        gearDisc.position = CGPoint(x: reversePedal.position.x, y: reversePedal.position.y + reverseSize.height / 2 + 26)
-        controlsLayer.addChild(gearDisc)
+        // The gear is on the speedometer; the disc that repeated it over the pedals is gone
         gearLabel = makeLabel("D", size: 18, color: UIColor(red: 0.45, green: 0.95, blue: 0.6, alpha: 1))
-        gearDisc.addChild(gearLabel)
     }
 
     // MARK: Level loading
@@ -1305,14 +1313,19 @@ final class ParkingScene: SKScene {
             let now = CACurrentMediaTime()
             let sentAt = message["ts"] as? Double ?? now
             let offset = now - sentAt
-            if let current = clockOffset, offset >= current {
-                clockOffset = current + (offset - current) * 0.02
+            // The fastest packet sets the offset; it follows a faster one quickly but smoothly (a
+            // jump moved the played-back time, and the car with it), slower ones barely
+            if let current = clockOffset, abs(offset - current) < 0.3 {
+                clockOffset = current + (offset - current) * (offset >= current ? 0.02 : 0.25)
             } else {
                 clockOffset = offset
             }
             if let last = remoteSnapshots.last, sentAt <= last.time { return }
-            remoteSnapshots.append(RemoteSnapshot(time: sentAt, position: target, heading: CGFloat(h),
-                                                  velocity: CGFloat(message["v"] as? Double ?? 0)))
+            var snapshot = RemoteSnapshot(time: sentAt, position: target, heading: CGFloat(h),
+                                          velocity: CGFloat(message["v"] as? Double ?? 0))
+            if let w = message["w"] as? Double { snapshot.yawRate = CGFloat(w) }
+            if let a = message["a"] as? Double { snapshot.accel = CGFloat(a) }
+            remoteSnapshots.append(snapshot)
             if remoteSnapshots.count > 30 { remoteSnapshots.removeFirst(remoteSnapshots.count - 30) }
             remoteSteer = CGFloat(message["st"] as? Double ?? 0)
             remoteBoost = (message["n"] as? Int ?? 0) == 1
@@ -1429,14 +1442,25 @@ final class ParkingScene: SKScene {
             let lead = CGFloat(min(0.3, interpolationDelay + oneWayDelay))
             // How fast it turns and speeds up or brakes, from its last two states, so a car in a
             // bend is carried round the bend and a braking car is not carried past its stop
-            var yawRate: CGFloat = 0
-            var accel: CGFloat = 0
-            if remoteSnapshots.count >= 2 {
+            // (sent by the friend's game, which knows them exactly; estimated from two states only
+            // for an older version, which jittered with every packet). Smoothed here as well, so
+            // the carried-ahead pose glides instead of twitching as each state lands.
+            var yawTarget: CGFloat = 0
+            var accelTarget: CGFloat = 0
+            if let w = last.yawRate, let a = last.accel {
+                yawTarget = w
+                accelTarget = a
+            } else if remoteSnapshots.count >= 2 {
                 let before = remoteSnapshots[remoteSnapshots.count - 2]
                 let span = CGFloat(max(last.time - before.time, 0.02))
-                yawRate = max(-2.5, min(2.5, CGFloat.angleDelta(before.heading, last.heading) / span))
-                accel = max(-900, min(600, (last.velocity - before.velocity) / span))
+                yawTarget = CGFloat.angleDelta(before.heading, last.heading) / span
+                accelTarget = (last.velocity - before.velocity) / span
             }
+            let k = min(1, dt * 12)
+            remoteYawRate += (max(-2.5, min(2.5, yawTarget)) - remoteYawRate) * k
+            remoteAccel += (max(-900, min(600, accelTarget)) - remoteAccel) * k
+            let yawRate = remoteYawRate
+            let accel = remoteAccel
             // Distance along the path: never past a stop (a braking car does not reverse)
             var travel = last.velocity * lead + accel * lead * lead / 2
             if last.velocity > 0 { travel = max(0, travel) } else { travel = min(0, travel) }
@@ -1798,6 +1822,7 @@ final class ParkingScene: SKScene {
         model?.sendFast(["t": "s", "l": levelIndex, "ts": CACurrentMediaTime(),
                      "x": Double(carPosition.x), "y": Double(carPosition.y),
                      "h": Double(heading), "v": Double(velocity), "st": Double(steer),
+                     "w": Double(sentYawRate), "a": Double(longitudinalAccel),
                      "b": braking ? 1 : 0, "r": (gear == .reverse && velocity < -1) ? 1 : 0, "n": isBoosting ? 1 : 0,
                      "pp": police.map { [Double($0.position.x), Double($0.position.y), Double($0.heading)] } ?? []])
     }
@@ -2018,8 +2043,10 @@ final class ParkingScene: SKScene {
 
         if online && friendPresent {
             sendClock += TimeInterval(dt)
-            if sendClock >= 1.0 / 30.0 && !localParked {
-                sendClock = 0
+            let interval = model?.net.fastActive == true ? 1.0 / 60.0 : 1.0 / 30.0
+            if sendClock >= interval && !localParked {
+                // Subtracted, not reset, so the states leave at an even pace
+                sendClock = min(sendClock - interval, interval)
                 sendState()
             }
             pingClock += TimeInterval(dt)
@@ -3072,6 +3099,11 @@ final class ParkingScene: SKScene {
         let newPosition = CGPoint(x: carPosition.x + cos(moveHeading) * velocity * dt,
                                   y: carPosition.y + sin(moveHeading) * velocity * dt)
 
+        if let last = yawRateHeading, dt > 0 {
+            let raw = max(-4, min(4, CGFloat.angleDelta(last, heading) / dt))
+            sentYawRate += (raw - sentYawRate) * min(1, dt * 15)
+        }
+        yawRateHeading = heading
         let longitudinal = (velocity - previousVelocity) / max(dt, 0.001)
         longitudinalAccel += (longitudinal - longitudinalAccel) * min(1, dt * 8)
         lateralAccel += (velocity * yawRate - lateralAccel) * min(1, dt * 8)
@@ -3088,9 +3120,10 @@ final class ParkingScene: SKScene {
                 if benchmark { FrameMonitor.shared.mark("hit") }
                 hitsLabel.text = "\(hits)"
                 crashCar(impact)
+            } else {
+                // Leaning on a car (or still touching after a crash): we do not drive into it
+                velocity *= 0.3
             }
-            // Most of our momentum goes into the crash; we do not drive into the other car
-            velocity *= 0.3
             applyCrashMotion(dt)
             gearLabel.text = gear == .drive ? "\(gearIndex)" : "R"
             tyreEffects(dt, accelerating: gasDown || reverseDown)
@@ -3829,32 +3862,47 @@ final class ParkingScene: SKScene {
         return best
     }
 
-    /// Car-on-car crash: always a clear reaction, stronger with the closing speed. We are knocked
-    /// away from the other car and spun by the side of the hit; a traffic car takes our momentum.
+    /// Car-on-car crash as momentum, the way racing games settle it: two cars of about the same
+    /// weight trade the speed at which they close along the line between them, and as cars crumple
+    /// rather than bounce only a little comes back (restitution 0.25); scraping along each other
+    /// takes some of the sliding speed too. A hit away from a car's middle turns it, as much as
+    /// the lever of the blow and its length allow, so a nudge on a rear corner swings the tail but
+    /// a straight rear-end or a head-on barely turns either car. Both get exactly opposite shoves.
     private func crashCar(_ impact: CarImpact) {
         failDrift()
-        let strength = max(0.3, min(1, impact.closing / (maxForward * 0.75)))
         let dx = impact.center.x - carPosition.x, dy = impact.center.y - carPosition.y
         let length = max(1, hypot(dx, dy))
-        let nx = dx / length, ny = dy / length
-        let side = cos(heading) * dy - sin(heading) * dx          // > 0: the hit is on our left
-        let forwardness = cos(heading) * nx + sin(heading) * ny
-        let spinSign: CGFloat = side >= 0 ? -1 : 1
-        crashSpin = spinSign * (1.8 + 3.2 * strength) * (0.6 + 0.4 * (1 - abs(forwardness)))
-        let push = 70 + 160 * strength
-        crashShove = CGVector(dx: -nx * push + impact.otherVelocity.dx * 0.3, dy: -ny * push + impact.otherVelocity.dy * 0.3)
+        let nx = dx / length, ny = dy / length                       // from us to the other car
+        let mine = CGVector(dx: cos(heading) * velocity, dy: sin(heading) * velocity)
+        let relative = CGVector(dx: mine.dx - impact.otherVelocity.dx, dy: mine.dy - impact.otherVelocity.dy)
+        let restitution: CGFloat = 0.25
+        let normalImpulse = (1 + restitution) / 2 * max(0, impact.closing)  // per car, equal masses
+        // Friction between the bodies: some of the sliding along each other is taken out
+        let along = relative.dx * nx + relative.dy * ny
+        let slideX = relative.dx - nx * along, slideY = relative.dy - ny * along
+        let slide = hypot(slideX, slideY)
+        let scrape = slide > 1 ? min(slide / 2, 0.35 * normalImpulse) / slide : 0
+        // Our change of velocity; the other car gets the opposite
+        let change = CGVector(dx: -nx * normalImpulse - slideX * scrape, dy: -ny * normalImpulse - slideY * scrape)
+        applyImpulse(change, contactFrom: impact.center)
+        let otherHeading: CGFloat
+        switch impact.contact {
+        case .bot(let index): otherHeading = traffic?.bots.indices.contains(index) == true ? traffic!.bots[index].heading : heading
+        default: otherHeading = remoteHeading
+        }
+        let otherChange = CGVector(dx: -change.dx, dy: -change.dy)
+        let otherSpin = CarPhysics.spin(from: otherChange, at: carPosition, carCenter: impact.center, carHeading: otherHeading)
+        let strength = max(0.1, min(1, normalImpulse / (maxForward * 0.5)))
         if case .bot(let index) = impact.contact {
-            let kick = 40 + impact.closing * 0.6
-            traffic?.hit(index, shove: CGVector(dx: nx * kick, dy: ny * kick), spin: -spinSign * (1.4 + 2.4 * strength))
+            traffic?.hit(index, shove: otherChange, spin: otherSpin)
         }
         if case .remoteCar = impact.contact, online, friendPresent {
             // The friend's game simulates the friend's car: tell it about the hit, or on the
             // friend's screen nothing happens (each player only ever saw their own side of a crash)
-            let kick = 40 + impact.closing * 0.6
             let point = CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2)
             if benchmark { netLog(String(format: "hit sent closing=%.0f", impact.closing)) }
-            model?.send(["t": "hit", "l": levelIndex, "dx": Double(nx * kick), "dy": Double(ny * kick),
-                         "sp": Double(-spinSign * (1.4 + 2.4 * strength)), "k": Double(strength),
+            model?.send(["t": "hit", "l": levelIndex, "dx": Double(otherChange.dx), "dy": Double(otherChange.dy),
+                         "sp": Double(otherSpin), "k": Double(strength), "dv": 1,
                          "x": Double(point.x), "y": Double(point.y)])
         }
         var clock = CACurrentMediaTime()
@@ -3878,6 +3926,17 @@ final class ParkingScene: SKScene {
         pendingHorn = CGPoint(x: (carPosition.x + impact.center.x) / 2, y: (carPosition.y + impact.center.y) / 2)
     }
 
+    /// A sudden change of velocity: the part along the car changes its speed, the part across it
+    /// becomes a sideways slide the tyres scrub off, and the blow turns the car about its middle.
+    private func applyImpulse(_ change: CGVector, contactFrom other: CGPoint) {
+        let forwardX = cos(heading), forwardY = sin(heading)
+        let along = change.dx * forwardX + change.dy * forwardY
+        velocity += along
+        crashShove = CGVector(dx: crashShove.dx + change.dx - forwardX * along,
+                              dy: crashShove.dy + change.dy - forwardY * along)
+        crashSpin += CarPhysics.spin(from: change, at: other, carCenter: carPosition, carHeading: heading)
+    }
+
     /// The friend drove into us (their game saw the hit): our car takes the shove and the spin they
     /// worked out, with the crunch, the shake and the sparks. It does not count as our crash.
     private func friendHitUs(_ message: [String: Any]) {
@@ -3891,9 +3950,18 @@ final class ParkingScene: SKScene {
                           carPosition.distance(to: remotePosition), oneWayDelay * 1000))
         }
         failDrift()
-        crashShove = CGVector(dx: crashShove.dx + dx, dy: crashShove.dy + dy)
-        crashSpin += spin
-        velocity *= 0.6
+        if message["dv"] != nil {
+            // A change of velocity worked out from both cars' momentum
+            let forwardX = cos(heading), forwardY = sin(heading)
+            let along = dx * forwardX + dy * forwardY
+            velocity += along
+            crashShove = CGVector(dx: crashShove.dx + dx - forwardX * along, dy: crashShove.dy + dy - forwardY * along)
+            crashSpin += max(-CarPhysics.maxSpin, min(CarPhysics.maxSpin, spin))
+        } else {
+            crashShove = CGVector(dx: crashShove.dx + dx, dy: crashShove.dy + dy)
+            crashSpin += spin
+            velocity *= 0.6
+        }
         audio.play("crash", volume: Float(min(1, 0.45 + strength * 0.6)))
         bumpHaptic.impactOccurred(intensity: min(1, 0.6 + strength * 0.4))
         world?.shake(strength: 3 + 7 * strength)
@@ -3920,15 +3988,17 @@ final class ParkingScene: SKScene {
         let side = cos(heading) * dy - sin(heading) * dx          // > 0: the hit is on our left
         let forwardness = (cos(heading) * dx + sin(heading) * dy) / length
         let spinSign: CGFloat = side >= 0 ? -1 : 1
-        crashSpin = spinSign * (1.6 + 3.4 * strength) * (0.55 + 0.45 * (1 - abs(forwardness)))
-        let push = 55 + 150 * strength
+        // A parked car or a wall does not move: the car comes off it with little rebound and only
+        // turns much when the blow lands well off its middle
+        crashSpin = spinSign * (0.6 + 1.6 * strength) * (0.35 + 0.65 * (1 - abs(forwardness)))
+        let push = 25 + 75 * strength
         crashShove = CGVector(dx: -dx / length * push, dy: -dy / length * push)
         for contact in new {
             if case .bot(let index) = contact {
                 // Our momentum goes into the other car
                 let travel = velocity >= 0 ? heading : heading + CGFloat.pi
-                traffic?.hit(index, shove: CGVector(dx: cos(travel) * impact * 0.55, dy: sin(travel) * impact * 0.55),
-                             spin: -spinSign * (1.2 + 2.6 * strength))
+                traffic?.hit(index, shove: CGVector(dx: cos(travel) * impact * 0.6, dy: sin(travel) * impact * 0.6),
+                             spin: -spinSign * (0.5 + 1.3 * strength))
             }
         }
         audio.play("crash", volume: Float(min(1, 0.5 + strength * 0.6)))
@@ -3959,7 +4029,9 @@ final class ParkingScene: SKScene {
             crashShove = .zero
             crashSpin = 0
         }
-        let fade = exp(-dt * 3.4)
+        // The tyres scrub off the sideways slide and the spin (about half of each is gone in a
+        // sixth of a second)
+        let fade = exp(-dt * 4.2)
         crashShove = CGVector(dx: crashShove.dx * fade, dy: crashShove.dy * fade)
         crashSpin *= fade
         // Tyres screech while the car spins
@@ -4943,5 +5015,32 @@ final class ParkingScene: SKScene {
         toast.zPosition = 10
         hud.addChild(toast)
         toast.run(.sequence([.wait(forDuration: 2.0), .fadeOut(withDuration: 0.4), .removeFromParent()]))
+    }
+}
+
+/// Rigid-body helpers for car crashes (both cars about the same weight).
+enum CarPhysics {
+    /// Fastest turn a crash may give a car (rad/s).
+    static let maxSpin: CGFloat = 2.4
+
+    /// The turn a change of velocity `change` gives a car when the blow comes from `from`: the
+    /// blow lands on the car's outline nearest that point, and its lever about the car's middle
+    /// over the car's turning inertia (a box the size of a car) gives the turn rate.
+    static func spin(from change: CGVector, at from: CGPoint, carCenter: CGPoint, carHeading: CGFloat) -> CGFloat {
+        let half = CGSize(width: Levels.carSize.width / 2, height: Levels.carSize.height / 2)
+        // The point of the outline nearest the other car, in the car's own frame
+        let rx = from.x - carCenter.x, ry = from.y - carCenter.y
+        let c = cos(carHeading), s = sin(carHeading)
+        var lx = rx * c + ry * s, ly = -rx * s + ry * c
+        lx = max(-half.width, min(half.width, lx))
+        ly = max(-half.height, min(half.height, ly))
+        let px = lx * c - ly * s, py = lx * s + ly * c
+        // Turning inertia of a box per unit mass: (L² + W²) / 12
+        let size = Levels.carSize
+        let inertia = (size.width * size.width + size.height * size.height) / 12
+        let torque = px * change.dy - py * change.dx
+        // Four loaded tyres resist the turn: only part of the lever's turn gets through
+        let tyreHold: CGFloat = 0.25
+        return max(-maxSpin, min(maxSpin, torque / inertia * tyreHold))
     }
 }

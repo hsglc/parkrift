@@ -646,8 +646,10 @@ final class Traffic {
     /// A player crashed into bot `index`: it is shoved and spun, then drives on.
     func hit(_ index: Int, shove: CGVector, spin: CGFloat) {
         guard bots.indices.contains(index) else { return }
+        // It keeps its own momentum plus the blow, then the tyres scrub the slide off
+        let bot = bots[index]
         bots[index].stunned = 1.1
-        bots[index].shove = shove
+        bots[index].shove = CGVector(dx: cos(bot.heading) * bot.speed + shove.dx, dy: sin(bot.heading) * bot.speed + shove.dy)
         bots[index].spin = spin
         bots[index].speed = 0
     }
@@ -681,7 +683,7 @@ final class Traffic {
                 bot.position.x += bot.shove.dx * dt
                 bot.position.y += bot.shove.dy * dt
                 bot.heading += bot.spin * dt
-                let fade = exp(-dt * 3.2)
+                let fade = exp(-dt * 4.2)
                 bot.shove = CGVector(dx: bot.shove.dx * fade, dy: bot.shove.dy * fade)
                 bot.spin *= fade
                 bot.speed = 0
