@@ -652,22 +652,30 @@ struct GarageView: View {
         ZStack {
             GarageSceneView(stage: stage)
                 .ignoresSafeArea()
-            // A soft shade on the right, where the details sit, and along the bottom
-            LinearGradient(colors: [.clear, .clear, Palette.carbon.opacity(0.82)], startPoint: .leading, endPoint: .trailing)
+            // Soft shades under the title and along the bottom (the card and the dock are frosted)
+            LinearGradient(colors: [Palette.carbon.opacity(0.45), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.25))
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
-            LinearGradient(colors: [.clear, Palette.carbon.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+            LinearGradient(colors: [.clear, Palette.carbon.opacity(0.5)], startPoint: .center, endPoint: .bottom)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            HStack(alignment: .top, spacing: 0) {
-                leftColumn
-                Spacer(minLength: 16)
-                infoPanel
-                    .frame(width: 290)
+            VStack(spacing: 0) {
+                topBar
+                Spacer(minLength: 8)
+                HStack(alignment: .bottom, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        rotateHint
+                        carDock
+                    }
+                    Spacer(minLength: 0)
+                    infoPanel
+                        .frame(width: 300)
+                }
             }
             .padding(.horizontal, 22)
-            .padding(.vertical, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
             .opacity(unlocked == nil ? 1 : 0)
             .animation(.easeInOut(duration: 0.3), value: unlocked == nil)
 
@@ -717,147 +725,139 @@ struct GarageView: View {
         }
     }
 
-    // MARK: Left: title, the car's arrows, the car strip
+    // MARK: Top: back, title, coins
 
-    private var leftColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 14) {
-                RoundIconButton(systemImage: "chevron.left") {
-                    AudioManager.shared.play("click", volume: 0.6)
-                    model.leaveGarage(confirmed: false)
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            RoundIconButton(systemImage: "chevron.left") {
+                AudioManager.shared.play("click", volume: 0.6)
+                model.leaveGarage(confirmed: false)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(Strings.garage)
+                    .font(.race(28))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .foregroundStyle(.white)
+                Text(modeLabel)
+                    .font(.ui(12, .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+            Spacer()
+            CoinPill(coins: model.coins)
+        }
+    }
+
+    /// A short "swipe to turn" line under the car that fades once the player has seen it.
+    @State private var hintShown = true
+
+    private var rotateHint: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "hand.draw.fill")
+                .font(.system(size: 12, weight: .bold))
+            Text(Strings.garageRotateHint)
+                .font(.ui(12, .semibold))
+        }
+        .foregroundStyle(.white.opacity(0.75))
+        .padding(.horizontal, 12)
+        .frame(height: 28)
+        .background(Capsule().fill(Color.black.opacity(0.35)))
+        .opacity(hintShown ? 1 : 0)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                withAnimation(.easeOut(duration: 0.6)) { hintShown = false }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    // MARK: Bottom left: the car dock
+
+    /// One frosted dock: round arrows at both ends and the cars between them as chips (class
+    /// badge and name; the chosen one lit white, locked ones with their price).
+    private var carDock: some View {
+        HStack(spacing: 6) {
+            dockArrow("chevron.left") { step(-1) }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(CarSpec.all, id: \.id) { car in
+                            carChip(car).id(car.id)
+                        }
+                    }
+                    .padding(.horizontal, 2)
                 }
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.06),
+                                             .init(color: .black, location: 0.94), .init(color: .clear, location: 1)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .onAppear { proxy.scrollTo(choice.model, anchor: .center) }
+                .onChange(of: choice.model) { _, id in
+                    withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) }
+                }
+            }
+            dockArrow("chevron.right") { step(1) }
+        }
+        .padding(6)
+        .frame(maxWidth: 470)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .background(Capsule().fill(Color.black.opacity(0.25)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func carChip(_ car: CarSpec) -> some View {
+        let selected = car.id == choice.model
+        let owned = Progression.owns(car.id)
+        return Button {
+            select(car.id)
+        } label: {
+            HStack(spacing: 8) {
+                Text(car.className)
+                    .font(.ui(11, .heavy))
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(selected ? Palette.gold : Color.white.opacity(owned ? 0.85 : 0.35)))
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(Strings.garage)
-                        .font(.race(30))
+                    Text(car.name)
+                        .font(.race(16))
+                        .foregroundStyle(selected ? Palette.ink : .white.opacity(owned ? 1 : 0.7))
                         .lineLimit(1)
                         .fixedSize()
-                        .foregroundStyle(.white)
-                    Text(modeLabel)
-                        .font(.ui(13, .semibold))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .lineLimit(1)
+                    if !owned {
+                        HStack(spacing: 3) {
+                            Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold))
+                            Text("\(Progression.price(car.id))").monospacedDigit()
+                        }
+                        .font(.ui(10, .bold))
+                        .foregroundStyle(selected ? Palette.ink.opacity(0.7) : Palette.gold)
+                    }
                 }
-                coins
             }
-            Spacer(minLength: 0)
-            // Round arrows either side of the count, under the car
-            HStack(spacing: 14) {
-                arrow("chevron.left") { step(-1) }
-                Text("\(spec.id.order + 1) / \(CarSpec.all.count)")
-                    .font(.ui(14, .bold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 52)
-                arrow("chevron.right") { step(1) }
-            }
-            .padding(.bottom, 12)
-            carStrip
+            .padding(.leading, 5)
+            .padding(.trailing, 14)
+            .frame(height: 40)
+            .background(Capsule().fill(selected ? Color.white : Color.white.opacity(0.06)))
         }
-        .frame(maxHeight: .infinity, alignment: .top)
+        .buttonStyle(PressScaleStyle())
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selected)
     }
 
-    /// The coins, in a round glass capsule.
-    private var coins: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "dollarsign.circle.fill")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(Palette.gold)
-            Text("\(model.coins)")
-                .font(.race(18))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .contentTransition(.numericText())
-        }
-        .padding(.leading, 10)
-        .padding(.trailing, 14)
-        .frame(height: 36)
-        .background(Capsule().fill(Color.black.opacity(0.45)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-        .animation(.easeOut(duration: 0.3), value: model.coins)
-    }
-
-    private func arrow(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func dockArrow(_ icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 17, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
+                .frame(width: 40, height: 40)
                 .background(Circle().fill(Color.white.opacity(0.1)))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
         }
         .buttonStyle(PressScaleStyle())
     }
 
-    private var carStrip: some View {
-        ScrollViewReader { proxy in
-        ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 10) {
-            ForEach(CarSpec.all, id: \.id) { car in
-                let selected = car.id == choice.model
-                let owned = Progression.owns(car.id)
-                Button {
-                    select(car.id)
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Text(car.className)
-                                .font(.ui(11, .heavy))
-                                .foregroundStyle(selected ? Palette.ink : .white)
-                                .frame(minWidth: 20)
-                                .padding(.horizontal, 4)
-                                .frame(height: 18)
-                                .background(Capsule().fill(selected ? Palette.gold : Color.white.opacity(0.16)))
-                            Spacer(minLength: 0)
-                            if !owned {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "lock.fill")
-                                        .font(.system(size: 9, weight: .bold))
-                                    Text("\(Progression.price(car.id))")
-                                        .monospacedDigit()
-                                }
-                                .font(.ui(11, .bold))
-                                .foregroundStyle(Palette.gold)
-                            }
-                        }
-                        Text(car.name)
-                            .font(.race(17))
-                            .foregroundStyle(.white.opacity(owned || selected ? 1 : 0.7))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .frame(width: 124, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(selected ? Color.white.opacity(0.16) : Color.black.opacity(0.45))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(selected ? Color.white.opacity(0.85) : Color.white.opacity(0.1), lineWidth: selected ? 1.5 : 1)
-                    )
-                }
-                .buttonStyle(PressScaleStyle())
-                .id(car.id)
-            }
-        }
-        .padding(.vertical, 3)
-        .padding(.trailing, 12)
-        }
-        .frame(maxWidth: 420)
-        // The cards fade out at the edge instead of being cut
-        .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.86),
-                                     .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
-        .onAppear { proxy.scrollTo(choice.model, anchor: .center) }
-        .onChange(of: choice.model) { _, id in
-            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) }
-        }
-        }
-    }
+    // MARK: Right: the car's card
 
-    // MARK: Right: name, stats, paint, go
-
-    /// The details on the shade, no panel: maker and class, the name big, four bars, the paint,
-    /// then the buttons.
+    /// A frosted card: maker and a class + power badge, the name, four segmented meters in a
+    /// 2 × 2 grid, the paint, then the buttons.
     private var infoPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
@@ -865,33 +865,31 @@ struct GarageView: View {
                     .font(.ui(13, .semibold))
                     .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
-                Spacer()
-                Text(Strings.carClass + " " + spec.className)
-                    .font(.ui(12, .heavy))
-                    .foregroundStyle(Palette.ink)
-                    .padding(.horizontal, 10)
-                    .frame(height: 22)
-                    .background(Capsule().fill(Palette.gold))
+                Spacer(minLength: 4)
+                powerBadge
             }
             Text(spec.name.localUpper)
-                .font(.race(44))
+                .font(.race(40))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                .padding(.top, 2)
                 .id(spec.id)
                 .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
 
-            VStack(spacing: 10) {
-                StatBar(label: Strings.statSpeed, value: ratings.speed, shown: statsShown, color: accent)
-                StatBar(label: Strings.statAccel, value: ratings.acceleration, shown: statsShown, color: accent)
-                StatBar(label: Strings.statHandling, value: ratings.handling, shown: statsShown, color: accent)
-                StatBar(label: Strings.statNitro, value: ratings.nitro, shown: statsShown, color: accent)
+            Grid(horizontalSpacing: 14, verticalSpacing: 10) {
+                GridRow {
+                    StatMeter(label: Strings.statSpeed, value: ratings.speed, shown: statsShown, color: accent)
+                    StatMeter(label: Strings.statAccel, value: ratings.acceleration, shown: statsShown, color: accent)
+                }
+                GridRow {
+                    StatMeter(label: Strings.statHandling, value: ratings.handling, shown: statsShown, color: accent)
+                    StatMeter(label: Strings.statNitro, value: ratings.nitro, shown: statsShown, color: accent)
+                }
             }
-            .padding(.top, 10)
+            .padding(.top, 8)
 
             if CarSpec.paintChoice {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     ForEach(CarSpec.paints.indices, id: \.self) { index in
                         let selected = index == choice.paint
                         Button {
@@ -900,8 +898,9 @@ struct GarageView: View {
                         } label: {
                             Circle()
                                 .fill(Color(CarSpec.paints[index].color))
-                                .frame(width: 22, height: 22)
-                                .padding(3)
+                                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
+                                .frame(width: selected ? 24 : 20, height: selected ? 24 : 20)
+                                .frame(width: 28, height: 28)
                                 .overlay(Circle().strokeBorder(selected ? Color.white : Color.clear, lineWidth: 2))
                         }
                         .buttonStyle(.plain)
@@ -911,8 +910,12 @@ struct GarageView: View {
                         .font(.ui(12, .semibold))
                         .foregroundStyle(.white.opacity(0.6))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-                .padding(.top, 14)
+                .padding(.horizontal, 6)
+                .frame(height: 40)
+                .background(Capsule().fill(Color.white.opacity(0.06)))
+                .padding(.top, 12)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: choice.paint)
                 .opacity(spec.fixedLivery ? 0.35 : 1)
                 .allowsHitTesting(!spec.fixedLivery)
@@ -947,7 +950,38 @@ struct GarageView: View {
                 }
             }
         }
+        .padding(16)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.ultraThinMaterial))
+        .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color.black.opacity(0.3)))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .environment(\.colorScheme, .dark)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: spec.id)
+    }
+
+    /// The class and one overall number (the four meters together, out of 1000), joined in one capsule.
+    private var powerBadge: some View {
+        let r = ratings
+        let power = Int(((r.speed + r.acceleration + r.handling + r.nitro) / 4 * 1000).rounded())
+        return HStack(spacing: 0) {
+            Text(spec.className)
+                .font(.ui(12, .heavy))
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, 9)
+                .frame(height: 24)
+                .background(Capsule().fill(Palette.gold))
+            Text("\(power)")
+                .font(.race(15))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+                .padding(.leading, 7)
+                .padding(.trailing, 10)
+        }
+        .frame(height: 24)
+        .background(Capsule().fill(Color.white.opacity(0.1)))
+        .animation(.easeOut(duration: 0.3), value: power)
+        .accessibilityLabel(Strings.carClass + " " + spec.className + ", \(power)")
     }
 
     /// Unlocks the shown car with coins (or says how many are missing).
@@ -987,37 +1021,38 @@ struct GarageView: View {
     }
 }
 
-/// Label, a thin bar and the number, the bar filling when `shown` turns on.
-private struct StatBar: View {
+/// A meter of ten short segments with its label and number; the segments light up one after
+/// another when `shown` turns on.
+private struct StatMeter: View {
     let label: String
     let value: Double
     let shown: Bool
     let color: Color
 
     var body: some View {
-        VStack(spacing: 5) {
-            HStack {
+        let lit = Int((value * 10).rounded(.up))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(label)
                     .font(.ui(12, .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.white.opacity(0.65))
                     .lineLimit(1)
-                Spacer()
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 2)
                 Text("\(Int((value * 100).rounded()))")
-                    .font(.race(16))
+                    .font(.race(17))
                     .monospacedDigit()
                     .foregroundStyle(.white)
             }
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.1))
+            HStack(spacing: 2) {
+                ForEach(0..<10, id: \.self) { index in
                     Capsule()
-                        .fill(LinearGradient(colors: [color.opacity(0.75), color], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: proxy.size.width * CGFloat(shown ? value : 0))
-                        .animation(.easeOut(duration: 0.6), value: shown)
-                        .animation(.easeOut(duration: 0.4), value: value)
+                        .fill(shown && index < lit ? AnyShapeStyle(color) : AnyShapeStyle(Color.white.opacity(0.12)))
+                        .frame(height: 6)
+                        .animation(.easeOut(duration: 0.25).delay(shown ? Double(index) * 0.03 : 0), value: shown)
+                        .animation(.easeOut(duration: 0.2), value: lit)
                 }
             }
-            .frame(height: 5)
         }
     }
 }

@@ -244,6 +244,7 @@ enum Strings {
     static var playerFriend: String { t("Arkadaşın", "Your friend", "Tu amigo") }
     static var waitingShort: String { t("Bekleniyor…", "Waiting…", "Esperando…") }
     static var shareButton: String { t("Kodu paylaş", "Share code", "Compartir código") }
+    static var garageRotateHint: String { t("Döndürmek için kaydır", "Swipe to turn", "Desliza para girar") }
     static var carClassTitle: String { t("Sınıf", "Class", "Clase") }
     static var dailyKicker: String { t("HER GÜN YENİLENİR", "RESETS EVERY DAY", "SE RENUEVA CADA DÍA") }
     static func streakDays(_ days: Int) -> String { t("Seri: \(days) gün", "Streak: \(days) days", "Racha: \(days) días") }
