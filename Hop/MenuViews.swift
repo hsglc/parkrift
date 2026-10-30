@@ -1388,10 +1388,6 @@ struct RewardsReadyPill: View {
         .buttonStyle(.plain)
         .onAppear {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.6).delay(0.25)) { shown = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                AudioManager.shared.play("park", volume: 0.5)
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { glow = true }
             }

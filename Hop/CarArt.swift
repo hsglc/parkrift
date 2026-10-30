@@ -1,5 +1,6 @@
 import SpriteKit
 import UIKit
+import CoreImage
 
 /// Procedurally drawn textures for the parking game (top-down 2D with soft depth).
 enum CarArt {
@@ -203,80 +204,116 @@ enum CarArt {
 
     // MARK: Parked ticket and stamp
 
-    /// The parking ticket the parked moment is built on: warm paper with rounded corners and a
-    /// soft shadow, a blue "P" sign block, a perforation with notches cut into both edges, and a
-    /// barcode along the foot. Text and stars are separate nodes over it.
     private static var ticketCache: [String: SKTexture] = [:]
 
-    static func parkTicket(size: CGSize, perforationY: CGFloat) -> SKTexture {
-        let key = "\(size.width)x\(size.height)-\(perforationY)"
+    /// A thermal parking-garage ticket: warm paper with a faint grain and a soft shadow, the dark
+    /// magnetic stripe along the top, a tear-off stub on the left behind a perforation (with three
+    /// star punch marks, still blank), the blue "P" sign, a QR code in the corner and a hairline
+    /// under the header. Text, stars and stamps are nodes laid over it.
+    static func parkTicket(size: CGSize, stub: CGFloat) -> SKTexture {
+        let key = "\(size.width)x\(size.height)-\(stub)"
         if let cached = ticketCache[key] { return cached }
-        let texture = drawParkTicket(size: size, perforationY: perforationY)
+        let texture = drawParkTicket(size: size, stub: stub)
         ticketCache[key] = texture
         return texture
     }
 
-    private static func drawParkTicket(size: CGSize, perforationY: CGFloat) -> SKTexture {
+    private static func drawParkTicket(size: CGSize, stub: CGFloat) -> SKTexture {
         let pad: CGFloat = 16
         return render(CGSize(width: size.width + pad * 2, height: size.height + pad * 2), scale: 2) { context, s in
             let rect = CGRect(x: pad, y: pad, width: size.width, height: size.height)
-            let notch: CGFloat = 9
-            let cutY = rect.minY + perforationY
-            let paper = CGMutablePath()
-            paper.addRoundedRect(in: rect, cornerWidth: 12, cornerHeight: 12)
-            // Notches: cut out by drawing them clear afterwards
+            let paperPath = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
             context.saveGState()
-            context.setShadow(offset: CGSize(width: 0, height: 8), blur: 18, color: UIColor.black.withAlphaComponent(0.45).cgColor)
-            context.addPath(paper)
-            context.setFillColor(UIColor(red: 0.97, green: 0.96, blue: 0.93, alpha: 1).cgColor)
+            context.setShadow(offset: CGSize(width: 0, height: 10), blur: 20, color: UIColor.black.withAlphaComponent(0.5).cgColor)
+            context.addPath(paperPath)
+            context.setFillColor(UIColor(red: 0.975, green: 0.968, blue: 0.945, alpha: 1).cgColor)
             context.fillPath()
             context.restoreGState()
-            context.setBlendMode(.clear)
-            context.fillEllipse(in: CGRect(x: rect.minX - notch, y: cutY - notch, width: notch * 2, height: notch * 2))
-            context.fillEllipse(in: CGRect(x: rect.maxX - notch, y: cutY - notch, width: notch * 2, height: notch * 2))
-            context.setBlendMode(.normal)
-            // Faint paper grain
+            context.saveGState()
+            context.addPath(paperPath)
+            context.clip()
+            // Paper: a gentle light falloff and grain
+            if let light = gradient([UIColor.white.withAlphaComponent(0.5), UIColor.white.withAlphaComponent(0), UIColor.black.withAlphaComponent(0.05)],
+                                    [0, 0.5, 1]) {
+                context.drawLinearGradient(light, start: CGPoint(x: rect.minX, y: rect.minY), end: CGPoint(x: rect.maxX, y: rect.maxY), options: [])
+            }
             var seed: UInt64 = 0x51ED
-            for _ in 0..<900 {
+            for _ in 0..<1400 {
                 seed = seed &* 6364136223846793005 &+ 1442695040888963407
                 let x = rect.minX + CGFloat((seed >> 33) % UInt64(max(1, rect.width)))
                 seed = seed &* 6364136223846793005 &+ 1442695040888963407
                 let y = rect.minY + CGFloat((seed >> 33) % UInt64(max(1, rect.height)))
-                context.setFillColor(UIColor(white: 0.55, alpha: 0.05).cgColor)
-                context.fill(CGRect(x: x, y: y, width: 1.2, height: 1.2))
+                context.setFillColor(UIColor(white: 0.5, alpha: 0.045).cgColor)
+                context.fill(CGRect(x: x, y: y, width: 1.1, height: 1.1))
             }
-            // Perforation
-            context.setStrokeColor(UIColor(white: 0.55, alpha: 0.55).cgColor)
-            context.setLineWidth(1.4)
-            context.setLineDash(phase: 0, lengths: [4, 5])
-            context.move(to: CGPoint(x: rect.minX + notch + 6, y: cutY))
-            context.addLine(to: CGPoint(x: rect.maxX - notch - 6, y: cutY))
+            // Magnetic stripe along the top
+            let stripe = CGRect(x: rect.minX, y: rect.minY + 8, width: rect.width, height: 13)
+            if let band = gradient([UIColor(red: 0.16, green: 0.13, blue: 0.11, alpha: 1), UIColor(red: 0.30, green: 0.25, blue: 0.21, alpha: 1),
+                                    UIColor(red: 0.14, green: 0.11, blue: 0.09, alpha: 1)], [0, 0.45, 1]) {
+                context.saveGState()
+                context.clip(to: stripe)
+                context.drawLinearGradient(band, start: CGPoint(x: 0, y: stripe.minY), end: CGPoint(x: 0, y: stripe.maxY), options: [])
+                context.restoreGState()
+            }
+            // Stub: a shade cooler, behind a perforation with a notch at each end
+            context.setFillColor(UIColor(red: 0.2, green: 0.3, blue: 0.5, alpha: 0.05).cgColor)
+            context.fill(CGRect(x: rect.minX, y: stripe.maxY, width: stub, height: rect.maxY - stripe.maxY))
+            context.restoreGState()
+            context.setBlendMode(.clear)
+            let notch: CGFloat = 7
+            context.fillEllipse(in: CGRect(x: rect.minX + stub - notch, y: rect.minY - notch, width: notch * 2, height: notch * 2))
+            context.fillEllipse(in: CGRect(x: rect.minX + stub - notch, y: rect.maxY - notch, width: notch * 2, height: notch * 2))
+            context.setBlendMode(.normal)
+            context.setStrokeColor(UIColor(white: 0.5, alpha: 0.55).cgColor)
+            context.setLineWidth(1.3)
+            context.setLineDash(phase: 0, lengths: [3, 4])
+            context.move(to: CGPoint(x: rect.minX + stub, y: stripe.maxY + 4))
+            context.addLine(to: CGPoint(x: rect.minX + stub, y: rect.maxY - notch - 3))
             context.strokePath()
             context.setLineDash(phase: 0, lengths: [])
-            // The "P" sign block
-            let sign = CGRect(x: rect.minX + 16, y: rect.minY + 16, width: 46, height: 46)
-            context.addPath(CGPath(roundedRect: sign, cornerWidth: 9, cornerHeight: 9, transform: nil))
+            // Three star punch marks down the stub (the earned ones are filled in gold later)
+            let starImage = UIImage(systemName: "star", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold))?
+                .withTintColor(UIColor(white: 0.62, alpha: 1), renderingMode: .alwaysOriginal)
+            for index in 0..<3 {
+                let center = CGPoint(x: rect.minX + stub / 2, y: rect.minY + 44 + CGFloat(index) * 26)
+                if let star = starImage {
+                    star.draw(at: CGPoint(x: center.x - star.size.width / 2, y: center.y - star.size.height / 2))
+                }
+            }
+            // The "P" sign
+            let sign = CGRect(x: rect.minX + stub + 14, y: stripe.maxY + 12, width: 38, height: 38)
+            context.addPath(CGPath(roundedRect: sign, cornerWidth: 8, cornerHeight: 8, transform: nil))
             context.setFillColor(UIColor(red: 0.1, green: 0.38, blue: 0.95, alpha: 1).cgColor)
             context.fillPath()
-            context.addPath(CGPath(roundedRect: sign.insetBy(dx: 3, dy: 3), cornerWidth: 7, cornerHeight: 7, transform: nil))
+            context.addPath(CGPath(roundedRect: sign.insetBy(dx: 2.5, dy: 2.5), cornerWidth: 6, cornerHeight: 6, transform: nil))
             context.setStrokeColor(UIColor.white.cgColor)
-            context.setLineWidth(1.6)
+            context.setLineWidth(1.4)
             context.strokePath()
-            let pFont = UIFont.systemFont(ofSize: 32, weight: .black)
+            let pFont = UIFont.systemFont(ofSize: 26, weight: .black)
             let pSize = ("P" as NSString).size(withAttributes: [.font: pFont])
             ("P" as NSString).draw(at: CGPoint(x: sign.midX - pSize.width / 2, y: sign.midY - pSize.height / 2),
                                    withAttributes: [.font: pFont, .foregroundColor: UIColor.white])
-            // Barcode along the foot, right side
-            var bx = rect.maxX - 112
-            var code: UInt64 = 0xC0FFEE
-            while bx < rect.maxX - 18 {
-                code = code &* 2862933555777941757 &+ 3037000493
-                let w = CGFloat(1 + (code >> 60) % 3)
-                context.setFillColor(UIColor(white: 0.12, alpha: 0.85).cgColor)
-                context.fill(CGRect(x: bx, y: rect.maxY - 30, width: w, height: 16))
-                bx += w + CGFloat(1 + (code >> 56) % 3)
+            // Hairline under the header
+            context.setFillColor(UIColor(white: 0.2, alpha: 0.25).cgColor)
+            context.fill(CGRect(x: sign.minX, y: sign.maxY + 9, width: rect.maxX - sign.minX - 16, height: 0.8))
+            // QR code in the lower right corner
+            if let code = qrImage("PARKRIFT") {
+                let side: CGFloat = 50
+                let frame = CGRect(x: rect.maxX - side - 14, y: rect.maxY - side - 12, width: side, height: side)
+                context.interpolationQuality = .none
+                code.draw(in: frame)
             }
         }
+    }
+
+    /// A QR code image (dark ink on clear) for `text`.
+    private static func qrImage(_ text: String) -> UIImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(text.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
+              let cg = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 
     private static var stampCache: [String: SKTexture] = [:]

@@ -80,24 +80,6 @@ struct ResultsOverlay: View {
 
     private var headToHead: Bool { info.entries.count > 1 }
 
-    private var heroColors: [Color] {
-        switch info.outcome {
-        case .failed, .lost: return [Color(red: 0.74, green: 0.20, blue: 0.24), Color(red: 0.34, green: 0.07, blue: 0.12)]
-        case .draw: return [Color(red: 0.24, green: 0.38, blue: 0.66), Color(red: 0.10, green: 0.15, blue: 0.32)]
-        case .champion: return [Color(red: 0.86, green: 0.58, blue: 0.12), Color(red: 0.42, green: 0.22, blue: 0.06)]
-        case .success, .won: return [Color(red: 0.16, green: 0.62, blue: 0.40), Color(red: 0.06, green: 0.32, blue: 0.24)]
-        }
-    }
-
-    private var badgeColors: [Color] {
-        switch info.outcome {
-        case .failed, .lost: return [Color(red: 1.0, green: 0.48, blue: 0.44), Color(red: 0.86, green: 0.16, blue: 0.20)]
-        case .draw: return [Color(red: 0.55, green: 0.75, blue: 1.0), Color(red: 0.22, green: 0.45, blue: 0.92)]
-        case .champion: return [Palette.gold, Palette.goldDeep]
-        case .success, .won: return [Color(red: 0.55, green: 1.0, blue: 0.62), Color(red: 0.18, green: 0.78, blue: 0.42)]
-        }
-    }
-
     private var badgeIcon: String {
         switch info.outcome {
         case .failed, .lost: return "xmark"
@@ -111,209 +93,339 @@ struct ResultsOverlay: View {
     /// Failed with the next level not open yet: no way forward but trying again.
     private var nextOpen: Bool { model.unlockedLevels > info.levelIndex + 1 }
 
-    var body: some View {
-        ZStack {
-            Color.black.opacity(appeared ? 0.5 : 0)
-                .ignoresSafeArea()
+    /// The accent of the outcome (band, winner marks, primary button).
+    private var accent: Color {
+        switch info.outcome {
+        case .failed, .lost: return Color(red: 0.94, green: 0.27, blue: 0.30)
+        case .draw: return Color(red: 0.29, green: 0.55, blue: 1.0)
+        case .champion: return Palette.gold
+        case .success, .won: return Color(red: 0.23, green: 0.88, blue: 0.53)
+        }
+    }
 
-            HStack(spacing: 0) {
-                hero
-                    .frame(width: 214)
-                    .frame(maxHeight: .infinity)
-                    .background(heroBackground)
-                details
-                    .frame(width: 300)
-                    .padding(16)
+    private var headline: String {
+        info.headline ?? (failed ? Strings.notParkedTitle : (isFinal ? Strings.allDone : Strings.parkedTitle))
+    }
+
+    @State private var bandIn = false
+    @State private var rowsIn = false
+    @State private var sheen: CGFloat = -0.3
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                // The frozen frame shows through faintly (the HUD under it must not compete), a
+                // little more on the right
+                LinearGradient(colors: [Color.black.opacity(0.88), Color.black.opacity(0.74), Color.black.opacity(0.6)],
+                               startPoint: .leading, endPoint: .trailing)
+                    .ignoresSafeArea()
+                    .opacity(appeared ? 1 : 0)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    band(width: geo.size.width)
+                    HStack(alignment: .top, spacing: 18) {
+                        board
+                            .frame(width: min(400, geo.size.width * 0.5), alignment: .leading)
+                        VStack(alignment: .leading, spacing: 12) {
+                            if let reward = info.reward, reward.total > 0 || !reward.tasksDone.isEmpty {
+                                rewardBoard(reward)
+                            }
+                            footer
+                        }
+                        .frame(maxWidth: 320, alignment: .leading)
+                        .opacity(rowsIn ? 1 : 0)
+                        .offset(x: rowsIn ? 0 : 24)
+                    }
+                    .padding(.leading, 6)
+                }
+                .padding(.leading, max(24, geo.safeAreaInsets.leading + 8))
+                .padding(.trailing, max(24, geo.safeAreaInsets.trailing + 8))
+                // Sits a little above the middle of the screen
+                .frame(maxHeight: .infinity, alignment: .center)
+                .offset(y: -geo.size.height * 0.04)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            .background(
-                LinearGradient(colors: [Palette.card, Palette.ink], startPoint: .top, endPoint: .bottom)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.06)],
-                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1.2)
-            )
-            .shadow(color: .black.opacity(0.5), radius: 30, y: 16)
-            .scaleEffect(appeared ? 1 : 0.8)
-            .opacity(appeared ? 1 : 0)
         }
         .task(id: info.id) { await animateIn() }
     }
 
-    // MARK: Hero (left)
+    // MARK: The band
 
-    private var heroBackground: some View {
-        ZStack {
-            LinearGradient(colors: heroColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-            // Soft light rays
-            ForEach(0..<8, id: \.self) { index in
-                Rectangle()
-                    .fill(Color.white.opacity(0.05))
-                    .frame(width: 26, height: 360)
-                    .rotationEffect(.degrees(Double(index) * 22.5))
-            }
-            .offset(y: -40)
-        }
-        .clipped()
-    }
-
-    private var hero: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(0.18))
-                    .frame(width: 74, height: 74)
-                Circle()
-                    .fill(LinearGradient(colors: badgeColors, startPoint: .top, endPoint: .bottom))
-                    .frame(width: 60, height: 60)
-                    .shadow(color: .black.opacity(0.25), radius: 0, y: 3)
+    /// The outcome on a livery band that sweeps in across the screen: a broad stripe in the
+    /// outcome's colour with a thin echo stripe under it, the result in big italic type, the
+    /// level above the band and, at its right end, the match score or the stars.
+    private func band(width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
                 Image(systemName: badgeIcon)
-                    .font(.system(size: 28, weight: .black))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.25), radius: 0, y: 2)
+                    .font(.system(size: 11, weight: .black))
+                    .foregroundStyle(accent)
+                Text(info.levelTitle)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+                if info.newBest {
+                    Text(Strings.newBest)
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Palette.ink)
+                        .padding(.horizontal, 8).frame(height: 18)
+                        .background(SlantedShape(skew: 5).fill(Palette.gold))
+                }
             }
-            .scaleEffect(appeared ? 1 : 0.3)
-
-            Text(info.headline ?? (failed ? Strings.notParkedTitle : (isFinal ? Strings.allDone : Strings.parkedTitle)))
-                .font(.system(size: isFinal && info.headline == nil && !failed ? 20 : 26, weight: .black, design: .rounded))
-                .italic()
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .shadow(color: .black.opacity(0.3), radius: 0, y: 2)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(info.levelTitle)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.75))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            if let scoreLine = info.scoreLine {
-                Text(scoreLine)
-                    .font(.system(size: 15, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.black.opacity(0.25)))
+            .padding(.leading, 18)
+            .opacity(bandIn ? 1 : 0)
+            ZStack(alignment: .leading) {
+                // Echo stripe
+                SlantedShape(skew: 30)
+                    .fill(accent.opacity(0.35))
+                    .frame(height: 8)
+                    .offset(x: 26, y: 50)
+                // The band, with a light sweep across it as it lands
+                SlantedShape(skew: 30)
+                    .fill(LinearGradient(colors: [accent, accent.opacity(0.78)], startPoint: .leading, endPoint: .trailing))
+                    .overlay(
+                        LinearGradient(colors: [.clear, .white.opacity(0.45), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 120)
+                            .offset(x: sheen * width)
+                            .blendMode(.plusLighter)
+                            .mask(SlantedShape(skew: 30))
+                    )
+                    .frame(height: 74)
+                    .shadow(color: accent.opacity(0.45), radius: 18, y: 6)
+                HStack(alignment: .center, spacing: 14) {
+                    Text(headline.uppercased())
+                        .font(.race(54))
+                        .foregroundStyle(onAccent)
+                        .shadow(color: .black.opacity(info.outcome == .champion ? 0 : 0.25), radius: 0, x: 2, y: 2)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .offset(x: bandIn ? 0 : -40)
+                    Spacer(minLength: 8)
+                    bandTrailing
+                }
+                .padding(.leading, 30)
+                .padding(.trailing, 40)
             }
+            .frame(width: min(width * 0.86, 760), height: 74, alignment: .leading)
+            .mask(Rectangle().scaleEffect(x: bandIn ? 1 : 0.001, anchor: .leading))
             if let roundLine = info.roundLine {
                 Text(roundLine)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 22)
+                    .padding(.top, 6)
+                    .opacity(bandIn ? 1 : 0)
             }
+        }
+    }
 
-            // Stars are the solo score; head to head the rows carry each player's stars
-            if !headToHead {
-            HStack(spacing: 6) {
+    /// Text on the band: dark on gold, white on the other colours.
+    private var onAccent: Color { info.outcome == .champion ? Palette.ink : .white }
+
+    /// Right end of the band: the match score head to head, the stars alone.
+    @ViewBuilder
+    private var bandTrailing: some View {
+        if let scoreLine = info.scoreLine {
+            Text(scoreLine)
+                .font(.race(40))
+                .monospacedDigit()
+                .foregroundStyle(onAccent)
+                .padding(.horizontal, 14)
+                .frame(height: 50)
+                .background(SlantedShape(skew: 10).fill(Color.black.opacity(0.28)))
+        } else if !headToHead {
+            HStack(spacing: 4) {
                 ForEach(0..<3, id: \.self) { index in
-                    let lit = index < shownStars
-                    Image(systemName: "star.fill")
-                        .font(.system(size: index == 1 ? 38 : 30, weight: .black))
-                        .foregroundStyle(lit
-                                         ? AnyShapeStyle(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .top, endPoint: .bottom))
-                                         : AnyShapeStyle(Color.black.opacity(0.25)))
-                        .shadow(color: lit ? Palette.gold.opacity(0.7) : .clear, radius: 8)
-                        .scaleEffect(lit ? 1 : 0.85)
-                        .offset(y: index == 1 ? -6 : 0)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.45), value: lit)
+                    starView(index)
                 }
             }
-            .padding(.top, 4)
-            }
-
-            if info.newBest {
-                Text(Strings.newBest.uppercased())
-                    .font(.system(size: 11, weight: .black, design: .rounded))
-                    .foregroundStyle(Palette.ink)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Palette.gold))
-                    .rotationEffect(.degrees(-3))
-            }
-        }
-        .padding(.vertical, 18)
-        .padding(.horizontal, 12)
-    }
-
-    // MARK: Details (right)
-
-    private var details: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if info.entries.count == 1, let me = info.me {
-                HStack(spacing: 8) {
-                    StatTile(icon: "stopwatch.fill", label: Strings.timeLabel, value: format(me.time), tint: Palette.gold)
-                    StatTile(icon: "car.side.rear.and.collision.and.car.side.front", label: Strings.bumpsLabel, value: "\(me.hits)",
-                             tint: me.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : Color(red: 1.0, green: 0.55, blue: 0.4))
-                }
-                HStack(spacing: 8) {
-                    if let score = me.score {
-                        StatTile(icon: "flag.checkered", label: Strings.scoreLabel, value: score >= 0 ? String(format: "%.1f", score) : "–", tint: Palette.gold)
-                    } else {
-                        StatTile(icon: "crown.fill", label: Strings.bestLabel, value: format(info.bestTime), tint: Color(red: 0.75, green: 0.6, blue: 1.0))
-                    }
-                    hintTile
-                }
-            } else {
-                ForEach(info.entries) { entry in
-                    PlayerResultRow(entry: entry)
-                }
-            }
-            if let reward = info.reward, reward.total > 0 {
-                coinRow(reward)
-            }
-            footer
         }
     }
 
-    /// Coins earned: the total counts up, the lines that made it sit beside it, and a completed
-    /// daily task gets its own gold tag.
-    private func coinRow(_ reward: RunReward) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 5) {
+    private func starView(_ index: Int) -> some View {
+        let lit = index < shownStars
+        return Image(systemName: "star.fill")
+            .font(.system(size: index == 1 ? 34 : 28, weight: .black))
+            .foregroundStyle(lit ? Color.white : Color.black.opacity(0.28))
+            .shadow(color: lit ? Color.white.opacity(0.7) : Color.clear, radius: 6)
+            .scaleEffect(lit ? 1 : 0.82)
+            .offset(y: index == 1 ? -3 : 0)
+            .animation(.spring(response: 0.35, dampingFraction: 0.45), value: lit)
+    }
+
+    // MARK: The board under the band
+
+    /// Head to head: a timing tower (position, player, time, gap, crashes), the winner on top.
+    /// Alone: the round's numbers as large figures with the best time beside them.
+    @ViewBuilder
+    private var board: some View {
+        if headToHead {
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Spacer()
+                    Text(Strings.timeLabel).frame(width: 72, alignment: .trailing)
+                    Text(Strings.gapLabel).frame(width: 58, alignment: .trailing)
+                    Image(systemName: "car.side.rear.and.collision.and.car.side.front").frame(width: 40, alignment: .trailing)
+                }
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white.opacity(0.45))
+                .padding(.trailing, 12)
+                .padding(.bottom, 5)
+                ForEach(Array(ranked.enumerated()), id: \.element.id) { index, entry in
+                    timingRow(entry, position: index + 1, leader: ranked.first?.time)
+                        .opacity(rowsIn ? 1 : 0)
+                        .offset(x: rowsIn ? 0 : -30)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.08), value: rowsIn)
+                }
+            }
+        } else if let me = info.me {
+            soloFigures(me)
+                .padding(.leading, 14)
+                .opacity(rowsIn ? 1 : 0)
+                .offset(y: rowsIn ? 0 : 12)
+        }
+    }
+
+    private func soloFigures(_ me: ResultEntry) -> some View {
+        HStack(alignment: .bottom, spacing: 22) {
+            figure(Strings.timeLabel, value: me.time.map { String(format: "%.1f", $0) } ?? "–", unit: me.time == nil ? "" : "s", big: true)
+            figure(Strings.bumpsLabel, value: "\(me.hits)", unit: "", big: false,
+                   tint: me.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : .white)
+            if let score = me.score {
+                figure(Strings.scoreLabel, value: score >= 0 ? String(format: "%.1f", score) : "–", unit: "", big: false)
+            } else if let best = info.bestTime {
+                figure(Strings.bestLabel, value: String(format: "%.1f", best), unit: "s", big: false, tint: .white.opacity(0.75))
+            }
+        }
+    }
+
+    /// Players in finishing order (finished first, by time).
+    private var ranked: [ResultEntry] {
+        info.entries.sorted { a, b in
+            switch (a.time, b.time) {
+            case let (x?, y?): return x < y
+            case (.some, nil): return true
+            case (nil, .some): return false
+            default: return a.isMe
+            }
+        }
+    }
+
+    private func gapText(_ entry: ResultEntry, leader: Double?) -> String {
+        guard let time = entry.time, let leader = leader, time - leader >= 0.05 else { return "" }
+        return String(format: "+%.1f", time - leader)
+    }
+
+    private func timingRow(_ entry: ResultEntry, position: Int, leader: Double?) -> some View {
+        let finished = entry.time != nil
+        let blockFill: Color = entry.isWinner ? Palette.gold : Palette.player(entry.slot)
+        let rowFill: Color = Color.white.opacity(entry.isMe ? 0.12 : 0.06)
+        return HStack(spacing: 0) {
+            // Position block in the player's colour (gold for the winner)
+            Text("P\(position)")
+                .font(.race(20))
+                .foregroundStyle(entry.isWinner ? Palette.ink : Color.white)
+                .frame(width: 48, height: 44)
+                .background(SlantedShape(skew: 8).fill(blockFill))
+            Text(entry.name)
+                .font(.system(size: 16, weight: .heavy))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.leading, 12)
+            if entry.isWinner {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 11, weight: .black))
+                    .foregroundStyle(Palette.gold)
+                    .padding(.leading, 6)
+            }
+            Spacer(minLength: 6)
+            Text(finished ? String(format: "%.1f", entry.time ?? 0) : Strings.didNotFinish)
+                .font(finished ? .race(22) : .system(size: 11, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(finished ? Color.white : Color.white.opacity(0.5))
+                .frame(width: 72, alignment: .trailing)
+            Text(gapText(entry, leader: leader))
+                .font(.system(size: 13, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(Color(red: 1, green: 0.72, blue: 0.3))
+                .frame(width: 58, alignment: .trailing)
+            Text("\(entry.hits)")
+                .font(.system(size: 15, weight: .heavy))
+                .monospacedDigit()
+                .foregroundStyle(entry.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : Color.white.opacity(0.8))
+                .frame(width: 40, alignment: .trailing)
+        }
+        .padding(.trailing, 12)
+        .frame(height: 44)
+        .background(SlantedShape(skew: 8).fill(rowFill))
+        .padding(.bottom, 4)
+    }
+
+    /// A big number with a small caption: the round's figures alone.
+    private func figure(_ label: String, value: String, unit: String, big: Bool, tint: Color = .white) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(label)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white.opacity(0.5))
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.race(big ? 60 : 36))
+                    .monospacedDigit()
+                    .foregroundStyle(tint)
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.race(big ? 24 : 18))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            }
+        }
+    }
+
+    // MARK: Reward board
+
+    /// The coins: the total counts up big, what made it in small lines, waiting task rewards as
+    /// gold tags.
+    private func rewardBoard(_ reward: RunReward) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
                 Image(systemName: "dollarsign.circle.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Palette.gold)
                 Text("+\(shownCoins)")
-                    .font(.system(size: 20, weight: .black, design: .rounded))
+                    .font(.race(34))
                     .monospacedDigit()
                     .foregroundStyle(.white)
                     .contentTransition(.numericText())
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(reward.lines.map { "\($0.label) \($0.coins)" }.joined(separator: " · "))
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+            if !reward.lines.isEmpty {
+                Text(reward.lines.map { "\($0.label) +\($0.coins)" }.joined(separator: "   "))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                ForEach(reward.tasksDone.indices, id: \.self) { index in
-                    Text("\(Strings.taskReadyTag) +\(reward.tasksDone[index].coins)")
-                        .font(.system(size: 10, weight: .black, design: .rounded))
-                        .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(Palette.gold))
-                }
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
+            ForEach(reward.tasksDone.indices, id: \.self) { index in
+                taskTag(reward.tasksDone[index].coins)
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+        .padding(.vertical, 10)
+        .padding(.leading, 18)
+        .padding(.trailing, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SlantedShape(skew: 10).fill(Color.white.opacity(0.07)))
+        .overlay(alignment: .leading) {
+            SlantedShape(skew: 3).fill(Palette.gold).frame(width: 6).padding(.vertical, 1)
+        }
     }
 
-    private var hintTile: some View {
-        HStack(spacing: 6) {
-            StarsRow(filled: 3, size: 9, spacing: 1)
-            Text(info.me?.score != nil ? Strings.penaltyHint : Strings.starHint)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
+    private func taskTag(_ coins: Int) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "gift.fill").font(.system(size: 10, weight: .black))
+            Text("\(Strings.taskReadyTag) +\(coins)")
+                .font(.system(size: 10, weight: .heavy))
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.05)))
+        .foregroundStyle(Palette.ink)
+        .padding(.horizontal, 8).frame(height: 20)
+        .background(SlantedShape(skew: 5).fill(Palette.gold))
     }
 
     @ViewBuilder
@@ -322,19 +434,17 @@ struct ResultsOverlay: View {
             // Did not park: trying again is the way forward (the next level only if already open)
             HStack(spacing: 8) {
                 Button { model.leaveToMenu() } label: { Image(systemName: "house.fill") }
-                    .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 46, fontSize: 17))
-                    .frame(width: 56)
+                    .buttonStyle(PlateButtonStyle(glass: true))
                 Button { model.retryLevel() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.counterclockwise")
                         Text(Strings.tryAgain)
                     }
                 }
-                .buttonStyle(ChunkyButtonStyle(colors: Palette.orange, height: 46))
+                .buttonStyle(PlateButtonStyle(fill: Color(red: 1, green: 0.55, blue: 0.2)))
                 if !isFinal && nextOpen {
                     Button { model.nextLevel() } label: { Image(systemName: "chevron.right") }
-                        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 46, fontSize: 17))
-                        .frame(width: 56)
+                        .buttonStyle(PlateButtonStyle(glass: true))
                 }
             }
         } else {
@@ -353,11 +463,9 @@ struct ResultsOverlay: View {
         case .solo(let hasNext):
             HStack(spacing: 8) {
                 Button { model.leaveToMenu() } label: { Image(systemName: "house.fill") }
-                    .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 46, fontSize: 17))
-                    .frame(width: 56)
+                    .buttonStyle(PlateButtonStyle(glass: true))
                 Button { model.retryLevel() } label: { Image(systemName: "arrow.counterclockwise") }
-                    .buttonStyle(ChunkyButtonStyle(colors: Palette.blueButton, height: 46, fontSize: 17))
-                    .frame(width: 56)
+                    .buttonStyle(PlateButtonStyle(glass: true))
                 if hasNext {
                     Button { model.nextLevel() } label: {
                         HStack(spacing: 6) {
@@ -365,7 +473,7 @@ struct ResultsOverlay: View {
                             Image(systemName: "chevron.right")
                         }
                     }
-                    .buttonStyle(ChunkyButtonStyle(colors: Palette.green, height: 46))
+                    .buttonStyle(PlateButtonStyle())
                 }
             }
         case .autoNext:
@@ -377,8 +485,7 @@ struct ResultsOverlay: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.1))
                         Capsule()
-                            .fill(LinearGradient(colors: [Color(red: 0.42, green: 0.90, blue: 0.52), Color(red: 0.14, green: 0.66, blue: 0.38)],
-                                                 startPoint: .leading, endPoint: .trailing))
+                            .fill(accent)
                             .frame(width: proxy.size.width * progress)
                     }
                 }
@@ -389,7 +496,7 @@ struct ResultsOverlay: View {
                 Button { model.leaveToMenu() } label: {
                     Label(Strings.backToMenu, systemImage: "house.fill")
                 }
-                .buttonStyle(ChunkyButtonStyle(colors: Palette.green, height: 46, fontSize: 16))
+                .buttonStyle(PlateButtonStyle())
             }
         }
     }
@@ -402,7 +509,11 @@ struct ResultsOverlay: View {
     // MARK: Animation
 
     private func animateIn() async {
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.72)) { appeared = true }
+        // One sequence: the shade, the band wiping in with its sheen, then the board and rewards
+        withAnimation(.easeOut(duration: 0.25)) { appeared = true }
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.86)) { bandIn = true }
+        withAnimation(.easeInOut(duration: 0.9).delay(0.3)) { sheen = 1.2 }
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85).delay(0.2)) { rowsIn = true }
         if case .autoNext(let seconds) = info.footer {
             withAnimation(.linear(duration: seconds)) { progress = 1 }
         }
@@ -429,83 +540,25 @@ struct ResultsOverlay: View {
     }
 }
 
-private struct StatTile: View {
-    let icon: String
-    let label: String
-    let value: String
-    let tint: Color
+/// A slanted racing plate button: solid for the main action, dark glass for the others.
+struct PlateButtonStyle: ButtonStyle {
+    var fill: Color = Palette.gold
+    var text: Color = Palette.ink
+    var height: CGFloat = 46
+    var glass = false
 
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .black))
-                .foregroundStyle(tint)
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(tint.opacity(0.15)))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label)
-                    .font(.system(size: 10, weight: .black, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .tracking(1)
-                Text(value)
-                    .font(.system(size: 20, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 58)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-    }
-}
-
-private struct PlayerResultRow: View {
-    let entry: ResultEntry
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: entry.isWinner ? "crown.fill" : "car.side.fill")
-                .font(.system(size: 15, weight: .black))
-                .foregroundStyle(entry.isWinner ? Palette.gold : .white)
-                .frame(width: 36, height: 34)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.player(entry.slot)))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                    .font(.system(size: 14, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                StarsRow(filled: entry.stars, size: 9, spacing: 1)
-            }
-            Spacer(minLength: 4)
-            if let score = entry.score {
-                VStack(alignment: .trailing, spacing: 2) {
-                    // Not finished: said in words (a lone dash read like a missing number)
-                    Text(score >= 0 ? String(format: "%.1f", score) : Strings.didNotFinish)
-                        .font(.system(size: score >= 0 ? 18 : 12, weight: .black, design: .rounded))
-                        .foregroundStyle(score >= 0 ? Palette.gold : Color.white.opacity(0.5))
-                        .monospacedDigit()
-                    Text((entry.time.map { String(format: "%.1f s", $0) + " · " } ?? "") + Strings.crashes(entry.hits))
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.55))
-                }
-            } else {
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(entry.time.map { String(format: "%.1f s", $0) } ?? Strings.notParked)
-                    .font(.system(size: entry.time == nil ? 12 : 18, weight: .black, design: .rounded))
-                    .foregroundStyle(entry.time == nil ? Color.white.opacity(0.5) : Palette.gold)
-                    .monospacedDigit()
-                Text(Strings.hits(entry.hits))
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.55))
-            }
-            }
-        }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(entry.isMe ? 0.10 : 0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(entry.isMe ? Palette.player(entry.slot).opacity(0.7) : Color.clear, lineWidth: 1.2))
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.race(19))
+            .foregroundStyle(glass ? Color.white : text)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: glass ? nil : .infinity)
+            .frame(minWidth: glass ? 52 : nil)
+            .frame(height: height)
+            .background(SlantedShape(skew: 10).fill(glass ? AnyShapeStyle(Color.white.opacity(0.1)) : AnyShapeStyle(fill)))
+            .overlay(SlantedShape(skew: 10).strokeBorderCompat(Color.white.opacity(glass ? 0.18 : 0.4), lineWidth: 1))
+            .shadow(color: glass ? .clear : fill.opacity(0.4), radius: configuration.isPressed ? 3 : 10, y: 4)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
