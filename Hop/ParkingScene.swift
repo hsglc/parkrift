@@ -5022,7 +5022,7 @@ final class ParkingScene: SKScene {
         for (index, row) in rows.enumerated() {
             let y = top - 85 - CGFloat(index) * 17
             text(Strings.upper(row.0), mono, grey, at: CGPoint(x: main + 14, y: y))
-            text(row.1, index >= 2 ? monoBold : mono, ink, at: CGPoint(x: main + 94, y: y))
+            text(row.1, index >= 2 ? monoBold : mono, ink, at: CGPoint(x: main + 104, y: y))
         }
         // Stub: the name down its length and a serial number in red
         text("PARKRIFT", .systemFont(ofSize: 8, weight: .heavy, width: .expanded), grey, kern: 1.6,
@@ -5293,6 +5293,9 @@ final class ParkingScene: SKScene {
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine, reward: reward,
                                      outcome: outcome, roundLine: roundLine)
+        // The results own the screen: the pedals and the HUD step aside (back on the next load)
+        controlsLayer.run(.fadeAlpha(to: 0, duration: 0.25))
+        hud.run(.fadeAlpha(to: 0, duration: 0.25))
         // The card covers the world: stop drawing it (a frozen frame) until the next level loads
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self, self.model?.results != nil else { return }
