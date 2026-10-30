@@ -287,6 +287,10 @@ final class ParkingScene: SKScene {
     private var lateralGrip: CGFloat = 420
     /// How far the tyres are past their grip in a corner (0...1).
     private var understeer: CGFloat = 0
+    /// Share of the tyres' sideways grip in use (1 = at the limit).
+    private var gripUse: CGFloat = 0
+    /// Smoothed tyre squeal (0...1).
+    private var squealLevel: CGFloat = 0
     /// On a wet or snowy road at speed the body slides out of line: the angle between where the
     /// car points and where it travels (0 on a dry road and in a drift, which has its own).
     private var skid: CGFloat = 0
@@ -1062,6 +1066,7 @@ final class ParkingScene: SKScene {
         setupRainLayers()
         lap("headlights+rain")
         audio.setLoop("siren", volume: 0)
+        squealLevel = 0
         audio.setLoop("skid", volume: 0)
         route = []
         routeClock = 0
@@ -2371,6 +2376,7 @@ final class ParkingScene: SKScene {
         endPoliceChase()
         audio.setLoop("siren", volume: 0)
         audio.setLoop("wind", volume: 0)
+        squealLevel = 0
         audio.setLoop("skid", volume: 0)
         localParked = true
         localTime = -1
@@ -2981,6 +2987,7 @@ final class ParkingScene: SKScene {
         let maxLateral = lateralGrip * surface.grip * (1 - min(0.35, floating)) * loadGrip
         understeer = 0
         let demand = velocity * steerYaw          // the sideways pull the steering asks for
+        gripUse = abs(demand) / max(maxLateral, 1)
         if !drifting && abs(demand) > maxLateral {
             understeer = min(1, (abs(demand) - maxLateral) / 300)
             steerYaw = (steerYaw > 0 ? 1 : -1) * maxLateral / max(abs(velocity), 1)
@@ -4079,16 +4086,26 @@ final class ParkingScene: SKScene {
     // MARK: Effects
 
     private func tyreEffects(_ dt: CGFloat, accelerating: Bool) {
-        let cornering = (abs(lateralAccel) > 150 && abs(velocity) > 50) || understeer > 0.2
-        let hardBrake = braking && abs(velocity) > 60
-        let squeal: CGFloat = drifting ? 0.45 : max(understeer > 0 ? 0.14 + 0.2 * understeer : 0,
-                                                    cornering ? 0.12 : 0, hardBrake ? 0.2 : 0)
-        audio.setLoop("skid", volume: Float(squeal))
-        // Wind noise grows with speed
-        let speedShare = abs(velocity) / maxForward
-        audio.setLoop("wind", volume: Float(max(0, min(0.4, (speedShare - 0.45) * 0.45))))
+        // As in a real car the tyres stay quiet through an ordinary turn: they only squeal once
+        // they slide, from a faint hiss right at the limit of grip to a full screech when the car
+        // runs wide, the tail steps out or it drifts; braking squeals only when it is hard enough
+        // at speed to lock up. Nothing at walking pace.
+        let speed = abs(velocity)
+        let speedShare = min(1, speed / max(maxForward, 1))
+        let atLimit = max(0, min(1, (gripUse - 0.9) / 0.1))           // last 10% of the grip
+        let tail = min(1, abs(skid) / 0.25)                             // the tail stepping out
+        let lockUp = braking && speedShare > 0.55 ? (speedShare - 0.55) / 0.45 : 0
+        var slip = max(atLimit * 0.25, understeer, tail, lockUp * 0.6)
+        if drifting { slip = max(slip, 0.85) }
+        if speed < 40 || airTime > 0 { slip = 0 }
+        let target = slip * (0.35 + 0.65 * min(1, speed / 160))
+        // Rises quickly as the tyres let go, fades as they bite again
+        squealLevel += (target - squealLevel) * min(1, dt * (target > squealLevel ? 12 : 5))
+        audio.setSkid(volume: Float(squealLevel * 0.5), rate: Float(0.88 + 0.22 * slip + 0.12 * speedShare))
+        // Marks only where the rubber actually slides
+        let sliding = drifting || understeer > 0.15 || tail > 0.3 || lockUp > 0.35
         skidClock += dt
-        if (cornering || hardBrake || drifting) && airTime <= 0 && skidClock > 0.03 {
+        if sliding && speed > 40 && airTime <= 0 && skidClock > 0.03 {
             skidClock = 0
             for side: CGFloat in [10, -10] {
                 let point = CGPoint(x: carPosition.x - 13 * cos(heading) - side * sin(heading),
@@ -4096,6 +4113,9 @@ final class ParkingScene: SKScene {
                 world?.addSkid(at: point)
             }
         }
+
+        // Wind noise grows with speed
+        audio.setLoop("wind", volume: Float(max(0, min(0.4, (speed / maxForward - 0.45) * 0.45))))
 
         smokeClock += dt
         if accelerating && abs(velocity) < 45 && abs(longitudinalAccel) > 90 && smokeClock > 0.06 {
@@ -4236,6 +4256,7 @@ final class ParkingScene: SKScene {
         }
         if drifting { endDrift() }
         endPoliceChase()
+        squealLevel = 0
         audio.setLoop("skid", volume: 0)
         audio.setLoop("wind", volume: 0)
         audio.setLoop("siren", volume: 0)

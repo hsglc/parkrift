@@ -12,6 +12,8 @@ final class AudioManager {
     private let motorPitch = AVAudioUnitVarispeed()
     private let motorHighNode = AVAudioPlayerNode()
     private let motorHighPitch = AVAudioUnitVarispeed()
+    /// Tyre squeal pitch: a sliding tyre sings higher the faster and harder it slides.
+    private let skidPitch = AVAudioUnitVarispeed()
     private var effectNodes: [AVAudioPlayerNode] = []
     private var nextEffect = 0
     private var buffers: [String: AVAudioPCMBuffer] = [:]
@@ -80,7 +82,13 @@ final class AudioManager {
             guard let buffer = buffers[name] else { continue }
             let node = AVAudioPlayerNode()
             engine.attach(node)
-            engine.connect(node, to: engine.mainMixerNode, format: buffer.format)
+            if name == "skid" {
+                engine.attach(skidPitch)
+                engine.connect(node, to: skidPitch, format: buffer.format)
+                engine.connect(skidPitch, to: engine.mainMixerNode, format: buffer.format)
+            } else {
+                engine.connect(node, to: engine.mainMixerNode, format: buffer.format)
+            }
             node.volume = 0
             loopNodes[name] = node
         }
@@ -146,6 +154,12 @@ final class AudioManager {
             loopStarted.insert(name)
         }
         node.volume = max(0, min(1, volume))
+    }
+
+    /// Tyre squeal: `volume` follows how far the tyres slide, `rate` its pitch (1 = as recorded).
+    func setSkid(volume: Float, rate: Float) {
+        skidPitch.rate = max(0.7, min(1.4, rate))
+        setLoop("skid", volume: volume)
     }
 
     /// Silences every looping layer (leaving a level).
