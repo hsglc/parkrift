@@ -96,6 +96,7 @@ enum Strings {
     static var you: String { t("SEN", "YOU", "TÚ") }
     static var friend: String { t("ARKADAŞ", "FRIEND", "AMIGO") }
     static var go: String { t("BAŞLA!", "GO!", "¡YA!") }
+    static var getReady: String { t("HAZIR OL", "GET READY", "PREPÁRATE") }
     static var parked: String { t("Park edildi!", "Parked!", "¡Aparcado!") }
     static var hold: String { t("Kıpırdama", "Hold still", "No te muevas") }
     static func resetsIn(_ time: String) -> String { t("Yenilenme \(time)", "Resets in \(time)", "Se renueva en \(time)") }

@@ -123,217 +123,207 @@ struct ResultsOverlay: View {
 
     var body: some View {
         GeometryReader { geo in
-            let side = max(24, max(geo.safeAreaInsets.leading, geo.safeAreaInsets.trailing) + 12)
-            let width = min(640, geo.size.width - side * 2)
             ZStack {
-                shade
-                VStack(spacing: 0) {
-                    header
-                    medal
-                        .padding(.top, 8)
-                    panel
-                        .frame(width: width)
-                        .padding(.top, 14)
-                        .opacity(panelIn ? 1 : 0)
-                        .offset(y: panelIn ? 0 : 18)
-                    footer
-                        .frame(width: width)
-                        .padding(.top, 12)
-                        .opacity(panelIn ? 1 : 0)
-                        .offset(y: panelIn ? 0 : 24)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The frozen game stays in view, only dimmed: the card is the one thing to read
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .opacity(appeared ? 1 : 0)
+                card
+                    .frame(width: min(480, geo.size.width - 48))
+                    .scaleEffect(panelIn ? 1 : 0.94)
+                    .opacity(panelIn ? 1 : 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .task(id: info.id) { await animateIn() }
     }
 
-    // MARK: Shade
+    // MARK: Card
 
-    /// The frozen frame stays faintly in view; the outcome's colour glows up behind the result.
-    private var shade: some View {
-        ZStack {
-            Color.black.opacity(0.74)
-            RadialGradient(colors: [accent.opacity(0.30), accent.opacity(0.0)],
-                           center: UnitPoint(x: 0.5, y: 0.12), startRadius: 10, endRadius: 360)
-        }
-        .ignoresSafeArea()
-        .opacity(appeared ? 1 : 0)
-    }
-
-    // MARK: Header
-
-    private var header: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
+    /// One compact glass card: the level and the stars on a line, the result, the figures and
+    /// the coins in one row, then the buttons.
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
                 Image(systemName: badgeIcon)
-                    .font(.system(size: 9, weight: .black))
+                    .font(.system(size: 8, weight: .black))
                     .foregroundStyle(Palette.ink)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .background(Circle().fill(accent))
                 Text(info.levelTitle)
-                    .font(.ui(13, .semibold))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .font(.ui(12, .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
+                Spacer(minLength: 8)
+                medal
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(headline.uppercased())
+                    .font(.race(36))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 if info.newBest {
-                    Label(Strings.newBest, systemImage: "bolt.fill")
-                        .font(.ui(11, .heavy))
+                    Text(Strings.newBest)
+                        .font(.ui(10, .heavy))
                         .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, 8)
-                        .frame(height: 20)
+                        .padding(.horizontal, 7)
+                        .frame(height: 18)
                         .background(Capsule().fill(Palette.gold))
                 }
             }
-            Text(headline.uppercased())
-                .font(.race(50))
-                .foregroundStyle(.white)
-                .shadow(color: accent.opacity(0.75), radius: 16)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .padding(.horizontal, 24)
+            .padding(.top, 4)
+            .scaleEffect(titleIn ? 1 : 1.06, anchor: .leading)
+            .opacity(titleIn ? 1 : 0)
             if let roundLine = info.roundLine {
                 Text(roundLine)
-                    .font(.ui(13, .semibold))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .font(.ui(12, .medium))
+                    .foregroundStyle(.white.opacity(0.65))
             }
+            divider.padding(.top, 12)
+            board.padding(.vertical, 12)
+            divider
+            footer.padding(.top, 14)
         }
-        .scaleEffect(titleIn ? 1 : 1.12)
-        .opacity(titleIn ? 1 : 0)
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 18)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
+        )
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color(red: 0.05, green: 0.06, blue: 0.09).opacity(0.7))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        // The outcome's colour as a thin line along the top
+        .overlay(alignment: .top) {
+            Capsule()
+                .fill(accent)
+                .frame(width: 64, height: 3)
+                .offset(y: -1.5)
+        }
+        .shadow(color: .black.opacity(0.45), radius: 30, y: 12)
     }
 
-    /// Under the result: the stars (alone) or the match score (head to head).
+    private var divider: some View {
+        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+    }
+
+    /// Next to the level: the stars (alone) or the match score (head to head).
     @ViewBuilder
     private var medal: some View {
         if let scoreLine = info.scoreLine {
             Text(scoreLine)
-                .font(.race(26))
+                .font(.race(17))
                 .monospacedDigit()
                 .foregroundStyle(.white)
-                .padding(.horizontal, 18)
-                .frame(height: 38)
-                .background(Capsule().fill(Color.white.opacity(0.08)))
-                .overlay(Capsule().strokeBorder(accent.opacity(0.6), lineWidth: 1.5))
-                .opacity(titleIn ? 1 : 0)
+                .padding(.horizontal, 10)
+                .frame(height: 24)
+                .background(Capsule().fill(accent.opacity(0.22)))
+                .overlay(Capsule().strokeBorder(accent.opacity(0.7), lineWidth: 1))
         } else if !headToHead && !failed {
-            HStack(alignment: .center, spacing: 10) {
+            HStack(spacing: 3) {
                 ForEach(0..<3, id: \.self) { starView($0) }
             }
-            .frame(height: 44)
         }
     }
 
     private func starView(_ index: Int) -> some View {
         let lit = index < shownStars
         return Image(systemName: "star.fill")
-            .font(.system(size: index == 1 ? 40 : 32, weight: .black))
+            .font(.system(size: 17, weight: .black))
             .foregroundStyle(lit ? Palette.gold : Color.white.opacity(0.14))
-            .shadow(color: lit ? Palette.gold.opacity(0.75) : .clear, radius: 10)
-            .scaleEffect(lit ? 1 : 0.86)
-            .offset(y: index == 1 ? -4 : 0)
+            .shadow(color: lit ? Palette.gold.opacity(0.6) : .clear, radius: 5)
+            .scaleEffect(lit ? 1 : 0.8)
             .animation(.spring(response: 0.35, dampingFraction: 0.45), value: lit)
     }
 
-    // MARK: Panel
+    // MARK: Figures
 
-    /// One glass panel: the figures on the left, the coins on the right.
-    private var panel: some View {
-        HStack(alignment: .center, spacing: 0) {
-            board
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
-            if hasReward, let reward = info.reward {
-                Rectangle()
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 1)
-                    .padding(.vertical, 14)
-                rewardColumn(reward)
-                    .frame(width: 176, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(red: 0.07, green: 0.08, blue: 0.12).opacity(0.88))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-        )
-        // The outcome's colour along the top edge, fading out at the ends
-        .overlay(alignment: .top) {
-            LinearGradient(colors: [accent.opacity(0), accent, accent.opacity(0)], startPoint: .leading, endPoint: .trailing)
-                .frame(height: 2)
-                .padding(.horizontal, 40)
-        }
-    }
-
-    /// Head to head: a timing board (position, player, time, gap, crashes), the winner on top.
-    /// Alone: the round's figures side by side.
+    /// Head to head: the two players as timing rows. Alone: time, crashes, score or best, and the
+    /// coins, side by side.
     @ViewBuilder
     private var board: some View {
         if headToHead {
-            VStack(spacing: 5) {
-                HStack(spacing: 0) {
-                    Spacer()
-                    Text(Strings.timeLabel).frame(width: 64, alignment: .trailing)
-                    Text(Strings.gapLabel).frame(width: 52, alignment: .trailing)
-                    Image(systemName: "car.side.rear.and.collision.and.car.side.front").frame(width: 38, alignment: .trailing)
-                }
-                .font(.ui(10, .bold))
-                .foregroundStyle(.white.opacity(0.45))
-                .padding(.trailing, 10)
+            VStack(spacing: 6) {
                 ForEach(Array(ranked.enumerated()), id: \.element.id) { index, entry in
                     timingRow(entry, position: index + 1, leader: ranked.first?.time)
+                }
+                if hasReward, let reward = info.reward {
+                    coins(reward).frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         } else if let me = info.me {
             HStack(alignment: .top, spacing: 0) {
-                figure(Strings.timeLabel, value: me.time.map { String(format: "%.1f", $0) } ?? "–", unit: me.time == nil ? "" : "s", big: true)
-                hairline
-                figure(Strings.bumpsLabel, value: "\(me.hits)", unit: "", big: false,
+                figure(Strings.timeLabel, value: me.time.map { String(format: "%.1f", $0) } ?? "–", unit: me.time == nil ? "" : "s")
+                figure(Strings.bumpsLabel, value: "\(me.hits)", unit: "",
                        tint: me.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : .white)
                 if let score = me.score {
-                    hairline
-                    figure(Strings.scoreLabel, value: score >= 0 ? String(format: "%.1f", score) : "–", unit: "", big: false)
+                    figure(Strings.scoreLabel, value: score >= 0 ? String(format: "%.1f", score) : "–", unit: "")
                 } else if let best = info.bestTime {
-                    hairline
-                    figure(Strings.bestLabel, value: String(format: "%.1f", best), unit: "s", big: false, tint: .white.opacity(0.75))
+                    figure(Strings.bestLabel, value: String(format: "%.1f", best), unit: "s", tint: .white.opacity(0.7))
+                }
+                if hasReward, let reward = info.reward {
+                    coins(reward)
                 }
             }
         }
     }
 
-    private var hairline: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.1))
-            .frame(width: 1, height: 46)
-            .padding(.horizontal, 14)
-            .padding(.top, 6)
-    }
-
-    /// A figure: a small caption over a big number.
-    private func figure(_ label: String, value: String, unit: String, big: Bool, tint: Color = .white) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+    /// A figure: a small caption over a number.
+    private func figure(_ label: String, value: String, unit: String, tint: Color = .white) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
             Text(label)
-                .font(.ui(11, .bold))
-                .foregroundStyle(.white.opacity(0.5))
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                .font(.ui(10, .bold))
+                .foregroundStyle(.white.opacity(0.45))
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(value)
-                    .font(.race(big ? 44 : 34))
+                    .font(.race(28))
                     .monospacedDigit()
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 if !unit.isEmpty {
                     Text(unit)
-                        .font(.race(big ? 20 : 16))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .font(.race(14))
+                        .foregroundStyle(.white.opacity(0.45))
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The coins: the total counting up, what made it in one small line under it.
+    private func coins(_ reward: RunReward) -> some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            HStack(spacing: 5) {
+                Image(systemName: "dollarsign.circle.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Palette.gold)
+                Text("+\(shownCoins)")
+                    .font(.race(28))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.gold)
+                    .contentTransition(.numericText())
+            }
+            if !reward.lines.isEmpty {
+                Text(reward.lines.map { "\($0.label) +\($0.coins)" }.joined(separator: " · "))
+                    .font(.ui(10, .semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            ForEach(reward.tasksDone.indices, id: \.self) { index in
+                taskTag(reward.tasksDone[index].coins)
+            }
+        }
+        .frame(maxWidth: 170, alignment: .trailing)
     }
 
     /// Players in finishing order (finished first, by time).
@@ -359,7 +349,7 @@ struct ResultsOverlay: View {
             Text("P\(position)")
                 .font(.race(17))
                 .foregroundStyle(entry.isWinner ? Palette.ink : Color.white)
-                .frame(width: 40, height: 30)
+                .frame(width: 36, height: 28)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(entry.isWinner ? Palette.gold : Palette.player(entry.slot)))
             Text(entry.name)
@@ -392,49 +382,11 @@ struct ResultsOverlay: View {
                 .foregroundStyle(entry.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : Color.white.opacity(0.8))
                 .frame(width: 38, alignment: .trailing)
         }
-        .padding(.leading, 5)
+        .padding(.leading, 4)
         .padding(.trailing, 10)
-        .frame(height: 40)
+        .frame(height: 36)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(Color.white.opacity(entry.isMe ? 0.1 : 0.05)))
-    }
-
-    // MARK: Coins
-
-    /// The coins: the total counts up big, each part on its own line, waiting task rewards as tags.
-    private func rewardColumn(_ reward: RunReward) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Image(systemName: "dollarsign.circle.fill")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Palette.gold)
-                Text("+\(shownCoins)")
-                    .font(.race(32))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .contentTransition(.numericText())
-            }
-            if !reward.lines.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(reward.lines.prefix(4).enumerated()), id: \.offset) { _, line in
-                        HStack(spacing: 6) {
-                            Text(line.label)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                            Spacer(minLength: 4)
-                            Text("+\(line.coins)")
-                                .monospacedDigit()
-                                .foregroundStyle(Palette.gold.opacity(0.9))
-                        }
-                        .font(.ui(12, .semibold))
-                        .foregroundStyle(.white.opacity(0.65))
-                    }
-                }
-            }
-            ForEach(reward.tasksDone.indices, id: \.self) { index in
-                taskTag(reward.tasksDone[index].coins)
-            }
-        }
     }
 
     private func taskTag(_ coins: Int) -> some View {
@@ -544,24 +496,24 @@ struct ResultButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let primary = fill != nil
         return configuration.label
-            .font(primary ? .race(20) : .ui(15, .bold))
+            .font(primary ? .race(18) : .ui(14, .bold))
             .labelStyle(ResultLabelStyle())
             .foregroundStyle(primary ? Palette.ink : Color.white)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 14)
             .frame(maxWidth: primary ? .infinity : nil)
-            .frame(height: 50)
+            .frame(height: 42)
             .background(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(primary ? AnyShapeStyle(LinearGradient(colors: [fill!.opacity(1), fill!.opacity(0.86)], startPoint: .top, endPoint: .bottom))
                                   : AnyShapeStyle(Color.white.opacity(0.1)))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .strokeBorder(Color.white.opacity(primary ? 0.35 : 0.14), lineWidth: 1)
             )
-            .shadow(color: primary ? fill!.opacity(0.4) : .clear, radius: configuration.isPressed ? 3 : 12, y: 4)
+            .shadow(color: primary ? fill!.opacity(0.3) : .clear, radius: configuration.isPressed ? 2 : 8, y: 3)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
     }

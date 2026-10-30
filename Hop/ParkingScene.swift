@@ -691,43 +691,49 @@ final class ParkingScene: SKScene {
         navNode.isHidden = true
         hud.addChild(navNode)
 
-        // Start lights: in the middle of the view while the car waits (nothing to drive round
-        // yet), no box: a big slanted count over three LED bars that light red one by one and all
-        // green on GO, on a soft shade for contrast. GO punches out and the whole thing lifts away
-        // before the car moves.
+        // Start lights: the top bar itself grows into them (nothing over the car or the road):
+        // "get ready" and the count on one line, three segments under it that fill red one by
+        // one and all green on GO, then it shrinks back into the bar.
         countdownNode = SKNode()
         countdownNode.position = countdownHome
         countdownNode.zPosition = 5
-        let shade = SKSpriteNode(texture: dotTexture)
-        shade.size = CGSize(width: 360, height: 220)
-        shade.color = .black
-        shade.colorBlendFactor = 1
-        shade.alpha = 0.38
-        shade.position = CGPoint(x: 0, y: -8)
-        shade.zPosition = -2
-        countdownNode.addChild(shade)
+        let capsule = SKSpriteNode(texture: CarArt.glass(size: CGSize(width: 330, height: 60), corner: 22))
+        capsule.size = CGSize(width: 330, height: 60)
+        countdownNode.addChild(capsule)
+        // A dark core under the glass, so the bar beneath does not show through
+        let core = SKShapeNode(rect: CGRect(x: -163, y: -28, width: 326, height: 56), cornerRadius: 20)
+        core.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 0.86)
+        core.strokeColor = .clear
+        core.zPosition = -1
+        countdownNode.addChild(core)
+        countdownCaption = makeLabel(Strings.getReady, size: 13, color: UIColor(white: 1, alpha: 0.72), font: "Barlow-ExtraBold")
+        countdownCaption.horizontalAlignmentMode = .left
+        countdownCaption.position = CGPoint(x: -146, y: 9)
+        countdownNode.addChild(countdownCaption)
         countdownLamps = (0..<3).map { index in
-            let lamp = SKShapeNode(rect: CGRect(x: -27, y: -5, width: 54, height: 10), cornerRadius: 5)
-            lamp.position = CGPoint(x: CGFloat(index - 1) * 66, y: -58)
-            lamp.fillColor = UIColor(white: 1, alpha: 0.16)
-            lamp.strokeColor = .clear
+            let segment = SKShapeNode(rect: CGRect(x: -48, y: -3.5, width: 96, height: 7), cornerRadius: 3.5)
+            segment.position = CGPoint(x: CGFloat(index - 1) * 102, y: -15)
+            segment.fillColor = UIColor(white: 1, alpha: 0.14)
+            segment.strokeColor = .clear
             let glow = SKSpriteNode(texture: dotTexture)
-            glow.size = CGSize(width: 84, height: 26)
+            glow.size = CGSize(width: 120, height: 22)
             glow.blendMode = .add
             glow.alpha = 0
             glow.name = "glow"
             glow.zPosition = -1
-            lamp.addChild(glow)
-            countdownNode.addChild(lamp)
-            return lamp
+            segment.addChild(glow)
+            countdownNode.addChild(segment)
+            return segment
         }
-        countdownShadow = makeLabel("", size: 104, color: .white, font: "BarlowCondensed-BlackItalic")
-        countdownShadow.position = CGPoint(x: 0, y: 8)
+        countdownShadow = makeLabel("", size: 34, color: .white, font: "BarlowCondensed-BlackItalic")
+        countdownShadow.horizontalAlignmentMode = .right
+        countdownShadow.position = CGPoint(x: 148, y: 8)
         countdownNode.addChild(countdownShadow)
-        countdownLabel = makeLabel("3", size: 104, color: .white, font: "BarlowCondensed-BlackItalic")
-        countdownLabel.position = CGPoint(x: 0, y: 8)
+        countdownLabel = makeLabel("3", size: 34, color: .white, font: "BarlowCondensed-BlackItalic")
+        countdownLabel.horizontalAlignmentMode = .right
+        countdownLabel.position = CGPoint(x: 148, y: 8)
         countdownNode.addChild(countdownLabel)
-        // (the old fill bar, kept off screen: the lights show the count now)
+        // (the old fill bar, kept off screen: the segments show the count now)
         countdownBar = SKSpriteNode(color: .clear, size: CGSize(width: 1, height: 1))
         hud.addChild(countdownNode)
 
@@ -752,8 +758,9 @@ final class ParkingScene: SKScene {
         hud.addChild(holdModule)
     }
 
-    /// The start lights: in the middle of the view, above the car.
-    private var countdownHome: CGPoint { CGPoint(x: size.width / 2, y: size.height * 0.6) }
+    /// The start lights: over the top bar (they grow out of it, a little lower).
+    private var countdownHome: CGPoint { CGPoint(x: size.width / 2 + 40, y: size.height - 24 - 10) }
+    private var countdownCaption = SKLabelNode()
     /// The hold capsule: under the top bar and the rules chip, well above the car.
     private var holdHome: CGPoint { CGPoint(x: size.width / 2 + 40, y: size.height - 124) }
     private var countdownLamps: [SKShapeNode] = []
@@ -1205,11 +1212,15 @@ final class ParkingScene: SKScene {
         }
         countdownNode.isHidden = false
         if countdownNode.alpha < 0.99 || countdownNode.action(forKey: "leave") != nil {
+            // Grows out of the top bar: from its height down to the full capsule
             countdownNode.removeAllActions()
-            countdownNode.position = countdownHome
+            countdownNode.position = CGPoint(x: countdownHome.x, y: countdownHome.y + 10)
             countdownNode.alpha = 0
-            countdownNode.setScale(0.94)
-            countdownNode.run(.group([.fadeIn(withDuration: 0.2), .scale(to: 1, duration: 0.2)]))
+            countdownNode.xScale = 1
+            countdownNode.yScale = 0.62
+            let grow = SKAction.group([.fadeIn(withDuration: 0.16), .scaleY(to: 1, duration: 0.28), .move(to: countdownHome, duration: 0.28)])
+            grow.timingMode = .easeOut
+            countdownNode.run(grow)
         }
         // The old number shrinks away, the new one slams in from big
         countdownShadow.removeAllActions()
@@ -1219,7 +1230,7 @@ final class ParkingScene: SKScene {
         out.timingMode = .easeIn
         countdownShadow.run(out)
         countdownLabel.removeAllActions()
-        countdownLabel.setScale(1.7)
+        countdownLabel.setScale(1.6)
         countdownLabel.alpha = 0
         let slam = SKAction.group([.scale(to: 1, duration: 0.22), .fadeIn(withDuration: 0.12)])
         slam.timingMode = .easeOut
@@ -1246,8 +1257,10 @@ final class ParkingScene: SKScene {
         }
         if go {
             countdownBar.xScale = 1
-            let pulse = SKAction.sequence([.scale(to: 1.08, duration: 0.1), .scale(to: 1.0, duration: 0.12)])
-            let leave = SKAction.group([.fadeOut(withDuration: 0.3), .scale(to: 1.25, duration: 0.3)])
+            let pulse = SKAction.sequence([.scale(to: 1.05, duration: 0.1), .scale(to: 1.0, duration: 0.12)])
+            // Back into the bar
+            let leave = SKAction.group([.fadeOut(withDuration: 0.28), .scaleY(to: 0.62, duration: 0.28),
+                                        .move(to: CGPoint(x: countdownHome.x, y: countdownHome.y + 10), duration: 0.28)])
             leave.timingMode = .easeIn
             countdownNode.run(.sequence([pulse, .wait(forDuration: 0.4), leave, .hide()]), withKey: "leave")
         }
@@ -1398,12 +1411,14 @@ final class ParkingScene: SKScene {
         let green = UIColor(red: 0.3, green: 1.0, blue: 0.55, alpha: 1)
         countdownColor = go ? green : red
         countdownLabel.fontColor = go ? green : .white
-        countdownLabel.fontSize = go ? 76 : 104
+        countdownLabel.fontSize = go ? 30 : 34
         countdownShadow.fontSize = countdownLabel.fontSize
+        countdownCaption.text = Strings.getReady
+        countdownCaption.alpha = go ? 0.35 : 1
         let lit = go ? 3 : max(0, 4 - (Int(text) ?? 3))
         for (index, lamp) in countdownLamps.enumerated() {
             let on = index < lit
-            lamp.fillColor = on ? countdownColor : UIColor(white: 1, alpha: 0.16)
+            lamp.fillColor = on ? countdownColor : UIColor(white: 1, alpha: 0.14)
             if let glow = lamp.childNode(withName: "glow") as? SKSpriteNode {
                 glow.color = countdownColor
                 glow.colorBlendFactor = 1
