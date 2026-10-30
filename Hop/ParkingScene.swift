@@ -4184,10 +4184,24 @@ final class ParkingScene: SKScene {
     /// Cones the car runs into fly off and fall over; each counts as a hit (as on a driving test).
     private func knockCones() {
         guard !coneIndices.isEmpty, coneIndices.count > knockedCones.count else { return }
-        let box = OBB(center: carPosition, size: Levels.carSize, angle: heading)
+        // The cone is hit only where it is drawn: its round body (8 units across at the foot, the
+        // 3D cone in World3D) against the car's painted body, which is a little narrower than the
+        // collision box. The cone's square 14-unit box and the full car box knocked cones over a
+        // hand's width before the car reached them, worst at the box corners.
+        let bodyHalf = CGSize(width: Levels.carSize.width / 2 - 0.5, height: Levels.carSize.height / 2 - 1.5)
+        let coneRadius: CGFloat = 4.5
+        let u = CGVector(dx: cos(heading), dy: sin(heading))
         for index in coneIndices where !knockedCones.contains(index) && index < obstacleBoxes.count {
             let cone = obstacleBoxes[index]
-            guard abs(cone.center.x - carPosition.x) < 45, abs(cone.center.y - carPosition.y) < 45, box.intersects(cone) else { continue }
+            let dx = cone.center.x - carPosition.x
+            let dy = cone.center.y - carPosition.y
+            guard abs(dx) < 45, abs(dy) < 45 else { continue }
+            // The cone's centre in the car's frame, then the nearest point of the body to it
+            let along = dx * u.dx + dy * u.dy
+            let across = -dx * u.dy + dy * u.dx
+            let gapAlong = max(0, abs(along) - bodyHalf.width)
+            let gapAcross = max(0, abs(across) - bodyHalf.height)
+            guard gapAlong * gapAlong + gapAcross * gapAcross < coneRadius * coneRadius else { continue }
             knockedCones.insert(index)
             let speed = abs(velocity)
             let travel = velocity >= 0 ? heading : heading + .pi
