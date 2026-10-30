@@ -807,8 +807,12 @@ struct GarageView: View {
     }
 
     private func carChip(_ car: CarSpec) -> some View {
-        let selected = car.id == choice.model
-        let owned = Progression.owns(car.id)
+        let selected: Bool = car.id == choice.model
+        let owned: Bool = Progression.owns(car.id)
+        let badge: Color = selected ? Palette.gold : Color.white.opacity(owned ? 0.85 : 0.35)
+        let nameColor: Color = selected ? Palette.ink : Color.white.opacity(owned ? 1 : 0.7)
+        let priceColor: Color = selected ? Palette.ink.opacity(0.7) : Palette.gold
+        let chipFill: Color = selected ? Color.white : Color.white.opacity(0.06)
         return Button {
             select(car.id)
         } label: {
@@ -817,11 +821,11 @@ struct GarageView: View {
                     .font(.ui(11, .heavy))
                     .foregroundStyle(Palette.ink)
                     .frame(width: 26, height: 26)
-                    .background(Circle().fill(selected ? Palette.gold : Color.white.opacity(owned ? 0.85 : 0.35)))
+                    .background(Circle().fill(badge))
                 VStack(alignment: .leading, spacing: 0) {
                     Text(car.name)
                         .font(.race(16))
-                        .foregroundStyle(selected ? Palette.ink : .white.opacity(owned ? 1 : 0.7))
+                        .foregroundStyle(nameColor)
                         .lineLimit(1)
                         .fixedSize()
                     if !owned {
@@ -830,14 +834,14 @@ struct GarageView: View {
                             Text("\(Progression.price(car.id))").monospacedDigit()
                         }
                         .font(.ui(10, .bold))
-                        .foregroundStyle(selected ? Palette.ink.opacity(0.7) : Palette.gold)
+                        .foregroundStyle(priceColor)
                     }
                 }
             }
             .padding(.leading, 5)
             .padding(.trailing, 14)
             .frame(height: 40)
-            .background(Capsule().fill(selected ? Color.white : Color.white.opacity(0.06)))
+            .background(Capsule().fill(chipFill))
         }
         .buttonStyle(PressScaleStyle())
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selected)
@@ -860,6 +864,27 @@ struct GarageView: View {
     /// 2 × 2 grid, the paint, then the buttons.
     private var infoPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
+            cardHeader
+            meters.padding(.top, 8)
+            if CarSpec.paintChoice {
+                paintRow.padding(.top, 12)
+            }
+            Spacer(minLength: 10)
+            actions
+        }
+        .padding(16)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(cardShape.fill(.ultraThinMaterial))
+        .background(cardShape.fill(Color.black.opacity(0.3)))
+        .overlay(cardShape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .environment(\.colorScheme, .dark)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: spec.id)
+    }
+
+    private var cardShape: RoundedRectangle { RoundedRectangle(cornerRadius: 28, style: .continuous) }
+
+    private var cardHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text(spec.maker)
                     .font(.ui(13, .semibold))
@@ -875,94 +900,96 @@ struct GarageView: View {
                 .minimumScaleFactor(0.6)
                 .id(spec.id)
                 .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+        }
+    }
 
-            Grid(horizontalSpacing: 14, verticalSpacing: 10) {
-                GridRow {
-                    StatMeter(label: Strings.statSpeed, value: ratings.speed, shown: statsShown, color: accent)
-                    StatMeter(label: Strings.statAccel, value: ratings.acceleration, shown: statsShown, color: accent)
-                }
-                GridRow {
-                    StatMeter(label: Strings.statHandling, value: ratings.handling, shown: statsShown, color: accent)
-                    StatMeter(label: Strings.statNitro, value: ratings.nitro, shown: statsShown, color: accent)
-                }
+    private var meters: some View {
+        let r = ratings
+        return Grid(horizontalSpacing: 14, verticalSpacing: 10) {
+            GridRow {
+                StatMeter(label: Strings.statSpeed, value: r.speed, shown: statsShown, color: accent)
+                StatMeter(label: Strings.statAccel, value: r.acceleration, shown: statsShown, color: accent)
             }
-            .padding(.top, 8)
-
-            if CarSpec.paintChoice {
-                HStack(spacing: 4) {
-                    ForEach(CarSpec.paints.indices, id: \.self) { index in
-                        let selected = index == choice.paint
-                        Button {
-                            AudioManager.shared.play("click", volume: 0.5)
-                            choice.paint = index
-                        } label: {
-                            Circle()
-                                .fill(Color(CarSpec.paints[index].color))
-                                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
-                                .frame(width: selected ? 24 : 20, height: selected ? 24 : 20)
-                                .frame(width: 28, height: 28)
-                                .overlay(Circle().strokeBorder(selected ? Color.white : Color.clear, lineWidth: 2))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Spacer(minLength: 4)
-                    Text(spec.fixedLivery ? Strings.factoryLivery : CarSpec.paints[choice.paint].name)
-                        .font(.ui(12, .semibold))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                .padding(.horizontal, 6)
-                .frame(height: 40)
-                .background(Capsule().fill(Color.white.opacity(0.06)))
-                .padding(.top, 12)
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: choice.paint)
-                .opacity(spec.fixedLivery ? 0.35 : 1)
-                .allowsHitTesting(!spec.fixedLivery)
-            }
-
-            Spacer(minLength: 10)
-            HStack(spacing: 10) {
-                if Progression.owns(choice.model) {
-                    Button {
-                        AudioManager.shared.play("click", volume: 0.6)
-                        showUpgrades = true
-                    } label: {
-                        Image(systemName: "wrench.and.screwdriver.fill")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 52, height: 52)
-                            .background(Circle().fill(Color.white.opacity(0.1)))
-                            .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
-                    }
-                    .buttonStyle(PressScaleStyle())
-                    .accessibilityLabel(Strings.upgrade)
-                    Button {
-                        AudioManager.shared.play("click", volume: 0.7)
-                        model.carChoice = choice
-                        model.leaveGarage(confirmed: true)
-                    } label: {
-                        Text(isPlay ? Strings.raceStart.localUpper : Strings.selectCar.localUpper)
-                    }
-                    .buttonStyle(GaragePillStyle(fill: Palette.gold))
-                } else {
-                    buyButton
-                }
+            GridRow {
+                StatMeter(label: Strings.statHandling, value: r.handling, shown: statsShown, color: accent)
+                StatMeter(label: Strings.statNitro, value: r.nitro, shown: statsShown, color: accent)
             }
         }
-        .padding(16)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.ultraThinMaterial))
-        .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color.black.opacity(0.3)))
-        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-        .environment(\.colorScheme, .dark)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: spec.id)
+    }
+
+    private var paintRow: some View {
+        HStack(spacing: 4) {
+            ForEach(CarSpec.paints.indices, id: \.self) { index in
+                paintSwatch(index)
+            }
+            Spacer(minLength: 4)
+            Text(spec.fixedLivery ? Strings.factoryLivery : CarSpec.paints[choice.paint].name)
+                .font(.ui(12, .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 40)
+        .background(Capsule().fill(Color.white.opacity(0.06)))
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: choice.paint)
+        .opacity(spec.fixedLivery ? 0.35 : 1)
+        .allowsHitTesting(!spec.fixedLivery)
+    }
+
+    private func paintSwatch(_ index: Int) -> some View {
+        let selected = index == choice.paint
+        let size: CGFloat = selected ? 24 : 20
+        return Button {
+            AudioManager.shared.play("click", volume: 0.5)
+            choice.paint = index
+        } label: {
+            Circle()
+                .fill(Color(CarSpec.paints[index].color))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
+                .frame(width: size, height: size)
+                .frame(width: 28, height: 28)
+                .overlay(Circle().strokeBorder(selected ? Color.white : Color.clear, lineWidth: 2))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        HStack(spacing: 10) {
+            if Progression.owns(choice.model) {
+                Button {
+                    AudioManager.shared.play("click", volume: 0.6)
+                    showUpgrades = true
+                } label: {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 52, height: 52)
+                        .background(Circle().fill(Color.white.opacity(0.1)))
+                        .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
+                }
+                .buttonStyle(PressScaleStyle())
+                .accessibilityLabel(Strings.upgrade)
+                Button {
+                    AudioManager.shared.play("click", volume: 0.7)
+                    model.carChoice = choice
+                    model.leaveGarage(confirmed: true)
+                } label: {
+                    Text(isPlay ? Strings.raceStart.localUpper : Strings.selectCar.localUpper)
+                }
+                .buttonStyle(GaragePillStyle(fill: Palette.gold))
+            } else {
+                buyButton
+            }
+        }
     }
 
     /// The class and one overall number (the four meters together, out of 1000), joined in one capsule.
     private var powerBadge: some View {
         let r = ratings
-        let power = Int(((r.speed + r.acceleration + r.handling + r.nitro) / 4 * 1000).rounded())
+        let sum: Double = r.speed + r.acceleration + r.handling + r.nitro
+        let power: Int = Int((sum * 250).rounded())
         return HStack(spacing: 0) {
             Text(spec.className)
                 .font(.ui(12, .heavy))
@@ -1046,8 +1073,9 @@ private struct StatMeter: View {
             }
             HStack(spacing: 2) {
                 ForEach(0..<10, id: \.self) { index in
+                    let on: Bool = shown && index < lit
                     Capsule()
-                        .fill(shown && index < lit ? AnyShapeStyle(color) : AnyShapeStyle(Color.white.opacity(0.12)))
+                        .fill(on ? color : Color.white.opacity(0.12))
                         .frame(height: 6)
                         .animation(.easeOut(duration: 0.25).delay(shown ? Double(index) * 0.03 : 0), value: shown)
                         .animation(.easeOut(duration: 0.2), value: lit)
