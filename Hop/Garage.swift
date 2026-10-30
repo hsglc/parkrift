@@ -46,7 +46,7 @@ final class GarageStage {
         let platformNode = SCNNode(geometry: platform)
         platformNode.position.y = 0.05
         turntable.addChildNode(platformNode)
-        let ring = SCNTube(innerRadius: 3.28, outerRadius: 3.36, height: 0.11)
+        let ring = SCNTube(innerRadius: 3.31, outerRadius: 3.34, height: 0.06)
         ring.radialSegmentCount = 96
         ringMaterial.lightingModel = .constant
         ringMaterial.diffuse.contents = UIColor.black
@@ -158,7 +158,7 @@ final class GarageStage {
         let previous = shown
         shown = choice
         let accent = choice.color.lighter(by: 0.15)
-        ringMaterial.emission.contents = accent
+        ringMaterial.emission.contents = accent.darker(by: 0.35)
         floorGlow.multiply.contents = accent
         if previous?.model == choice.model {
             car.setPaint(choice.color)
@@ -338,7 +338,7 @@ final class GarageStage {
             SCNTransaction.animationDuration = 1.2
             for (light, intensity) in self.studioLights { light.intensity = intensity }
             self.scene.lightingEnvironment.intensity = 0.9
-            self.ringMaterial.emission.contents = accent
+            self.ringMaterial.emission.contents = accent.darker(by: 0.35)
             camera.exposureOffset = -0.15
             camera.bloomIntensity = 0.45
             SCNTransaction.commit()
@@ -432,7 +432,7 @@ final class GarageStage {
             SCNTransaction.animationDuration = 0.5
             for (light, intensity) in studioLights { light.intensity = intensity }
             scene.lightingEnvironment.intensity = 0.9
-            ringMaterial.emission.contents = accent
+            ringMaterial.emission.contents = accent.darker(by: 0.35)
             floorGlow.multiply.contents = accent
             cameraNode.camera?.exposureOffset = -0.15
             cameraNode.camera?.bloomIntensity = 0.25
@@ -652,22 +652,22 @@ struct GarageView: View {
         ZStack {
             GarageSceneView(stage: stage)
                 .ignoresSafeArea()
-            // Readability shade under the panel and the title
-            LinearGradient(colors: [.clear, .clear, Palette.carbon.opacity(0.75)], startPoint: .leading, endPoint: .trailing)
+            // A soft shade on the right, where the details sit, and along the bottom
+            LinearGradient(colors: [.clear, .clear, Palette.carbon.opacity(0.82)], startPoint: .leading, endPoint: .trailing)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
-            LinearGradient(colors: [Palette.carbon.opacity(0.6), .clear], startPoint: .top, endPoint: .center)
+            LinearGradient(colors: [.clear, Palette.carbon.opacity(0.55)], startPoint: .center, endPoint: .bottom)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
             HStack(alignment: .top, spacing: 0) {
                 leftColumn
-                Spacer(minLength: 12)
+                Spacer(minLength: 16)
                 infoPanel
-                    .frame(width: 300)
+                    .frame(width: 290)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
             .opacity(unlocked == nil ? 1 : 0)
             .animation(.easeInOut(duration: 0.3), value: unlocked == nil)
 
@@ -712,52 +712,73 @@ struct GarageView: View {
         }
     }
 
-    // MARK: Left: title, arrows, car strip
+    // MARK: Left: title, the car's arrows, the car strip
 
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 RoundIconButton(systemImage: "chevron.left") {
                     AudioManager.shared.play("click", volume: 0.6)
                     model.leaveGarage(confirmed: false)
                 }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(Strings.garage.uppercased())
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(Strings.garage)
                         .font(.race(30))
                         .lineLimit(1)
                         .fixedSize()
                         .foregroundStyle(.white)
-                    Text(modeLabel.uppercased())
-                        .font(.kicker(10))
-                        .tracking(1.5)
-                        .foregroundStyle(Palette.neon)
+                    Text(modeLabel)
+                        .font(.ui(13, .semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
                 }
-                CoinPill(coins: model.coins)
+                coins
             }
             Spacer(minLength: 0)
-            HStack(spacing: 10) {
+            // Round arrows either side of the count, under the car
+            HStack(spacing: 14) {
                 arrow("chevron.left") { step(-1) }
-                Text(String(format: "%02d / %02d", spec.id.order + 1, CarSpec.all.count))
-                    .font(.race(18, weight: .heavy))
+                Text("\(spec.id.order + 1) / \(CarSpec.all.count)")
+                    .font(.ui(14, .bold))
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.9))
-                    .frame(width: 84)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(width: 52)
                 arrow("chevron.right") { step(1) }
             }
-            .padding(.bottom, 10)
+            .padding(.bottom, 12)
             carStrip
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
+    /// The coins, in a round glass capsule.
+    private var coins: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "dollarsign.circle.fill")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Palette.gold)
+            Text("\(model.coins)")
+                .font(.race(18))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 14)
+        .frame(height: 36)
+        .background(Capsule().fill(Color.black.opacity(0.45)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .animation(.easeOut(duration: 0.3), value: model.coins)
+    }
+
     private func arrow(_ icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .black))
+                .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 46, height: 40)
-                .background(SlantedShape(skew: 8).fill(Color.white.opacity(0.12)))
-                .overlay(SlantedShape(skew: 8).stroke(Color.white.opacity(0.25), lineWidth: 1))
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(Color.white.opacity(0.1)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
         }
         .buttonStyle(PressScaleStyle())
     }
@@ -765,50 +786,50 @@ struct GarageView: View {
     private var carStrip: some View {
         ScrollViewReader { proxy in
         ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             ForEach(CarSpec.all, id: \.id) { car in
                 let selected = car.id == choice.model
+                let owned = Progression.owns(car.id)
                 Button {
                     select(car.id)
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
                             Text(car.className)
-                                .font(.race(11, weight: .heavy))
+                                .font(.ui(11, .heavy))
                                 .foregroundStyle(selected ? Palette.ink : .white)
-                                .padding(.horizontal, 5)
-                                .background(SlantedShape(skew: 3).fill(selected ? Palette.gold : Color.white.opacity(0.2)))
-                            if Progression.owns(car.id) {
-                                Text(car.maker)
-                                    .font(.kicker(8))
-                                    .tracking(1)
-                                    .foregroundStyle(.white.opacity(0.6))
-                            } else {
+                                .frame(minWidth: 20)
+                                .padding(.horizontal, 4)
+                                .frame(height: 18)
+                                .background(Capsule().fill(selected ? Palette.gold : Color.white.opacity(0.16)))
+                            Spacer(minLength: 0)
+                            if !owned {
                                 HStack(spacing: 3) {
                                     Image(systemName: "lock.fill")
+                                        .font(.system(size: 9, weight: .bold))
                                     Text("\(Progression.price(car.id))")
                                         .monospacedDigit()
                                 }
-                                .font(.ui(10, .black))
+                                .font(.ui(11, .bold))
                                 .foregroundStyle(Palette.gold)
                             }
                         }
-                        Text(car.name.uppercased())
-                            .font(.race(16))
-                            .foregroundStyle(.white)
+                        Text(car.name)
+                            .font(.race(17))
+                            .foregroundStyle(.white.opacity(owned || selected ? 1 : 0.7))
                             .lineLimit(1)
                     }
-                    .padding(.vertical, 8)
-                    .padding(.leading, 16)
-                    .padding(.trailing, 10)
-                    .frame(width: 128, alignment: .leading)
-                    .background(SlantedShape(skew: 10).fill(selected ? Color.white.opacity(0.18) : Palette.carbon.opacity(0.7)))
-                    .overlay(SlantedShape(skew: 10).stroke(selected ? accent : Color.white.opacity(0.12), lineWidth: selected ? 2 : 1))
-                    .overlay(alignment: .bottom) {
-                        if selected {
-                            Rectangle().fill(accent).frame(height: 3).padding(.horizontal, 14).offset(y: 1)
-                        }
-                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .frame(width: 124, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(selected ? Color.white.opacity(0.16) : Color.black.opacity(0.45))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(selected ? Color.white.opacity(0.85) : Color.white.opacity(0.1), lineWidth: selected ? 1.5 : 1)
+                    )
                 }
                 .buttonStyle(PressScaleStyle())
                 .id(car.id)
@@ -827,113 +848,97 @@ struct GarageView: View {
 
     // MARK: Right: name, stats, paint, go
 
+    /// The details on the shade, no panel: maker and class, the name big, four bars, the paint,
+    /// then the buttons.
     private var infoPanel: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text(spec.maker)
-                    .font(.kicker(11))
-                    .tracking(2)
-                    .foregroundStyle(accent)
+                    .font(.ui(13, .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
                 Spacer()
                 Text(Strings.carClass + " " + spec.className)
-                    .font(.race(14, weight: .heavy))
+                    .font(.ui(12, .heavy))
                     .foregroundStyle(Palette.ink)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 2)
-                    .background(SlantedShape(skew: 5).fill(Palette.gold))
+                    .frame(height: 22)
+                    .background(Capsule().fill(Palette.gold))
             }
             Text(spec.name.uppercased())
-                .font(.race(40))
+                .font(.race(44))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+                .padding(.top, 2)
                 .id(spec.id)
                 .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
 
-            VStack(spacing: 7) {
+            VStack(spacing: 10) {
                 StatBar(label: Strings.statSpeed, value: ratings.speed, shown: statsShown, color: accent)
                 StatBar(label: Strings.statAccel, value: ratings.acceleration, shown: statsShown, color: accent)
                 StatBar(label: Strings.statHandling, value: ratings.handling, shown: statsShown, color: accent)
                 StatBar(label: Strings.statNitro, value: ratings.nitro, shown: statsShown, color: accent)
             }
-            .padding(.top, 2)
+            .padding(.top, 10)
 
-            HStack {
-                if CarSpec.paintChoice {
-                    Text(Strings.paint.uppercased())
-                        .font(.kicker(10))
-                        .tracking(1.5)
-                        .foregroundStyle(.white.opacity(0.55))
+            if CarSpec.paintChoice {
+                HStack(spacing: 6) {
+                    ForEach(CarSpec.paints.indices, id: \.self) { index in
+                        let selected = index == choice.paint
+                        Button {
+                            AudioManager.shared.play("click", volume: 0.5)
+                            choice.paint = index
+                        } label: {
+                            Circle()
+                                .fill(Color(CarSpec.paints[index].color))
+                                .frame(width: 22, height: 22)
+                                .padding(3)
+                                .overlay(Circle().strokeBorder(selected ? Color.white : Color.clear, lineWidth: 2))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer(minLength: 4)
+                    Text(spec.fixedLivery ? Strings.factoryLivery : CarSpec.paints[choice.paint].name)
+                        .font(.ui(12, .semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
                 }
-                Spacer()
-                if CarSpec.paintChoice {
-                    Text(spec.fixedLivery ? Strings.factoryLivery.uppercased() : CarSpec.paints[choice.paint].name.uppercased())
-                        .font(.race(13, weight: .heavy))
-                        .foregroundStyle(.white.opacity(0.85))
-                }
+                .padding(.top, 14)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: choice.paint)
+                .opacity(spec.fixedLivery ? 0.35 : 1)
+                .allowsHitTesting(!spec.fixedLivery)
+            }
+
+            Spacer(minLength: 10)
+            HStack(spacing: 10) {
                 if Progression.owns(choice.model) {
                     Button {
                         AudioManager.shared.play("click", volume: 0.6)
                         showUpgrades = true
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "wrench.and.screwdriver.fill")
-                            Text(Strings.upgrade.uppercased())
-                        }
-                        .font(.ui(11, .black))
-                        .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Palette.gold))
+                        Image(systemName: "wrench.and.screwdriver.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(Circle().fill(Color.white.opacity(0.1)))
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
                     }
                     .buttonStyle(PressScaleStyle())
-                }
-            }
-            .padding(.top, 4)
-            if CarSpec.paintChoice {
-            HStack(spacing: 4) {
-                ForEach(CarSpec.paints.indices, id: \.self) { index in
-                    let selected = index == choice.paint
+                    .accessibilityLabel(Strings.upgrade)
                     Button {
-                        AudioManager.shared.play("click", volume: 0.5)
-                        choice.paint = index
+                        AudioManager.shared.play("click", volume: 0.7)
+                        model.carChoice = choice
+                        model.leaveGarage(confirmed: true)
                     } label: {
-                        Circle()
-                            .fill(LinearGradient(colors: [Color(CarSpec.paints[index].color.lighter(by: 0.25)), Color(CarSpec.paints[index].color)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 22, height: 22)
-                            .overlay(Circle().stroke(Color.white.opacity(selected ? 1 : 0.25), lineWidth: selected ? 2.5 : 1))
-                            .padding(3)
-                            .overlay(Circle().stroke(selected ? accent : .clear, lineWidth: 1.5))
-                            .scaleEffect(selected ? 1.08 : 1)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: choice.paint)
-            .opacity(spec.fixedLivery ? 0.3 : 1)
-            .allowsHitTesting(!spec.fixedLivery)
-            }
-
-            Spacer(minLength: 6)
-            if Progression.owns(choice.model) {
-                Button {
-                    AudioManager.shared.play("click", volume: 0.7)
-                    model.carChoice = choice
-                    model.leaveGarage(confirmed: true)
-                } label: {
-                    HStack(spacing: 8) {
                         Text(isPlay ? Strings.raceStart.uppercased() : Strings.selectCar.uppercased())
-                        Image(systemName: "chevron.right.2")
-                            .font(.system(size: 16, weight: .black))
                     }
+                    .buttonStyle(GaragePillStyle(fill: Palette.gold))
+                } else {
+                    buyButton
                 }
-                .buttonStyle(RaceButtonStyle(color: Palette.gold, height: 50, fontSize: 22))
-            } else {
-                buyButton
             }
         }
-        .racePlate(skew: 20, padding: 16)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: spec.id)
     }
 
@@ -956,8 +961,8 @@ struct GarageView: View {
                     .minimumScaleFactor(0.6)
             }
         }
-        .buttonStyle(RaceButtonStyle(color: affordable ? Color(red: 0.35, green: 0.95, blue: 0.55) : Color(white: 0.45),
-                                     height: 50, fontSize: affordable ? 20 : 15))
+        .buttonStyle(GaragePillStyle(fill: affordable ? Color(red: 0.35, green: 0.95, blue: 0.55) : Color(white: 0.45),
+                                     fontSize: affordable ? 21 : 16))
         .disabled(!affordable)
     }
 
@@ -974,7 +979,7 @@ struct GarageView: View {
     }
 }
 
-/// Label, segmented bar and number, filling up when `shown` turns on.
+/// Label, a thin bar and the number, the bar filling when `shown` turns on.
 private struct StatBar: View {
     let label: String
     let value: Double
@@ -982,35 +987,51 @@ private struct StatBar: View {
     let color: Color
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(label.uppercased())
-                .font(.kicker(9))
-                .tracking(1)
-                .foregroundStyle(.white.opacity(0.65))
-                .frame(width: 82, alignment: .leading)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+        VStack(spacing: 5) {
+            HStack {
+                Text(label)
+                    .font(.ui(12, .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                Spacer()
+                Text("\(Int((value * 100).rounded()))")
+                    .font(.race(16))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+            }
             GeometryReader { proxy in
-                let segments = 12
-                let gap: CGFloat = 2
-                let width = (proxy.size.width - gap * CGFloat(segments - 1)) / CGFloat(segments)
-                let lit = shown ? Int((value * Double(segments)).rounded()) : 0
-                HStack(spacing: gap) {
-                    ForEach(0..<segments, id: \.self) { index in
-                        SlantedShape(skew: 3)
-                            .fill(index < lit ? AnyShapeStyle(color) : AnyShapeStyle(Color.white.opacity(0.1)))
-                            .frame(width: width)
-                            .animation(.easeOut(duration: 0.25).delay(Double(index) * 0.025), value: lit)
-                    }
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.1))
+                    Capsule()
+                        .fill(LinearGradient(colors: [color.opacity(0.75), color], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: proxy.size.width * CGFloat(shown ? value : 0))
+                        .animation(.easeOut(duration: 0.6), value: shown)
+                        .animation(.easeOut(duration: 0.4), value: value)
                 }
             }
-            .frame(height: 9)
-            Text("\(Int((value * 100).rounded()))")
-                .font(.race(15, weight: .heavy))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .frame(width: 28, alignment: .trailing)
+            .frame(height: 5)
         }
+    }
+}
+
+/// The garage's main button: a gold pill (green to unlock), full width.
+struct GaragePillStyle: ButtonStyle {
+    let fill: Color
+    var fontSize: CGFloat = 22
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.race(fontSize))
+            .foregroundStyle(Palette.ink)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(Capsule().fill(fill))
+            .shadow(color: fill.opacity(0.35), radius: configuration.isPressed ? 4 : 14, y: 5)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 
