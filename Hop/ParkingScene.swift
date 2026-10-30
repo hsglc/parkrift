@@ -2134,8 +2134,11 @@ final class ParkingScene: SKScene {
                 let far = !sweeping && dx * dx + dy * dy > hideBeyond * hideBeyond
                 if botCars[index].node.isHidden != far { botCars[index].node.isHidden = far }
                 if far { continue }
+                // (a little further to drop the detail than to add it: a car driving along the edge
+                // of the range no longer blinks its lights on and off)
+                let reach = botCars[index].showsDetail ? detailRange * 1.15 : detailRange
                 let near = sweeping
-                    || (abs(bot.position.x - carPosition.x) < detailRange && abs(bot.position.y - carPosition.y) < detailRange)
+                    || (abs(bot.position.x - carPosition.x) < reach && abs(bot.position.y - carPosition.y) < reach)
                 if botCars[index].setDetail(near) { botDetailChanges += 1 }
                 botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)
             }

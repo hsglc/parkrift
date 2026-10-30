@@ -873,7 +873,14 @@ final class Traffic {
             accel = max(-420, accel)
             bot.speed = max(0, min(v0 * 1.05, v + accel * dt))
             if gap < 6 { bot.speed = min(bot.speed, 0) }
-            bot.braking = accel < -40 || bot.speed < 2
+            // Brake lights with a little hysteresis: on for a real brake or a stop, off only once it
+            // drives on (following a car, the brake force hovers round any one threshold and the
+            // lamps flickered with it)
+            if bot.braking {
+                bot.braking = !(accel > -15 && bot.speed > 4)
+            } else {
+                bot.braking = accel < -70 || bot.speed < 1
+            }
 
             // Stuck behind something: other bots squeeze past each other after a while; a
             // player's car standing in the lane gets a honk, then the bot pulls out round it

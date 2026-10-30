@@ -706,15 +706,17 @@ final class Car3D {
             holder.name = "nightLights"
             let pool = SCNNode(geometry: NightLights.pool)
             pool.eulerAngles.x = -Float.pi / 2
-            pool.position = SCNVector3(2.2 + 2.9, 0.03, 0)
+            // (well clear of the road and the body: at a distance a few centimetres was not enough
+            // depth precision and the glows flickered through)
+            pool.position = SCNVector3(2.2 + 2.9, 0.09, 0)
             holder.addChildNode(pool)
             let front = SCNNode(geometry: NightLights.heads)
             front.eulerAngles.y = Float.pi / 2                   // faces +x, the way the car points
-            front.position = SCNVector3(2.25, 0.66, 0)
+            front.position = SCNVector3(2.4, 0.66, 0)
             holder.addChildNode(front)
             let back = SCNNode(geometry: NightLights.tails)
             back.eulerAngles.y = -Float.pi / 2                   // faces -x, behind the car
-            back.position = SCNVector3(-2.25, 0.74, 0)
+            back.position = SCNVector3(-2.4, 0.74, 0)
             holder.addChildNode(back)
             holder.renderingOrder = 5
             node.addChildNode(holder)
@@ -1047,6 +1049,8 @@ final class Car3D {
             boostGlow?.scale = SCNVector3(flicker, flicker, flicker)
         }
     }
+
+    var showsDetail: Bool { detailVisible }
 
     /// Shows or hides wheels and lights (far-away traffic only needs the simple body).
     /// Returns true when it changed.
