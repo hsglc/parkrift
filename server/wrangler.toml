@@ -1,0 +1,16 @@
+# Room server deploy: `npx wrangler deploy` from this folder (the RTC_APP_ID and RTC_APP_SECRET
+# secrets are already set on the Worker and are kept).
+name = "parkrift"
+main = "index.js"
+compatibility_date = "2025-09-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# Joins per IP address: 60 a minute (quick match uses up to 12)
+[[unsafe.bindings]]
+name = "JOIN_LIMIT"
+type = "ratelimit"
+namespace_id = "4711"
+simple = { limit = 60, period = 60 }

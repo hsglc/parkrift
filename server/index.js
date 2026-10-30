@@ -15,6 +15,13 @@ export default {
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("expected websocket", { status: 426 });
     }
+    // Joins per address: room codes can't be tried one after another (the limiter is a Workers
+    // rate-limit binding; without it nothing is limited)
+    if (env.JOIN_LIMIT) {
+      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+      const { success } = await env.JOIN_LIMIT.limit({ key: ip });
+      if (!success) return new Response("too many rooms", { status: 429 });
+    }
     const stub = env.ROOMS.get(env.ROOMS.idFromName(match[1]));
     return stub.fetch(request);
   },
@@ -67,6 +74,13 @@ const PRIVACY = `<h1>Gizlilik Politikası · Privacy Policy</h1><p class="muted"
 // car state unordered and without retransmission (UDP-like). The room socket is the signalling
 // path: the Room makes the SFU API calls with the app secret, so only players in a room can use it.
 const RTC_API = "https://rtc.live.cloudflare.com/v1/apps/";
+// Limits per connection. A phone sends at most 60 states a second plus a few events, and opens the
+// fast path at most 3 times; anything far above that is a script, so it is cut off.
+const RATE = 90;          // messages a second, refilled continuously
+const BURST = 180;        // messages allowed at once
+const DROPS_TO_CLOSE = 300;
+const MAX_RTC = 4;        // SFU sessions per connection
+const MAX_RTC_STEPS = 12; // answers and "up" messages per connection
 const FAST = { dataChannelName: "s", ordered: false, maxRetransmits: 0 };
 
 async function sfu(env, path, method, body) {
@@ -86,6 +100,31 @@ export class Room extends DurableObject {
     super(ctx, env);
     // Per-slot queues: SFU mutations on one session run one after another
     this.queues = new Map();
+    // Message budget per connection (in memory: a flooding socket keeps the object awake)
+    this.budgets = new Map();
+  }
+
+  /// True when this connection may send another message; closes it after a long flood.
+  allow(ws) {
+    const now = Date.now();
+    let b = this.budgets.get(ws);
+    if (!b) {
+      b = { tokens: BURST, at: now, drops: 0 };
+      this.budgets.set(ws, b);
+    }
+    b.tokens = Math.min(BURST, b.tokens + ((now - b.at) / 1000) * RATE);
+    b.at = now;
+    if (b.tokens >= 1) {
+      b.tokens -= 1;
+      return true;
+    }
+    b.drops += 1;
+    if (b.drops >= DROPS_TO_CLOSE) {
+      this.budgets.delete(ws);
+      this.leave(ws);
+      try { ws.close(4008, "flood"); } catch (e) {}
+    }
+    return false;
   }
 
   queue(slot, work) {
@@ -105,6 +144,15 @@ export class Room extends DurableObject {
   async rtc(ws, data) {
     const me = ws.deserializeAttachment() || {};
     if (!this.env.RTC_APP_ID || !this.env.RTC_APP_SECRET) return;
+    // Each SFU call costs: only a few sessions and steps per connection (kept with the socket,
+    // so they survive the object sleeping)
+    if (data.t === "rtc") {
+      if ((me.rtcs || 0) >= MAX_RTC) return;
+      this.update(ws, { rtcs: (me.rtcs || 0) + 1 });
+    } else {
+      if ((me.steps || 0) >= MAX_RTC_STEPS) return;
+      this.update(ws, { steps: (me.steps || 0) + 1 });
+    }
     if (data.t === "rtc") {
       // A new session and its DataChannel transport; the phone answers the SFU's offer
       await this.queue(me.slot, async () => {
@@ -202,8 +250,10 @@ export class Room extends DurableObject {
 
   async webSocketMessage(ws, message) {
     if (typeof message !== "string" || message.length > 24000) return;
+    if (!this.allow(ws)) return;
     let data;
     try { data = JSON.parse(message); } catch (e) { return; }
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
     if (data.t === "ping") {
       ws.send(JSON.stringify({ t: "pong" }));
       return;
@@ -231,6 +281,7 @@ export class Room extends DurableObject {
   }
 
   leave(ws) {
+    if (this.budgets.has(ws)) this.budgets.delete(ws);
     const me = ws.deserializeAttachment() || {};
     for (const other of this.ctx.getWebSockets()) {
       if (other !== ws) {
