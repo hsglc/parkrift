@@ -1132,7 +1132,7 @@ final class World3D {
         camera.fieldOfView = fieldOfView
         camera.projectionDirection = .vertical
         camera.zNear = 0.3
-        camera.zFar = 260
+        camera.zFar = farPlane
         if PerfSettings.optimized {
             // Always-on post-processing (set once, never toggled, so no mid-game pipeline rebuilds):
             // HDR with bloom so LEDs, lamps and nitro flames glow, and a light color grade
@@ -1423,7 +1423,7 @@ final class World3D {
         cameraNode.simdLook(at: spectateLook, up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
         let current = Float(cameraNode.camera?.fieldOfView ?? CGFloat(fov))
         cameraNode.camera?.fieldOfView = CGFloat(cut ? fov : current + (fov - current) * (1 - exp(-Float(dt) * 5)))
-        cameraNode.camera?.zFar = 260
+        cameraNode.camera?.zFar = farPlane
         cameraReady = false      // the chase camera snaps back when spectating ends
         return cut
     }
@@ -1679,7 +1679,7 @@ final class World3D {
         sweepClock = -1
         // The next frame puts the camera straight behind the car (no swing from the sweep)
         cameraReady = false
-        cameraNode.camera?.zFar = 260
+        cameraNode.camera?.zFar = farPlane
         cameraNode.camera?.fieldOfView = fieldOfView
     }
 
@@ -1709,7 +1709,7 @@ final class World3D {
                 cameraNode.simdLook(at: SIMD3<Float>(center.x, 0, center.z), up: SIMD3<Float>(0, 0, -1), localFront: SIMD3<Float>(0, 0, -1))
                 return
             }
-            cameraNode.camera?.zFar = 260
+            cameraNode.camera?.zFar = farPlane
             cameraNode.camera?.fieldOfView = fieldOfView
             let angle = sweepClock / turn * 2 * .pi
             let high = phase == 2
@@ -1782,6 +1782,11 @@ final class World3D {
 
     /// Screen position (SpriteKit coordinates, origin bottom-left) of a world point at a height in meters.
     /// Points behind the camera are returned far off-screen.
+    /// The camera's far plane: a little past where the fog has swallowed everything (all beyond
+    /// is drawn in the fog colour anyway). It used to be a fixed 260 m, which on the larger city
+    /// drew whole blocks hidden in the fog.
+    var farPlane: CGFloat { max(150, scene.fogEndDistance + 25) }
+
     func project(_ point: CGPoint, height: CGFloat = 0) -> CGPoint {
         let p = World3D.vec(point, y: height)
         let c = cameraNode.simdWorldTransform.inverse * SIMD4<Float>(p.x, p.y, p.z, 1)
@@ -1874,6 +1879,7 @@ final class World3D {
             ambientLight.intensity = 560
             ambientLight.color = UIColor(red: 0.84, green: 0.89, blue: 1.0, alpha: 1)
         }
+        if sweepClock < 0 { cameraNode.camera?.zFar = farPlane }
         lampPools?.isHidden = !night
         // Wet asphalt: darker and glossy, with puddles and rain rings (World3D.wetRoadShader)
         for material in roadMaterials + lotMaterials {
