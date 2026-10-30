@@ -4497,45 +4497,18 @@ final class ParkingScene: SKScene {
         layer.zPosition = 300
         addChild(layer)
         for node in [hud, controlsLayer, fxLayer] {
-            node.run(.sequence([.fadeOut(withDuration: 0.25), .wait(forDuration: 3.5), .fadeIn(withDuration: 0.3)]))
+            node.run(.sequence([.fadeOut(withDuration: 0.25), .wait(forDuration: 2.3), .fadeIn(withDuration: 0.3)]))
         }
         speedLines.forEach { $0.sprite.alpha = 0.002 }
-
-        let place = online && friendPresent && remoteParked && remoteTime >= 0 ? 2 : 1
-        let together = online && friendPresent
-        let won = together && place == 1
-        let accent: UIColor = won ? UIColor(red: 1.0, green: 0.78, blue: 0.12, alpha: 1)
-            : (together ? UIColor(red: 0.86, green: 0.88, blue: 0.92, alpha: 1) : UIColor(red: 0.22, green: 0.84, blue: 1.0, alpha: 1))
-        var stats: [CarArt.FinishStat] = [.init(icon: "stopwatch.fill", label: Strings.statTime, value: String(format: "%.1f", localTime), unit: "s")]
-        if level.race { stats.append(.init(icon: "exclamationmark.triangle.fill", label: Strings.statCrashes, value: "\(hits)", unit: "")) }
-        let round = levelIndex - Levels.raceBase + 1
-        stats.append(together ? .init(icon: "trophy.fill", label: Strings.statPlace, value: "P\(place)", unit: "")
-                              : .init(icon: "flag.checkered", label: Strings.statRound, value: "\(max(1, round))", unit: "/\(Levels.raceRounds)"))
-        let title = won ? Strings.youWon.uppercased() : Strings.finishBig
-        // Cinematic bars slide in for the replay-style shots and out before the results
-        let barHeight = size.height * 0.06
-        for top in [true, false] {
-            let bar = SKSpriteNode(color: .black, size: CGSize(width: size.width + 40, height: barHeight))
-            bar.anchorPoint = CGPoint(x: 0.5, y: top ? 0 : 1)
-            let edge = top ? size.height : 0
-            bar.position = CGPoint(x: size.width / 2, y: edge)
-            bar.zPosition = -5
-            layer.addChild(bar)
-            let inside = SKAction.moveTo(y: top ? edge - barHeight : barHeight, duration: 0.35)
-            inside.timingMode = .easeOut
-            let outside = SKAction.moveTo(y: edge, duration: 0.3)
-            outside.timingMode = .easeIn
-            bar.run(.sequence([inside, .wait(forDuration: 3.3), outside]))
-        }
-        presentFinishTitle(in: layer, title: title, kicker: Strings.raceComplete, stats: stats, accent: accent, hold: 3.0)
 
         run(.wait(forDuration: 1.0)) { [weak self] in self?.finishShotB(layer: layer) }
         if benchmark {
             // After the critical first second, so the capture does not count as a finish hitch
             run(.wait(forDuration: 2.2)) { Task { @MainActor in saveWindowSnapshot(named: "shot-finish") } }
         }
-        layer.run(.sequence([.wait(forDuration: 4.1), .removeFromParent()]))
-        run(.wait(forDuration: 4.0)) { [weak self] in
+        // (no title of its own: the same results screen as every other mode follows the shots)
+        layer.run(.sequence([.wait(forDuration: 2.9), .removeFromParent()]))
+        run(.wait(forDuration: 2.8)) { [weak self] in
             guard let self = self else { return }
             self.finishAnimating = false
             self.checkLevelDone()
@@ -4695,12 +4668,17 @@ final class ParkingScene: SKScene {
         let layer = SKNode()
         layer.zPosition = 300
         addChild(layer)
+        // Santim Ölçer measures the bay, then the same results screen as every other mode
+        var hold = 0.5
         if let precision = lastPrecision {
-            // Santim Ölçer first: the bay is measured, then the ticket
             playInspection(precision, in: layer)
-            run(.wait(forDuration: 2.15)) { [weak self] in self?.showParkTicket(in: layer) }
-        } else {
-            showParkTicket(in: layer)
+            hold = 2.2
+        }
+        layer.run(.sequence([.wait(forDuration: hold + 0.3), .fadeOut(withDuration: 0.2), .removeFromParent()]))
+        run(.wait(forDuration: hold)) { [weak self] in
+            guard let self = self else { return }
+            self.finishAnimating = false
+            self.checkLevelDone()
         }
     }
 
@@ -5265,7 +5243,8 @@ final class ParkingScene: SKScene {
                                      entries: entries, footer: footer, newBest: newBest,
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine, reward: reward,
-                                     outcome: outcome, roundLine: roundLine)
+                                     outcome: outcome, roundLine: roundLine,
+                                     precision: me.time != nil && !isCity && !level.race ? lastPrecision?.score : nil)
         // The results own the screen: the pedals and the HUD step aside (back on the next load).
         // At once, not faded: the frame freezes just below and would keep a half-faded HUD
         controlsLayer.removeAllActions()

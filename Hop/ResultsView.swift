@@ -45,6 +45,8 @@ struct ResultsInfo: Identifiable {
     var outcome: ResultOutcome = .success
     /// On the last card of a match: how the last round went (the card shows the match).
     var roundLine: String? = nil
+    /// Parking levels: the Santim Ölçer score (0...100) of the park.
+    var precision: Int? = nil
 
     var me: ResultEntry? { entries.first { $0.isMe } }
 
@@ -54,6 +56,7 @@ struct ResultsInfo: Identifiable {
                                newBest: newBest, bestTime: bestTime, headline: headline, scoreLine: scoreLine,
                                reward: reward, outcome: outcome, roundLine: roundLine)
         copy.id = id
+        copy.precision = precision
         return copy
     }
 }
@@ -172,6 +175,10 @@ struct ResultsOverlay: View {
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 22) {
                     figure(me.time.map { String(format: "%.1f", $0) } ?? "–", unit: Strings.secondsShort, tint: .white)
+                    if let precision = info.precision {
+                        Rectangle().fill(Color.white.opacity(0.18)).frame(width: 1, height: 28)
+                        figure(Strings.percent(precision), unit: Strings.precision.lowercased(), tint: .white)
+                    }
                     if info.reward.map({ $0.total > 0 }) == true {
                         Rectangle().fill(Color.white.opacity(0.18)).frame(width: 1, height: 28)
                         figure("+\(shownCoins)", unit: Strings.coinsWord, tint: gold)
