@@ -549,7 +549,7 @@ final class ParkingScene: SKScene {
         // The parked ticket and its stamp are drawn now, not on the frame the car parks
         _ = CarArt.parkTicket(size: CGSize(width: 340, height: 190), stub: 62)
         _ = CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 20)
+                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 17)
 
         let vignette = SKSpriteNode(texture: CarArt.vignette(size: size))
         vignette.size = size
@@ -712,7 +712,7 @@ final class ParkingScene: SKScene {
             lamp.fillColor = UIColor(white: 1, alpha: 0.16)
             lamp.strokeColor = .clear
             let glow = SKSpriteNode(texture: dotTexture)
-            glow.size = CGSize(width: 130, height: 48)
+            glow.size = CGSize(width: 84, height: 26)
             glow.blendMode = .add
             glow.alpha = 0
             glow.name = "glow"
@@ -1407,7 +1407,7 @@ final class ParkingScene: SKScene {
             if let glow = lamp.childNode(withName: "glow") as? SKSpriteNode {
                 glow.color = countdownColor
                 glow.colorBlendFactor = 1
-                glow.alpha = on ? 0.8 : 0
+                glow.alpha = on ? 0.45 : 0
             }
         }
     }
@@ -2262,6 +2262,8 @@ final class ParkingScene: SKScene {
             policeTestDone = true
             phase = .finished
             resultsShown = true
+            controlsLayer.alpha = 0
+            hud.alpha = 0
             model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex, online: onlineMatch) + " · " + level.name,
                                          entries: [ResultEntry(name: Strings.you, slot: 0, time: nil, hits: 15, isMe: true, isWinner: false, score: -1),
                                                    ResultEntry(name: Strings.friend, slot: 1, time: 31.9, hits: 10, isMe: false, isWinner: true, score: 61.9)],
@@ -5069,8 +5071,9 @@ final class ParkingScene: SKScene {
 
         // The stamp lands over the right of the ticket
         let stamp = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 20))
-        stamp.position = CGPoint(x: right - 64, y: 2)
+                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 17))
+        // Low on the right, over the QR code: clear of the printed figures
+        stamp.position = CGPoint(x: right - 66, y: -top + 36)
         stamp.zRotation = -0.22
         stamp.alpha = 0
         stamp.setScale(2.6)
