@@ -9,9 +9,6 @@ on:
       submit:
         description: Submit for App Review (1 = yes)
         default: "1"
-      phone:
-        description: App Review contact phone (when the REVIEW_PHONE secret is not set)
-        default: ""
       shots:
         description: Take new screenshots (0 = keep the ones already uploaded)
         default: "1"
@@ -31,7 +28,8 @@ jobs:
       BUNDLE_ID: com.huseyingulcu.hop
       SUBMIT: ${{ inputs.submit || '1' }}
       NOTES_ONLY: ${{ inputs.notes_only || '0' }}
-      REVIEW_PHONE: ${{ secrets.REVIEW_PHONE || inputs.phone }}
+      # Only from the secret (masked in logs); App Store Connect keeps the number already saved
+      REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
     steps:
       - uses: actions/checkout@v4
 
