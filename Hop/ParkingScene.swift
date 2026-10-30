@@ -549,7 +549,7 @@ final class ParkingScene: SKScene {
         // The parked ticket and its stamp are drawn now, not on the frame the car parks
         _ = CarArt.parkTicket(size: CGSize(width: 300, height: 196), perforationY: 140)
         _ = CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1))
+                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 26)
 
         let vignette = SKSpriteNode(texture: CarArt.vignette(size: size))
         vignette.size = size
@@ -4989,11 +4989,12 @@ final class ParkingScene: SKScene {
             let y = top - 86 - CGFloat(index) * 19
             text(Strings.upper(row.0), .systemFont(ofSize: 10, weight: .heavy, width: .expanded), grey, kern: 1.2,
                  at: CGPoint(x: left + 18, y: y))
-            text(row.1, .monospacedDigitSystemFont(ofSize: 15, weight: .heavy), ink, at: CGPoint(x: right - 18, y: y), align: .right)
+            // Values in the middle: the right half is where the stamp lands
+            text(row.1, .monospacedDigitSystemFont(ofSize: 15, weight: .heavy), ink, at: CGPoint(x: left + 196, y: y), align: .right)
             let dots = SKShapeNode(path: {
                 let path = CGMutablePath()
-                path.move(to: CGPoint(x: left + 84, y: y - 4))
-                path.addLine(to: CGPoint(x: right - 64, y: y - 4))
+                path.move(to: CGPoint(x: left + 118, y: y - 4))
+                path.addLine(to: CGPoint(x: left + 150, y: y - 4))
                 return path.copy(dashingWithPhase: 0, lengths: [1.5, 3.5])
             }())
             dots.strokeColor = UIColor(white: 0.6, alpha: 0.8)
@@ -5043,9 +5044,9 @@ final class ParkingScene: SKScene {
 
         // The stamp lands
         let stamp = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1)))
-        stamp.position = CGPoint(x: 34, y: -2)
-        stamp.zRotation = -0.2
+                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 26))
+        stamp.position = CGPoint(x: 82, y: top - 104)
+        stamp.zRotation = -0.24
         stamp.alpha = 0
         stamp.setScale(2.6)
         ticket.addChild(stamp)
