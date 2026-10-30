@@ -526,6 +526,23 @@ final class FrameMonitor: NSObject, SCNSceneRendererDelegate {
 // MARK: - Scene statistics
 
 enum SceneStats {
+    /// Nodes per branch (two levels down from the root, by name), largest first, to see what a
+    /// scene is made of.
+    static func breakdown(_ root: SCNNode, top: Int = 16) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        func walk(_ node: SCNNode, label: String) {
+            counts[label, default: 0] += 1
+            for child in node.childNodes { walk(child, label: label) }
+        }
+        for child in root.childNodes {
+            let first = child.name ?? "?"
+            for grandchild in child.childNodes {
+                walk(grandchild, label: first + "/" + (grandchild.name ?? String(describing: type(of: grandchild.geometry ?? SCNGeometry()))))
+            }
+        }
+        return Dictionary(uniqueKeysWithValues: counts.sorted { $0.value > $1.value }.prefix(top).map { ($0.key, $0.value) })
+    }
+
     /// Nodes with geometry and the draw calls they would cost at full detail (one per element).
     static func count(_ root: SCNNode) -> (nodes: Int, geometryNodes: Int, drawCalls: Int, triangles: Int) {
         var nodes = 0

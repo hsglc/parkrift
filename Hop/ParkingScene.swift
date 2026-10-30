@@ -1633,6 +1633,7 @@ final class ParkingScene: SKScene {
             "renderCpuMsAvg": (summary.renderCpuAverage * 1000).rounded() / 1000,
             "renderCpuMsP95": (summary.renderCpuP95 * 1000).rounded() / 1000,
             "drawCallsAtCamera": effective.0, "trianglesAtCamera": effective.1,
+            "nodeBreakdown": world.map { SceneStats.breakdown($0.scene.rootNode) } ?? [:],
             "sceneNodes": stats.0, "geometryNodes": stats.1, "drawCallsFullDetail": stats.2, "triangles": stats.3,
             "levelLoadMs": (levelLoadMilliseconds * 10).rounded() / 10,
             "hits": hits,
