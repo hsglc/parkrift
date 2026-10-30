@@ -242,8 +242,9 @@ extension Levels {
     /// `race`: a finish line far away and dense traffic instead of a parking target.
     static func city(round: Int, race: Bool) -> LevelDef {
         var rng = SplitMix64(seed: (UInt64(round + 1) &* 0x2545_F491_4F6C_DD1D) ^ (race ? 0xA5A5_5A5A : 0))
-        let map = CityMap(xs: [100, 900, 1700, 2500, 3300], ys: [100, 800, 1500, 2200])
-        let worldSize = CGSize(width: 3400, height: 2300)
+        // 7 x 5 streets: 24 blocks (it was 5 x 4, 12 blocks), about 500 x 300 m
+        let map = CityMap(xs: [100, 900, 1700, 2500, 3300, 4100, 4900], ys: [100, 800, 1500, 2200, 2900])
+        let worldSize = CGSize(width: 5000, height: 3000)
 
         // Parking slots along every curb that faces a block
         struct Slot { let center: CGPoint; let angle: CGFloat; let segment: Int; let side: Int; let index: Int }
@@ -318,7 +319,7 @@ extension Levels {
             for _ in 0..<30 {
                 let candidate = rng.int(segments.count)
                 let d = midpoint(candidate).distance(to: midpoint(startSegment))
-                if d > bestDistance && (d < 2900 || bestDistance < 2000) {
+                if d > bestDistance && (d < 4200 || bestDistance < 2800) {
                     bestDistance = d
                     finishSegment = candidate
                 }
@@ -339,7 +340,8 @@ extension Levels {
 
             var bots: [BotStart] = []
             var attempts = 0
-            while bots.count < 56 && attempts < 900 {
+            // Traffic as dense as before over twice the streets
+            while bots.count < 92 && attempts < 1600 {
                 attempts += 1
                 let index = rng.int(segments.count)
                 let s = segments[index]
@@ -383,7 +385,7 @@ extension Levels {
             let mid = CGPoint(x: (map.position(of: s.a).x + map.position(of: s.b).x) / 2,
                               y: (map.position(of: s.a).y + map.position(of: s.b).y) / 2)
             startSegment = candidate
-            if mid.distance(to: targetCenter) > 1500 { break }
+            if mid.distance(to: targetCenter) > 2100 { break }
         }
         let startSeg = segments[startSegment]
         let flip = rng.unit() < 0.5
@@ -417,7 +419,7 @@ extension Levels {
         // Traffic
         var bots: [BotStart] = []
         var attempts = 0
-        while bots.count < 30 && attempts < 600 {
+        while bots.count < 52 && attempts < 1100 {
             attempts += 1
             let index = rng.int(segments.count)
             if index == startSegment { continue }
@@ -460,7 +462,7 @@ extension Levels {
 
         let arguments = ProcessInfo.processInfo.arguments
         let forced: Weather? = arguments.contains("-dayweather") ? .day : (arguments.contains("-nightweather") ? .night : nil)
-        return ArcadeLayout(alleyBlocks: Set(blocks.prefix(3)), rng: rng, weather: forced ?? weather)
+        return ArcadeLayout(alleyBlocks: Set(blocks.prefix(map.blocks.count >= 20 ? 5 : 3)), rng: rng, weather: forced ?? weather)
     }
 
     /// Ramps in the alleys, construction cones, barrels and bins, and the weather.
@@ -478,7 +480,8 @@ extension Levels {
         }
         var props: [PropDef] = []
         // Road works: a taper of cones from the parking strip into the lane on a few streets
-        for _ in 0..<5 {
+        let scale = max(1, map.blocks.count / 12)
+        for _ in 0..<(5 * scale) {
             let horizontal = rng.unit() < 0.5
             let side: CGFloat = rng.unit() < 0.5 ? -1 : 1
             if horizontal {
@@ -504,7 +507,7 @@ extension Levels {
             }
         }
         // Barrels at a few intersection corners
-        for _ in 0..<6 {
+        for _ in 0..<(6 * scale) {
             let node = rng.int(map.nodeCount)
             let c = map.position(of: node)
             let sx: CGFloat = rng.unit() < 0.5 ? -1 : 1

@@ -1024,7 +1024,7 @@ final class ParkingScene: SKScene {
         pedestrianStates.removeAll()
         pedestrianSince.removeAll()
         if let city = level.city {
-            let people = PedestrianSystem(map: city, count: 22, seed: UInt64(levelIndex * 131 + 5))
+            let people = PedestrianSystem(map: city, count: city.blocks.count >= 20 ? 36 : 22, seed: UInt64(levelIndex * 131 + 5))
             LeakWatch.track(people, "PedestrianSystem")
             pedestrians = people
             for _ in people.people {
