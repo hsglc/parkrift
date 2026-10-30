@@ -121,209 +121,236 @@ struct ResultsOverlay: View {
         return reward.total > 0 || !reward.tasksDone.isEmpty
     }
 
+    @State private var printed = false
+    @State private var stamped = false
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // The frozen game stays in view, only dimmed: the card is the one thing to read
-                Color.black.opacity(0.5)
+                Color.black.opacity(0.55)
                     .ignoresSafeArea()
                     .opacity(appeared ? 1 : 0)
-                card
-                    .frame(width: min(480, geo.size.width - 48))
-                    .scaleEffect(panelIn ? 1 : 0.94)
-                    .opacity(panelIn ? 1 : 0)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HStack(alignment: .bottom, spacing: 22) {
+                    printer(maxHeight: geo.size.height - 8)
+                    keys
+                        .frame(width: 196)
+                        .padding(.bottom, 14)
+                        .opacity(panelIn ? 1 : 0)
+                        .offset(x: panelIn ? 0 : 16)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .task(id: info.id) { await animateIn() }
     }
 
-    // MARK: Card
+    // MARK: The receipt
 
-    /// One compact glass card: the level and the stars on a line, the result, the figures and
-    /// the coins in one row, then the buttons.
-    private var card: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                Image(systemName: badgeIcon)
-                    .font(.system(size: 8, weight: .black))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 16, height: 16)
-                    .background(Circle().fill(accent))
-                Text(info.levelTitle)
-                    .font(.ui(12, .semibold))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                medal
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(headline.uppercased())
-                    .font(.race(36))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                if info.newBest {
-                    Text(Strings.newBest)
-                        .font(.ui(10, .heavy))
-                        .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, 7)
-                        .frame(height: 18)
-                        .background(Capsule().fill(Palette.gold))
+    /// The result printed on a thermal receipt that comes out of a slot at the top of the screen,
+    /// like the parking ticket: the level, the stars (or the match score), the figures with dotted
+    /// leaders, the coins line by line and their total, a barcode, and the result stamped across it.
+    private func printer(maxHeight: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            receipt
+                .frame(width: 262)
+                .mask(alignment: .top) {
+                    Rectangle().frame(height: printed ? 1200 : 0)
                 }
-            }
-            .padding(.top, 4)
-            .scaleEffect(titleIn ? 1 : 1.06, anchor: .leading)
-            .opacity(titleIn ? 1 : 0)
+                .offset(y: printed ? 6 : -10)
+                .overlay(alignment: .center) { stamp }
+            // The slot it comes out of
+            UnevenRoundedRectangle(bottomLeadingRadius: 10, bottomTrailingRadius: 10)
+                .fill(Color(red: 0.05, green: 0.055, blue: 0.065))
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Color.black).frame(height: 3).padding(.horizontal, 12)
+                }
+                .frame(width: 300, height: 14)
+                .shadow(color: .black.opacity(0.5), radius: 6, y: 3)
+        }
+        .frame(maxHeight: maxHeight, alignment: .top)
+    }
+
+    private let ink = Color(red: 0.12, green: 0.12, blue: 0.13)
+    private let paper = Color(red: 0.965, green: 0.958, blue: 0.935)
+
+    private func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .monospaced)
+    }
+
+    private var receipt: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("PARKRIFT · " + Strings.resultSlip)
+                .font(mono(9, .medium))
+                .tracking(1.6)
+                .foregroundStyle(ink.opacity(0.55))
+                .frame(maxWidth: .infinity)
+            Text(Strings.upper(info.levelTitle))
+                .font(mono(11, .bold))
+                .foregroundStyle(ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 3)
+            topMark
+                .frame(maxWidth: .infinity)
+                .padding(.top, 6)
             if let roundLine = info.roundLine {
                 Text(roundLine)
-                    .font(.ui(12, .medium))
-                    .foregroundStyle(.white.opacity(0.65))
+                    .font(mono(10))
+                    .foregroundStyle(ink.opacity(0.7))
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 3)
             }
-            divider.padding(.top, 12)
-            board.padding(.vertical, 12)
-            divider
-            footer.padding(.top, 14)
+            dashes
+            lines
+            if hasReward, let reward = info.reward {
+                dashes
+                ForEach(Array(reward.lines.prefix(4).enumerated()), id: \.offset) { _, line in
+                    leader(line.label, "+\(line.coins)", weight: .regular)
+                }
+                ForEach(reward.tasksDone.indices, id: \.self) { index in
+                    leader(Strings.taskReadyTag, "+\(reward.tasksDone[index].coins)", weight: .bold)
+                }
+                dashes
+                HStack(alignment: .firstTextBaseline) {
+                    Text(Strings.totalLabel)
+                        .font(mono(12, .bold))
+                    Spacer()
+                    Text("+\(shownCoins)")
+                        .font(.custom("BarlowCondensed-Black", fixedSize: 30))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    Image(systemName: "dollarsign.circle.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color(red: 0.8, green: 0.6, blue: 0.08))
+                }
+                .foregroundStyle(ink)
+            }
+            barcode
+                .padding(.top, 8)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
+        .padding(.horizontal, 16)
+        .padding(.top, 18)
         .padding(.bottom, 18)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .environment(\.colorScheme, .dark)
-        )
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(red: 0.05, green: 0.06, blue: 0.09).opacity(0.7))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-        )
-        // The outcome's colour as a thin line along the top
-        .overlay(alignment: .top) {
-            Capsule()
-                .fill(accent)
-                .frame(width: 64, height: 3)
-                .offset(y: -1.5)
-        }
-        .shadow(color: .black.opacity(0.45), radius: 30, y: 12)
+        .background(paper)
+        .mask(TornEdge())
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 10)
     }
 
-    private var divider: some View {
-        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-    }
-
-    /// Next to the level: the stars (alone) or the match score (head to head).
+    /// Under the level: the stars (alone and parked) or the match score (head to head).
     @ViewBuilder
-    private var medal: some View {
+    private var topMark: some View {
         if let scoreLine = info.scoreLine {
-            Text(scoreLine)
-                .font(.race(17))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .frame(height: 24)
-                .background(Capsule().fill(accent.opacity(0.22)))
-                .overlay(Capsule().strokeBorder(accent.opacity(0.7), lineWidth: 1))
+            Text(Strings.upper(scoreLine))
+                .font(.custom("BarlowCondensed-Black", fixedSize: 22))
+                .foregroundStyle(ink)
         } else if !headToHead && !failed {
-            HStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { starView($0) }
+            HStack(spacing: 8) {
+                ForEach(0..<3, id: \.self) { index in
+                    Image(systemName: index < shownStars ? "star.fill" : "star")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(ink.opacity(index < shownStars ? 1 : 0.3))
+                        .scaleEffect(index < shownStars ? 1 : 0.85)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.5), value: shownStars)
+                }
             }
         }
     }
 
-    private func starView(_ index: Int) -> some View {
-        let lit = index < shownStars
-        return Image(systemName: "star.fill")
-            .font(.system(size: 17, weight: .black))
-            .foregroundStyle(lit ? Palette.gold : Color.white.opacity(0.14))
-            .shadow(color: lit ? Palette.gold.opacity(0.6) : .clear, radius: 5)
-            .scaleEffect(lit ? 1 : 0.8)
-            .animation(.spring(response: 0.35, dampingFraction: 0.45), value: lit)
-    }
-
-    // MARK: Figures
-
-    /// Head to head: the two players as timing rows. Alone: time, crashes, score or best, and the
-    /// coins, side by side.
+    /// The figures: the players head to head, or time, crashes and score (or best) alone.
     @ViewBuilder
-    private var board: some View {
+    private var lines: some View {
         if headToHead {
-            VStack(spacing: 6) {
-                ForEach(Array(ranked.enumerated()), id: \.element.id) { index, entry in
-                    timingRow(entry, position: index + 1, leader: ranked.first?.time)
-                }
-                if hasReward, let reward = info.reward {
-                    coins(reward).frame(maxWidth: .infinity, alignment: .trailing)
-                }
+            ForEach(Array(ranked.enumerated()), id: \.element.id) { index, entry in
+                let value = entry.time.map { String(format: "%.1f s", $0) } ?? Strings.didNotFinish
+                leader("P\(index + 1) " + Strings.upper(entry.name) + (entry.isWinner ? " ♛" : ""),
+                       value + " · \(entry.hits)", weight: entry.isMe ? .bold : .regular)
             }
         } else if let me = info.me {
-            HStack(alignment: .top, spacing: 0) {
-                figure(Strings.timeLabel, value: me.time.map { String(format: "%.1f", $0) } ?? "–", unit: me.time == nil ? "" : "s")
-                figure(Strings.bumpsLabel, value: "\(me.hits)", unit: "",
-                       tint: me.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : .white)
-                if let score = me.score {
-                    figure(Strings.scoreLabel, value: score >= 0 ? String(format: "%.1f", score) : "–", unit: "")
-                } else if let best = info.bestTime {
-                    figure(Strings.bestLabel, value: String(format: "%.1f", best), unit: "s", tint: .white.opacity(0.7))
-                }
-                if hasReward, let reward = info.reward {
-                    coins(reward)
-                }
+            leader(Strings.upper(Strings.timeLabel), me.time.map { String(format: "%.1f s", $0) } ?? "–", weight: .bold)
+            leader(Strings.upper(Strings.bumpsLabel), "\(me.hits)", weight: .bold)
+            if let score = me.score {
+                leader(Strings.upper(Strings.scoreLabel), score >= 0 ? String(format: "%.1f", score) : "–", weight: .bold)
+            } else if let best = info.bestTime {
+                leader(Strings.upper(Strings.bestLabel), String(format: "%.1f s", best), weight: .regular)
+            }
+            if info.newBest {
+                Text("★ " + Strings.upper(Strings.newBest))
+                    .font(mono(11, .heavy))
+                    .foregroundStyle(Color(red: 0.78, green: 0.16, blue: 0.18))
+                    .padding(.top, 3)
             }
         }
     }
 
-    /// A figure: a small caption over a number.
-    private func figure(_ label: String, value: String, unit: String, tint: Color = .white) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+    /// A printed line: the label, a dotted leader, the value.
+    private func leader(_ label: String, _ value: String, weight: Font.Weight) -> some View {
+        HStack(alignment: .lastTextBaseline, spacing: 4) {
             Text(label)
-                .font(.ui(10, .bold))
-                .foregroundStyle(.white.opacity(0.45))
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(value)
-                    .font(.race(28))
-                    .monospacedDigit()
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                if !unit.isEmpty {
-                    Text(unit)
-                        .font(.race(14))
-                        .foregroundStyle(.white.opacity(0.45))
-                }
-            }
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .layoutPriority(1)
+            Line()
+                .stroke(ink.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [1, 3]))
+                .frame(height: 1)
+                .offset(y: -3)
+            Text(value)
+                .monospacedDigit()
+                .lineLimit(1)
+                .layoutPriority(2)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .font(mono(12, weight))
+        .foregroundStyle(ink)
+        .frame(height: 21)
     }
 
-    /// The coins: the total counting up, what made it in one small line under it.
-    private func coins(_ reward: RunReward) -> some View {
-        VStack(alignment: .trailing, spacing: 1) {
-            HStack(spacing: 5) {
-                Image(systemName: "dollarsign.circle.fill")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Palette.gold)
-                Text("+\(shownCoins)")
-                    .font(.race(28))
-                    .monospacedDigit()
-                    .foregroundStyle(Palette.gold)
-                    .contentTransition(.numericText())
-            }
-            if !reward.lines.isEmpty {
-                Text(reward.lines.map { "\($0.label) +\($0.coins)" }.joined(separator: " · "))
-                    .font(.ui(10, .semibold))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            ForEach(reward.tasksDone.indices, id: \.self) { index in
-                taskTag(reward.tasksDone[index].coins)
+    private var dashes: some View {
+        Line()
+            .stroke(ink.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            .frame(height: 1)
+            .padding(.vertical, 7)
+    }
+
+    /// A barcode (bars of a few widths, the same for the same level).
+    private var barcode: some View {
+        Canvas { context, size in
+            var rng = SplitMix64(seed: UInt64(info.levelIndex &+ 7))
+            var x: CGFloat = 0
+            while x < size.width {
+                let w = CGFloat(rng.int(3) + 1)
+                context.fill(Path(CGRect(x: x, y: 0, width: w, height: size.height)), with: .color(ink))
+                x += w + CGFloat(rng.int(3) + 1)
             }
         }
-        .frame(maxWidth: 170, alignment: .trailing)
+        .frame(height: 24)
+    }
+
+    /// The result, stamped across the receipt in ink of the outcome's colour.
+    private var stamp: some View {
+        Text(Strings.upper(headline.replacingOccurrences(of: "!", with: "")))
+            .font(.custom("BarlowCondensed-Black", fixedSize: 30))
+            .tracking(0.5)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .foregroundStyle(stampInk)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(stampInk, lineWidth: 3))
+            .frame(maxWidth: 220)
+            .opacity(stamped ? 0.88 : 0)
+            .scaleEffect(stamped ? 1 : 1.8)
+            .rotationEffect(.degrees(-13))
+            .blendMode(.multiply)
+            .offset(x: 6, y: -18)
+    }
+
+    private var stampInk: Color {
+        switch info.outcome {
+        case .failed, .lost: return Color(red: 0.8, green: 0.15, blue: 0.16)
+        case .draw: return Color(red: 0.16, green: 0.38, blue: 0.82)
+        case .champion: return Color(red: 0.78, green: 0.52, blue: 0.0)
+        case .success, .won: return Color(red: 0.07, green: 0.58, blue: 0.3)
+        }
     }
 
     /// Players in finishing order (finished first, by time).
@@ -343,52 +370,6 @@ struct ResultsOverlay: View {
         return String(format: "+%.1f", time - leader)
     }
 
-    private func timingRow(_ entry: ResultEntry, position: Int, leader: Double?) -> some View {
-        let finished = entry.time != nil
-        return HStack(spacing: 0) {
-            Text("P\(position)")
-                .font(.race(17))
-                .foregroundStyle(entry.isWinner ? Palette.ink : Color.white)
-                .frame(width: 36, height: 28)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(entry.isWinner ? Palette.gold : Palette.player(entry.slot)))
-            Text(entry.name)
-                .font(.ui(15, .heavy))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .padding(.leading, 10)
-            if entry.isWinner {
-                Image(systemName: "crown.fill")
-                    .font(.system(size: 11, weight: .black))
-                    .foregroundStyle(Palette.gold)
-                    .padding(.leading, 6)
-            }
-            Spacer(minLength: 6)
-            Text(finished ? String(format: "%.1f", entry.time ?? 0) : Strings.didNotFinish)
-                .font(finished ? .race(21) : .ui(11, .bold))
-                .monospacedDigit()
-                .foregroundStyle(finished ? Color.white : Color.white.opacity(0.5))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(width: 64, alignment: .trailing)
-            Text(gapText(entry, leader: leader))
-                .font(.ui(13, .bold))
-                .monospacedDigit()
-                .foregroundStyle(Color(red: 1, green: 0.72, blue: 0.3))
-                .frame(width: 52, alignment: .trailing)
-            Text("\(entry.hits)")
-                .font(.ui(15, .heavy))
-                .monospacedDigit()
-                .foregroundStyle(entry.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : Color.white.opacity(0.8))
-                .frame(width: 38, alignment: .trailing)
-        }
-        .padding(.leading, 4)
-        .padding(.trailing, 10)
-        .frame(height: 36)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(Color.white.opacity(entry.isMe ? 0.1 : 0.05)))
-    }
-
     private func taskTag(_ coins: Int) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "gift.fill").font(.system(size: 10, weight: .black))
@@ -402,53 +383,51 @@ struct ResultsOverlay: View {
         .background(Capsule().fill(Palette.gold))
     }
 
-    // MARK: Buttons
+    // MARK: Keys
 
-    /// Labelled buttons; the way forward is the wide, coloured one.
+    /// Beside the receipt: the way forward on top, big; the menu and retry under it.
     @ViewBuilder
-    private var footer: some View {
+    private var keys: some View {
         switch info.footer {
         case .autoNext:
-            VStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(Strings.nextLevelSoon)
                     .font(.ui(13, .bold))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(.white.opacity(0.8))
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.1))
-                        Capsule().fill(accent).frame(width: proxy.size.width * progress)
+                        Capsule().fill(Color.white.opacity(0.12))
+                        Capsule().fill(Palette.gold).frame(width: proxy.size.width * progress)
                     }
                 }
                 .frame(height: 6)
-                .padding(.horizontal, 60)
             }
         case .final:
-            Button { model.leaveToMenu() } label: {
-                Label(Strings.backToMenu, systemImage: "house.fill")
-            }
-            .buttonStyle(ResultButtonStyle(fill: Palette.gold))
+            Button { model.leaveToMenu() } label: { Text(Strings.upper(Strings.backToMenu)) }
+                .buttonStyle(KeyButtonStyle(primary: Palette.gold))
         case .solo(let hasNext):
-            HStack(spacing: 10) {
-                Button { model.leaveToMenu() } label: { Label(Strings.menu, systemImage: "house.fill") }
-                    .buttonStyle(ResultButtonStyle())
+            VStack(spacing: 9) {
                 if failed {
-                    if nextOpen {
-                        Button { model.nextLevel() } label: { Label(Strings.next, systemImage: "forward.end.fill") }
-                            .buttonStyle(ResultButtonStyle())
-                    }
-                    Button { model.retryLevel() } label: { Label(Strings.tryAgain, systemImage: "arrow.counterclockwise") }
-                        .buttonStyle(ResultButtonStyle(fill: Color(red: 1, green: 0.56, blue: 0.22)))
-                } else {
-                    Button { model.retryLevel() } label: { Label(Strings.retry, systemImage: "arrow.counterclockwise") }
-                        .buttonStyle(ResultButtonStyle(fill: hasNext ? nil : Palette.gold))
-                    if hasNext {
-                        Button { model.nextLevel() } label: {
-                            HStack(spacing: 8) {
-                                Text(Strings.next)
-                                Image(systemName: "chevron.right")
-                            }
+                    Button { model.retryLevel() } label: { Text(Strings.upper(Strings.tryAgain)) }
+                        .buttonStyle(KeyButtonStyle(primary: Color(red: 1, green: 0.56, blue: 0.22)))
+                    HStack(spacing: 9) {
+                        Button { model.leaveToMenu() } label: { Text(Strings.menu) }
+                            .buttonStyle(KeyButtonStyle())
+                        if nextOpen {
+                            Button { model.nextLevel() } label: { Text(Strings.next) }
+                                .buttonStyle(KeyButtonStyle())
                         }
-                        .buttonStyle(ResultButtonStyle(fill: Palette.gold))
+                    }
+                } else {
+                    if hasNext {
+                        Button { model.nextLevel() } label: { Text(Strings.upper(Strings.next) + "  ›") }
+                            .buttonStyle(KeyButtonStyle(primary: Palette.gold))
+                    }
+                    HStack(spacing: 9) {
+                        Button { model.leaveToMenu() } label: { Text(Strings.menu) }
+                            .buttonStyle(KeyButtonStyle())
+                        Button { model.retryLevel() } label: { Text(Strings.retry) }
+                            .buttonStyle(KeyButtonStyle(primary: hasNext ? nil : Palette.gold))
                     }
                 }
             }
@@ -458,23 +437,31 @@ struct ResultsOverlay: View {
     // MARK: Animation
 
     private func animateIn() async {
-        // One sequence: the shade and the result, then the panel and the buttons, the stars one
-        // by one, then the coins counting up
-        withAnimation(.easeOut(duration: 0.25)) { appeared = true }
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.72).delay(0.05)) { titleIn = true }
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.86).delay(0.22)) { panelIn = true }
+        // The shade, the receipt printing out of the slot, the stamp coming down on it, the stars
+        // one by one, then the coins counting up to the total
+        withAnimation(.easeOut(duration: 0.2)) { appeared = true }
+        withAnimation(.easeOut(duration: 0.75)) { printed = true }
+        withAnimation(.easeOut(duration: 0.3).delay(0.5)) { panelIn = true }
         if case .autoNext(let seconds) = info.footer {
             withAnimation(.linear(duration: seconds)) { progress = 1 }
         }
+        for _ in 0..<5 {
+            AudioManager.shared.play("click", volume: 0.18)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+        }
+        if Task.isCancelled { return }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.55)) { stamped = true }
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        AudioManager.shared.play("bump", volume: 0.5)
+        try? await Task.sleep(nanoseconds: 250_000_000)
         let stars = failed || headToHead ? 0 : (info.me?.stars ?? 0)
-        try? await Task.sleep(nanoseconds: 380_000_000)
-        let haptic = UIImpactFeedbackGenerator(style: .medium)
+        let haptic = UIImpactFeedbackGenerator(style: .light)
         for index in 0..<stars {
             if Task.isCancelled { return }
             shownStars = index + 1
-            haptic.impactOccurred(intensity: 0.6 + 0.2 * CGFloat(index))
-            AudioManager.shared.play("beep", volume: 0.35 + 0.15 * Float(index))
-            try? await Task.sleep(nanoseconds: 240_000_000)
+            haptic.impactOccurred()
+            AudioManager.shared.play("beep", volume: 0.3 + 0.12 * Float(index))
+            try? await Task.sleep(nanoseconds: 200_000_000)
         }
         let total = info.reward?.total ?? 0
         guard total > 0 else { return }
@@ -482,49 +469,70 @@ struct ResultsOverlay: View {
         for step in 1...steps {
             if Task.isCancelled { return }
             withAnimation(.easeOut(duration: 0.05)) { shownCoins = total * step / steps }
-            if step % 3 == 0 { AudioManager.shared.play("click", volume: 0.25) }
-            try? await Task.sleep(nanoseconds: 45_000_000)
+            if step % 3 == 0 { AudioManager.shared.play("click", volume: 0.22) }
+            try? await Task.sleep(nanoseconds: 40_000_000)
         }
     }
 }
 
-/// Results buttons: a coloured one for the way forward (wide), dark glass for the rest; each has
-/// its icon and its name.
-struct ResultButtonStyle: ButtonStyle {
-    var fill: Color? = nil
+/// A physical key beside the receipt: chunky, with a darker lip under it that it presses into.
+struct KeyButtonStyle: ButtonStyle {
+    var primary: Color? = nil
 
     func makeBody(configuration: Configuration) -> some View {
-        let primary = fill != nil
+        let fill = primary ?? Color(red: 0.09, green: 0.1, blue: 0.12)
+        let lip = primary.map { $0.opacity(0.55) } ?? Color.black
+        let pressed = configuration.isPressed
         return configuration.label
-            .font(primary ? .race(18) : .ui(14, .bold))
-            .labelStyle(ResultLabelStyle())
-            .foregroundStyle(primary ? Palette.ink : Color.white)
+            .font(primary != nil ? .race(21) : .ui(15, .heavy))
+            .foregroundStyle(primary != nil ? Palette.ink : Color.white)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
-            .padding(.horizontal, 14)
-            .frame(maxWidth: primary ? .infinity : nil)
-            .frame(height: 42)
+            .frame(maxWidth: .infinity)
+            .frame(height: primary != nil ? 48 : 42)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(primary ? AnyShapeStyle(LinearGradient(colors: [fill!.opacity(1), fill!.opacity(0.86)], startPoint: .top, endPoint: .bottom))
-                                  : AnyShapeStyle(Color.white.opacity(0.1)))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(lip)
+                    .offset(y: 4)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .strokeBorder(Color.white.opacity(primary ? 0.35 : 0.14), lineWidth: 1)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(fill)
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.white.opacity(primary != nil ? 0.3 : 0.1), lineWidth: 1))
             )
-            .shadow(color: primary ? fill!.opacity(0.3) : .clear, radius: configuration.isPressed ? 2 : 8, y: 3)
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
+            .offset(y: pressed ? 3 : 0)
+            .animation(.easeOut(duration: 0.08), value: pressed)
     }
 }
 
-/// Icon and title side by side, a little apart.
-struct ResultLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 8) {
-            configuration.icon
-            configuration.title
+/// A straight line across (for the dotted leaders and the dashed rules).
+struct Line: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.width, y: rect.midY))
+        return path
+    }
+}
+
+/// The receipt's outline: straight top and sides, a torn zigzag along the bottom.
+struct TornEdge: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let tooth: CGFloat = 7, depth: CGFloat = 5
+        path.move(to: .zero)
+        path.addLine(to: CGPoint(x: rect.maxX, y: 0))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - depth))
+        var x = rect.maxX
+        var down = true
+        while x > 0 {
+            x = max(0, x - tooth / 2)
+            path.addLine(to: CGPoint(x: x, y: down ? rect.maxY : rect.maxY - depth))
+            down.toggle()
         }
+        path.addLine(to: CGPoint(x: 0, y: rect.maxY - depth))
+        path.closeSubpath()
+        return path
     }
 }

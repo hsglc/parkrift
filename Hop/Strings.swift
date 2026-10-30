@@ -96,6 +96,8 @@ enum Strings {
     static var you: String { t("SEN", "YOU", "TÚ") }
     static var friend: String { t("ARKADAŞ", "FRIEND", "AMIGO") }
     static var go: String { t("BAŞLA!", "GO!", "¡YA!") }
+    static var resultSlip: String { t("SONUÇ FİŞİ", "RESULT SLIP", "TICKET DE RESULTADO") }
+    static var totalLabel: String { t("TOPLAM", "TOTAL", "TOTAL") }
     static var getReady: String { t("HAZIR OL", "GET READY", "PREPÁRATE") }
     static var parked: String { t("Park edildi!", "Parked!", "¡Aparcado!") }
     static var hold: String { t("Kıpırdama", "Hold still", "No te muevas") }

@@ -1306,6 +1306,37 @@ enum CarArt {
         }
     }
 
+    /// A start-light lamp: a round lens, dark and deep when off, red hot when on (a bright core
+    /// fading to deep red at the rim, a small highlight up left).
+    static func startLamp(on: Bool) -> SKTexture {
+        let key = on ? "startLampOn" : "startLampOff"
+        if let cached = startLamps[key] { return cached }
+        let texture = render(CGSize(width: 48, height: 48), scale: 2) { context, s in
+            let center = CGPoint(x: s.width / 2, y: s.height / 2)
+            let colors: [UIColor] = on
+                ? [UIColor(red: 1, green: 0.78, blue: 0.7, alpha: 1), UIColor(red: 1, green: 0.17, blue: 0.12, alpha: 1), UIColor(red: 0.6, green: 0.04, blue: 0.03, alpha: 1)]
+                : [UIColor(red: 0.24, green: 0.08, blue: 0.08, alpha: 1), UIColor(red: 0.12, green: 0.04, blue: 0.045, alpha: 1), UIColor(red: 0.05, green: 0.02, blue: 0.02, alpha: 1)]
+            let lens = CGRect(x: 2, y: 2, width: s.width - 4, height: s.height - 4)
+            context.saveGState()
+            context.addEllipse(in: lens)
+            context.clip()
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors.map(\.cgColor) as CFArray, locations: [0, 0.5, 1]) {
+                let hot = CGPoint(x: center.x - 4, y: center.y - 5)
+                context.drawRadialGradient(gradient, startCenter: hot, startRadius: 0, endCenter: center, endRadius: lens.width / 2, options: [.drawsAfterEndLocation])
+            }
+            // Inner shadow at the top of the lens (the visor)
+            context.setFillColor(UIColor.black.withAlphaComponent(on ? 0.18 : 0.45).cgColor)
+            context.fillEllipse(in: CGRect(x: 2, y: -lens.height * 0.55, width: lens.width, height: lens.height))
+            context.restoreGState()
+            context.setStrokeColor(UIColor.black.withAlphaComponent(0.8).cgColor)
+            context.setLineWidth(2)
+            context.strokeEllipse(in: lens)
+        }
+        startLamps[key] = texture
+        return texture
+    }
+    private static var startLamps: [String: SKTexture] = [:]
+
     static func glass(size: CGSize, corner: CGFloat) -> SKTexture {
         render(size) { context, s in
             let rect = CGRect(origin: .zero, size: s).insetBy(dx: 1, dy: 1)
