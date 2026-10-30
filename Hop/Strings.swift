@@ -346,7 +346,7 @@ enum Strings {
     static var rewardEscape: String { t("Polisten kaçış", "Police escape", "Fuga") }
     static var taskComplete: String { t("GÖREV TAMAM", "TASK DONE", "TAREA HECHA") }
     static var taskReadyTag: String { t("GÖREV TAMAM · MENÜDEN TOPLA", "TASK DONE · COLLECT IN MENU", "TAREA HECHA · RECÓGELA EN EL MENÚ") }
-    static var collect: String { t("TOPLA", "COLLECT", "RECOGER") }
+    static var collectTag: String { t("TOPLA", "COLLECT", "RECOGER") }
     static var collectAll: String { t("Hepsini topla", "Collect all", "Recoger todo") }
     static var claimed: String { t("Toplandı", "Collected", "Recogido") }
     static func rewardsReady(_ n: Int) -> String {

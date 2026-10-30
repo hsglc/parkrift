@@ -387,41 +387,56 @@ struct DailyView: View {
                         .font(.system(size: 11, weight: .heavy)).monospacedDigit()
                         .foregroundStyle(task.done ? green : .white.opacity(0.55))
                     Spacer(minLength: 4)
-                    if task.claimable && !collecting.contains(task.index) {
-                        // Done: the coins wait for a tap
-                        Button { collect(task) } label: {
-                            HStack(spacing: 4) {
-                                Text(Strings.collect).font(.race(13))
-                                Image(systemName: "dollarsign.circle.fill").font(.system(size: 11, weight: .bold))
-                                Text("+\(task.kind.reward)").font(.race(13))
-                            }
-                            .foregroundStyle(Palette.ink)
-                            .padding(.horizontal, 10).frame(height: 26)
-                            .background(SlantedShape(skew: 6).fill(Palette.gold))
-                            .shadow(color: Palette.gold.opacity(pulse ? 0.7 : 0.25), radius: pulse ? 10 : 4)
-                            .scaleEffect(pulse ? 1.04 : 0.98)
-                        }
-                        .buttonStyle(.plain)
-                        .transition(.scale.combined(with: .opacity))
-                    } else {
-                        HStack(spacing: 3) {
-                            Image(systemName: task.done ? "checkmark" : "dollarsign.circle.fill").font(.system(size: 11, weight: .bold))
-                            Text(task.done ? Strings.claimed : "+\(task.kind.reward)").font(.race(13))
-                        }
-                        .foregroundStyle(task.done ? green.opacity(0.8) : Palette.gold)
-                        .padding(.horizontal, 8).frame(height: 22)
-                        .background(Capsule().fill(task.done ? green.opacity(0.08) : Palette.gold.opacity(0.12)))
-                    }
+                    rewardChip(task)
                 }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 14).fill(task.claimable ? Palette.gold.opacity(0.08) : Color.white.opacity(task.done ? 0.03 : 0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(task.claimable ? Palette.gold.opacity(pulse ? 0.8 : 0.4) : tint.opacity(task.done ? 0.35 : 0.18), lineWidth: task.claimable ? 1.5 : 1))
+        .background(RoundedRectangle(cornerRadius: 14).fill(cardFill(task)))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(cardEdge(task, tint: tint), lineWidth: task.claimable ? 1.5 : 1))
         .overlay {
             // Coins flying off the card when collected
             ForEach(bursts.filter { $0.task == task.index }) { burst in CoinBurstView(amount: burst.amount) }
+        }
+    }
+
+    private func cardFill(_ task: Progression.DailyTask) -> Color {
+        task.claimable ? Palette.gold.opacity(0.08) : Color.white.opacity(task.done ? 0.03 : 0.05)
+    }
+
+    private func cardEdge(_ task: Progression.DailyTask, tint: Color) -> Color {
+        task.claimable ? Palette.gold.opacity(pulse ? 0.8 : 0.4) : tint.opacity(task.done ? 0.35 : 0.18)
+    }
+
+    /// The task's reward: a COLLECT button once it is done and waiting, else the amount (or
+    /// "collected").
+    @ViewBuilder
+    private func rewardChip(_ task: Progression.DailyTask) -> some View {
+        if task.claimable && !collecting.contains(task.index) {
+            // Done: the coins wait for a tap
+            Button { collect(task) } label: {
+                HStack(spacing: 4) {
+                    Text(Strings.collectTag).font(.race(13))
+                    Image(systemName: "dollarsign.circle.fill").font(.system(size: 11, weight: .bold))
+                    Text("+\(task.kind.reward)").font(.race(13))
+                }
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, 10).frame(height: 26)
+                .background(SlantedShape(skew: 6).fill(Palette.gold))
+                .shadow(color: Palette.gold.opacity(pulse ? 0.7 : 0.25), radius: pulse ? 10 : 4)
+                .scaleEffect(pulse ? 1.04 : 0.98)
+            }
+            .buttonStyle(.plain)
+            .transition(.scale.combined(with: .opacity))
+        } else {
+            HStack(spacing: 3) {
+                Image(systemName: task.done ? "checkmark" : "dollarsign.circle.fill").font(.system(size: 11, weight: .bold))
+                Text(task.done ? Strings.claimed : "+\(task.kind.reward)").font(.race(13))
+            }
+            .foregroundStyle(task.done ? green.opacity(0.8) : Palette.gold)
+            .padding(.horizontal, 8).frame(height: 22)
+            .background(Capsule().fill(task.done ? green.opacity(0.08) : Palette.gold.opacity(0.12)))
         }
     }
 

@@ -1328,6 +1328,9 @@ struct RewardsReadyPill: View {
     @State private var glow = false
     @State private var shown = false
 
+    private var edgeColor: Color { Palette.gold.opacity(glow ? 0.95 : 0.45) }
+    private var glowColor: Color { Palette.gold.opacity(glow ? 0.55 : 0.15) }
+
     var body: some View {
         Button {
             AudioManager.shared.play("click", volume: 0.6)
@@ -1352,7 +1355,7 @@ struct RewardsReadyPill: View {
                     }
                     .foregroundStyle(Palette.gold)
                 }
-                Text(Strings.collect)
+                Text(Strings.collectTag)
                     .font(.race(13))
                     .foregroundStyle(Palette.ink)
                     .padding(.horizontal, 10)
@@ -1363,8 +1366,8 @@ struct RewardsReadyPill: View {
             .padding(.trailing, 8)
             .frame(height: 42)
             .background(SlantedShape(skew: 8).fill(Neo.ink.opacity(0.82)))
-            .overlay(SlantedShape(skew: 8).strokeBorderCompat(Palette.gold.opacity(glow ? 0.95 : 0.45), lineWidth: 1.5))
-            .shadow(color: Palette.gold.opacity(glow ? 0.55 : 0.15), radius: glow ? 14 : 6)
+            .overlay(SlantedShape(skew: 8).strokeBorderCompat(edgeColor, lineWidth: 1.5))
+            .shadow(color: glowColor, radius: glow ? 14 : 6)
             .scaleEffect(shown ? 1 : 0.7)
             .opacity(shown ? 1 : 0)
         }
