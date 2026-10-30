@@ -2113,8 +2113,16 @@ final class ParkingScene: SKScene {
             updateArcade(dt, traffic: traffic)
             let detailRange = PerfSettings.carDetailDistance * 10
             var botDetailChanges = 0
+            let sweeping = world?.isSweeping ?? false
+            let hideBeyond = world?.hiddenBeyond ?? .greatestFiniteMagnitude
             for (index, bot) in traffic.bots.enumerated() where index < botCars.count {
-                let near = (world?.isSweeping ?? false)
+                // In the fog past the far plane: hidden and not posed (nothing to see)
+                let viewer = spectateClock > 1.4 ? remotePosition : carPosition
+                let dx = bot.position.x - viewer.x, dy = bot.position.y - viewer.y
+                let far = !sweeping && dx * dx + dy * dy > hideBeyond * hideBeyond
+                if botCars[index].node.isHidden != far { botCars[index].node.isHidden = far }
+                if far { continue }
+                let near = sweeping
                     || (abs(bot.position.x - carPosition.x) < detailRange && abs(bot.position.y - carPosition.y) < detailRange)
                 if botCars[index].setDetail(near) { botDetailChanges += 1 }
                 botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)

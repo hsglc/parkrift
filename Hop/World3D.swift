@@ -1787,6 +1787,10 @@ final class World3D {
     /// drew whole blocks hidden in the fog.
     var farPlane: CGFloat { max(150, scene.fogEndDistance + 25) }
 
+    /// World units from the camera's car past which cars are hidden outright (just past the far
+    /// plane, so nothing visible ever goes).
+    var hiddenBeyond: CGFloat { (farPlane + 15) * 10 }
+
     func project(_ point: CGPoint, height: CGFloat = 0) -> CGPoint {
         let p = World3D.vec(point, y: height)
         let c = cameraNode.simdWorldTransform.inverse * SIMD4<Float>(p.x, p.y, p.z, 1)
@@ -3084,9 +3088,15 @@ final class World3D {
     func updateDetail(around point: CGPoint) -> Int {
         guard !isSweeping else { return 0 }
         let range = PerfSettings.carDetailDistance * 10
+        // Beyond the far plane (in the fog) a parked car is not even walked by the renderer
+        let hide = hiddenBeyond
         var changed = 0
         for entry in parkedCars3D {
-            if entry.car.setDetail(abs(entry.position.x - point.x) < range && abs(entry.position.y - point.y) < range) { changed += 1 }
+            let dx = abs(entry.position.x - point.x), dy = abs(entry.position.y - point.y)
+            let far = dx > hide || dy > hide || dx * dx + dy * dy > hide * hide
+            if entry.car.node.isHidden != far { entry.car.node.isHidden = far }
+            if far { continue }
+            if entry.car.setDetail(dx < range && dy < range) { changed += 1 }
         }
         return changed
     }
