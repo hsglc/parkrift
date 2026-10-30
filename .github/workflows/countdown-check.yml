@@ -189,6 +189,9 @@ jobs:
             perl -e 'alarm 20; exec @ARGV' xcrun simctl io "$A" screenshot "shots/net-host-$t.png" || true
             perl -e 'alarm 20; exec @ARGV' xcrun simctl io "$B" screenshot "shots/net-guest-$t.png" || true
           done
+          # What the machine is busy with (a slow runner or our app)
+          top -l 1 -o cpu -n 8 -stats pid,command,cpu,threads | tail -12 || true
+          PID=$(pgrep -x Hop | head -1); [ -n "$PID" ] && perl -e 'alarm 30; exec @ARGV' sample "$PID" 2 -file shots/sample-net.txt > /dev/null 2>&1 || true
           # The apps hold the console: close them so the step ends
           xcrun simctl terminate "$A" com.huseyingulcu.hop 2>/dev/null || true
           xcrun simctl terminate "$B" com.huseyingulcu.hop 2>/dev/null || true

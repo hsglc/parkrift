@@ -38,6 +38,12 @@ final class NetClient {
         send(message)
     }
 
+    private func fastLog(_ text: String) {
+        #if BENCHMARK
+        FileHandle.standardError.write("PPNET rtc \(text)\n".data(using: .utf8)!)
+        #endif
+    }
+
     private func setFast(_ on: Bool) {
         fastActive = on
         onFastChange?(on)
@@ -58,14 +64,23 @@ final class NetClient {
         fast?.close()
         fast = link
         link.onAnswer = { [weak self] sdp in
-            Task { @MainActor in self?.send(["t": "rtcanswer", "sdp": sdp]) }
+            Task { @MainActor in
+                self?.fastLog("answer \(sdp.count) bytes")
+                self?.send(["t": "rtcanswer", "sdp": sdp])
+            }
         }
         link.onConnected = { [weak self] in
-            Task { @MainActor in self?.send(["t": "rtcup"]) }
+            Task { @MainActor in
+                self?.fastLog("connected")
+                self?.send(["t": "rtcup"])
+            }
         }
         link.onReceiving = { [weak self] on in
             // Tell the friend whether its states reach this phone over the fast path
-            Task { @MainActor in self?.send(["t": "rtcrx", "on": on ? 1 : 0]) }
+            Task { @MainActor in
+                self?.fastLog("receiving \(on)")
+                self?.send(["t": "rtcrx", "on": on ? 1 : 0])
+            }
         }
         link.onMessage = { [weak self] data in
             Task { @MainActor in
@@ -77,6 +92,7 @@ final class NetClient {
         link.onFailed = { [weak self, weak link] in
             Task { @MainActor in
                 guard let self = self, let link = link, self.fast === link else { return }
+                self.fastLog("failed")
                 link.close()
                 self.fast = nil
                 self.send(["t": "rtcrx", "on": 0])
@@ -103,19 +119,23 @@ final class NetClient {
             friendReceiving = false
             return false
         case "rtcoffer":
+            fastLog("offer")
             if let sdp = object["sdp"] as? String {
                 if fast == nil { makeLink() }
                 fast?.start(offer: sdp)
             }
             return true
         case "rtcpub":
+            fastLog("pub \(object["id"] ?? "")")
             if let id = object["id"] as? Int { fast?.publish(id: id) }
             return true
         case "rtcsub":
+            fastLog("sub \(object["id"] ?? "")")
             if let id = object["id"] as? Int { fast?.subscribe(id: id) }
             return true
         case "rtcrx":
             friendReceiving = (object["on"] as? Int ?? 0) == 1
+            fastLog("friend receiving \(friendReceiving)")
             return true
         case "rtcok":
             return true
