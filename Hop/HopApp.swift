@@ -63,6 +63,62 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var results: ResultsInfo?
+
+    // MARK: Rövanş
+
+    /// The friend's run this level is raced against (from a Rövanş link), nil when none.
+    @Published var rival: RivalRun?
+    /// The player's last finished solo run, ready to send as a Rövanş link.
+    var lastRun: RivalRun?
+    /// The nickname prompt (asked once, the first time a link is sent).
+    @Published var askingName = false
+    @Published var sharingRun = false
+    @Published var rivalError: String?
+
+    /// A Rövanş link was opened: load the run and start its level against it.
+    func openLink(_ url: URL) {
+        guard let code = RivalService.code(in: url) else { return }
+        Task { @MainActor in
+            do {
+                let run = try await RivalService.fetch(code: code)
+                let valid = Levels.isCity(run.level) ? (Levels.isRace(run.level) ? run.level < Levels.raceBase + Levels.raceRounds
+                                                                                  : run.level < Levels.cityBase + Levels.cityRounds)
+                                                     : run.level < Levels.all.count
+                guard valid else { rivalError = Strings.rivalOpenFailed; return }
+                if online || connecting { net.disconnect() }
+                online = false
+                connecting = false
+                mySlot = 0
+                friendHere = false
+                results = nil
+                rival = run
+                beginGame(level: run.level)
+            } catch RivalService.Failure.gone {
+                rivalError = Strings.rivalExpired
+            } catch {
+                rivalError = Strings.rivalOpenFailed
+            }
+        }
+    }
+
+    /// Sends the last run as a Rövanş link (asks for a nickname the first time).
+    func shareLastRun() {
+        guard var run = lastRun, !sharingRun else { return }
+        guard let nick = PlayerName.nick else { askingName = true; return }
+        run = RivalRun(code: nil, name: nick, title: run.title, level: run.level, time: run.time, score: run.score,
+                       hits: run.hits, precision: run.precision, ghost: run.ghost)
+        sharingRun = true
+        Task { @MainActor in
+            defer { sharingRun = false }
+            do {
+                let code = try await RivalService.upload(run)
+                let text = Strings.rivalShareText(run.title, String(format: "%.1f", run.time))
+                SharePresenter.share([text, RivalService.link(code)])
+            } catch {
+                rivalError = Strings.rivalShareFailed
+            }
+        }
+    }
     /// Loading screen over the game until the world is built and the countdown can start.
     @Published var loading = false
     private(set) var loadingLevel = 0
@@ -423,6 +479,7 @@ final class AppModel: ObservableObject {
     #endif
 
     func leaveToMenu() {
+        rival = nil
         matchmaking = false
         matchTimeout?.cancel()
         Task { @MainActor in AudioManager.shared.stopLoops() }
@@ -739,6 +796,7 @@ struct RootView: View {
     @EnvironmentObject var model: AppModel
     @State private var splash = !PerfSettings.benchmark || ProcessInfo.processInfo.arguments.contains("-showsplash")
     @State private var splashTimeUp = false
+    @State private var nickDraft = PlayerName.nick ?? ""
 
     private func hideSplash() {
         guard splash else { return }
@@ -808,6 +866,24 @@ struct RootView: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        // Rövanş links (parkrift://c/CODE from the link page)
+        .onOpenURL { url in model.openLink(url) }
+        .alert(Strings.rivalNameTitle, isPresented: $model.askingName) {
+            TextField(Strings.rivalNamePlaceholder, text: $nickDraft)
+                .textInputAutocapitalization(.words)
+            Button(Strings.cancelAction, role: .cancel) {}
+            Button(Strings.rivalNameSave) {
+                let name = nickDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                PlayerName.nick = name
+                model.shareLastRun()
+            }
+        } message: {
+            Text(Strings.rivalNameMessage)
+        }
+        .alert(model.rivalError ?? "", isPresented: Binding(get: { model.rivalError != nil }, set: { if !$0 { model.rivalError = nil } })) {
+            Button(Strings.ok, role: .cancel) {}
+        }
         .onAppear {
             if splash {
                 // At least 2.5 s, and until the models are ready (at most 2 s more)

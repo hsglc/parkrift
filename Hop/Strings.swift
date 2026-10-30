@@ -101,6 +101,27 @@ enum Strings {
     static var secondsShort: String { t("sn", "s", "s") }
     static var coinsWord: String { t("altın", "coins", "monedas") }
     static var raceFailedTitle: String { t("BİTİREMEDİN", "DID NOT FINISH", "SIN TERMINAR") }
+    // Rövanş links
+    static var ok: String { t("Tamam", "OK", "Vale") }
+    static var rivalChallenge: String { t("Meydan oku", "Challenge", "Desafiar") }
+    static var rivalRematch: String { t("RÖVANŞ GÖNDER", "SEND REMATCH", "ENVIAR REVANCHA") }
+    static var rivalBeat: String { t("GEÇTİN!", "YOU BEAT IT!", "¡LO SUPERASTE!") }
+    static var rivalLost: String { t("GEÇEMEDİN", "NOT BEATEN", "NO LO SUPERASTE") }
+    static func rivalLine(_ name: String, _ time: String) -> String { t("Rakip: \(name) · \(time) sn", "Rival: \(name) · \(time) s", "Rival: \(name) · \(time) s") }
+    static func rivalVs(_ mine: String, _ name: String, _ theirs: String) -> String {
+        t("Sen \(mine) sn · \(name) \(theirs) sn", "You \(mine) s · \(name) \(theirs) s", "Tú \(mine) s · \(name) \(theirs) s")
+    }
+    static func rivalShareText(_ title: String, _ time: String) -> String {
+        t("Parkrift'te \(title) bölümünü \(time) sn'de bitirdim. Geçebilir misin?", "I finished \(title) in \(time) s in Parkrift. Can you beat it?",
+          "Terminé \(title) en \(time) s en Parkrift. ¿Puedes superarlo?")
+    }
+    static var rivalNameTitle: String { t("Takma adın", "Your nickname", "Tu apodo") }
+    static var rivalNameMessage: String { t("Arkadaşın meydan okumada bu adı görecek.", "Your friend sees this name on the challenge.", "Tu amigo verá este nombre en el desafío.") }
+    static var rivalNamePlaceholder: String { t("Ad", "Name", "Nombre") }
+    static var rivalNameSave: String { t("Gönder", "Send", "Enviar") }
+    static var rivalOpenFailed: String { t("Meydan okuma açılamadı. İnternet bağlantını kontrol et.", "Couldn't open the challenge. Check your connection.", "No se pudo abrir el desafío. Revisa tu conexión.") }
+    static var rivalExpired: String { t("Bu meydan okumanın süresi dolmuş.", "This challenge has expired.", "Este desafío ha caducado.") }
+    static var rivalShareFailed: String { t("Link oluşturulamadı. İnternet bağlantını kontrol et.", "Couldn't make the link. Check your connection.", "No se pudo crear el enlace. Revisa tu conexión.") }
     static var getReady: String { t("HAZIR OL", "GET READY", "PREPÁRATE") }
     static var parked: String { t("Park edildi!", "Parked!", "¡Aparcado!") }
     static var hold: String { t("Kıpırdama", "Hold still", "No te muevas") }

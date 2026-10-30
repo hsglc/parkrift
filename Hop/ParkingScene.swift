@@ -229,32 +229,68 @@ final class ParkingScene: SKScene {
     /// Best-run ghost car on solo parking levels (turned off).
     static let ghostEnabled = false
 
+    // MARK: Rövanş ghost
+
+    /// The friend's run raced against (from a Rövanş link) on this level, if any.
+    private var rival: RivalRun?
+    /// The friend's name over their ghost car, and how far ahead or behind we are.
+    private var rivalTag = SKLabelNode()
+    private var rivalDelta = SKLabelNode()
+    private var rivalDeltaPill = SKShapeNode()
+    private var rivalCountdownLine = SKLabelNode()
+    /// The ghost sample nearest our car last time (the search starts there).
+    private var rivalCursor = 0
+    private var rivalDeltaClock: TimeInterval = 0
+
     private func setupGhost() {
         ghostCar?.node.removeFromParentNode()
         ghostCar = nil
         ghostRecording.removeAll()
         ghostReplay = []
-        // Off: the grey best-run copy confused players. Old recordings are cleared.
-        guard ParkingScene.ghostEnabled else {
-            UserDefaults.standard.removeObject(forKey: "pp.ghost.\(levelIndex)")
-            return
-        }
-        guard !isCity, !online, !benchmark, let world = world else { return }
-        ghostReplay = UserDefaults.standard.array(forKey: "pp.ghost.\(levelIndex)") as? [Float] ?? []
+        rival = nil
+        rivalCursor = 0
+        rivalTag.removeFromParent()
+        rivalDeltaPill.removeFromParent()
+        rivalCountdownLine.removeFromParent()
+        // The old best-run copy of your own car stays off (it confused players); recordings of
+        // it are cleared. Every solo run is still recorded, for Rövanş links.
+        UserDefaults.standard.removeObject(forKey: "pp.ghost.\(levelIndex)")
+        guard !online, let world = world, let run = model?.rival, run.level == levelIndex else { return }
+        ghostReplay = run.path
         guard ghostReplay.count >= 6 else { return }
-        let choice = model?.carChoice ?? CarChoice.defaultChoice
-        let car = world.makeCar(color: UIColor(white: 0.95, alpha: 1), style: .racer, model: choice.model)
-        car.node.opacity = 0.32
+        rival = run
+        // The friend's car: their name over it, see-through, in a colour of its own
+        let car = world.makeCar(color: UIColor(red: 0.25, green: 0.62, blue: 1.0, alpha: 1), style: .racer,
+                                model: (model?.carChoice ?? CarChoice.defaultChoice).model)
+        car.node.opacity = 0.45
         car.node.enumerateHierarchy { node, _ in node.castsShadow = false }
         ghostCar = car
         car.update(position: CGPoint(x: CGFloat(ghostReplay[0]), y: CGFloat(ghostReplay[1])), heading: CGFloat(ghostReplay[2]),
                    steer: 0, braking: false, reversing: false)
+        rivalTag = makeLabel(run.name.uppercased(), size: 13, color: .white, font: "Barlow-ExtraBold")
+        rivalTag.zPosition = 4
+        hud.addChild(rivalTag)
+        // Ahead or behind, under the speedometer
+        rivalDeltaPill = SKShapeNode(rect: CGRect(x: -48, y: -15, width: 96, height: 30), cornerRadius: 15)
+        rivalDeltaPill.fillColor = UIColor(red: 0.03, green: 0.05, blue: 0.10, alpha: 0.62)
+        rivalDeltaPill.strokeColor = UIColor.white.withAlphaComponent(0.12)
+        rivalDeltaPill.position = CGPoint(x: speedDial.position.x, y: speedDial.position.y - speedRadius - 30)
+        rivalDeltaPill.alpha = 0
+        rivalDelta = makeLabel("", size: 16, color: .white, font: "BarlowCondensed-BlackItalic")
+        rivalDeltaPill.addChild(rivalDelta)
+        hud.addChild(rivalDeltaPill)
+        // Under the count: who and what to beat
+        rivalCountdownLine = makeLabel(Strings.rivalLine(run.name, String(format: "%.1f", run.time)), size: 16,
+                                       color: UIColor(white: 1, alpha: 0.9), font: "Barlow-Bold")
+        rivalCountdownLine.position = CGPoint(x: 0, y: -74)
+        countdownNode.addChild(rivalCountdownLine)
     }
 
-    /// Records this run every 0.1 s and moves the ghost along the best run at the same time.
+    /// Records this run every 0.1 s (solo levels: it can be sent as a Rövanş link) and moves the
+    /// friend's ghost along their run at the same time.
     private func updateGhost() {
         let sample = Int(elapsed / ghostStep)
-        if ParkingScene.ghostEnabled && !isCity && !online && ghostRecording.count / 3 <= sample && ghostRecording.count < 3 * 1800 {
+        if !online && ghostRecording.count / 3 <= sample && ghostRecording.count < 3 * 6000 {
             ghostRecording += [Float(carPosition.x), Float(carPosition.y), Float(heading)]
         }
         guard let car = ghostCar else { return }
@@ -267,17 +303,63 @@ final class ParkingScene: SKScene {
         let x = value(i, 0) + (value(j, 0) - value(i, 0)) * k
         let y = value(i, 1) + (value(j, 1) - value(i, 1)) * k
         let heading = CGFloat(value(i, 2)) + CGFloat.angleDelta(CGFloat(value(i, 2)), CGFloat(value(j, 2))) * CGFloat(k)
-        car.update(position: CGPoint(x: CGFloat(x), y: CGFloat(y)), heading: heading, steer: 0, braking: false, reversing: false)
+        let ghostPoint = CGPoint(x: CGFloat(x), y: CGFloat(y))
+        car.update(position: ghostPoint, heading: heading, steer: 0, braking: false, reversing: false)
         if i >= frames - 1 && car.node.action(forKey: "gone") == nil {
             car.node.runAction(.fadeOut(duration: 0.6), forKey: "gone")
+            rivalTag.run(.fadeOut(withDuration: 0.6))
+        }
+        // The name over the car, where it is on screen
+        if let world = world {
+            let screen = world.project(ghostPoint, height: 2.2)
+            rivalTag.position = screen
+            rivalTag.isHidden = screen.x < -40 || screen.x > size.width + 40 || screen.y < -20 || screen.y > size.height + 20
+        }
+        // Ahead or behind: where along their run they were at our spot, against our clock
+        rivalDeltaClock += 1.0 / 60.0
+        guard rivalDeltaClock > 0.2 else { return }
+        rivalDeltaClock = 0
+        var best = CGFloat.greatestFiniteMagnitude
+        var nearest = rivalCursor
+        let from = max(0, rivalCursor - 20), to = min(frames - 1, rivalCursor + 80)
+        if from <= to {
+            for frame in from...to {
+                let dx = CGFloat(value(frame, 0)) - carPosition.x, dy = CGFloat(value(frame, 1)) - carPosition.y
+                let d = dx * dx + dy * dy
+                if d < best { best = d; nearest = frame }
+            }
+        }
+        rivalCursor = nearest
+        guard best < 90 * 90, elapsed > 1.5 else {
+            rivalDeltaPill.run(.fadeAlpha(to: 0, duration: 0.2))
+            return
+        }
+        let delta = elapsed - Double(nearest) * ghostStep
+        rivalDelta.text = (delta >= 0 ? "+" : "−") + String(format: "%.1f", abs(delta))
+        rivalDelta.fontColor = delta > 0.05 ? UIColor(red: 1, green: 0.38, blue: 0.35, alpha: 1)
+            : UIColor(red: 0.35, green: 1, blue: 0.55, alpha: 1)
+        if rivalDeltaPill.alpha < 0.99 && rivalDeltaPill.action(forKey: "in") == nil {
+            rivalDeltaPill.run(.fadeIn(withDuration: 0.2), withKey: "in")
         }
     }
 
-    private func saveGhost() {
-        guard ParkingScene.ghostEnabled, !isCity, !online, ghostRecording.count >= 6 else { return }
-        ghostRecording += [Float(carPosition.x), Float(carPosition.y), Float(heading)]
-        UserDefaults.standard.set(ghostRecording, forKey: "pp.ghost.\(levelIndex)")
+    /// This run as a Rövanş link can carry it: the recording cut to the official time.
+    private func makeRivalRun(time: Double) -> RivalRun? {
+        guard !online, time > 1 else { return nil }
+        let frames = min(ghostRecording.count / 3, Int(time / ghostStep) + 1)
+        guard frames >= 2 else { return nil }
+        var samples = Array(ghostRecording.prefix(frames * 3))
+        // A sample for every 0.1 s of the time (a run that stood still at the end is padded)
+        while samples.count / 3 < Int(time / ghostStep) + 1 {
+            samples += [Float(carPosition.x), Float(carPosition.y), Float(heading)]
+        }
+        let score = level.race ? Levels.raceScore(time: time, crashes: hits) : time
+        return RivalRun(code: nil, name: "", title: Levels.title(levelIndex) + " · " + level.name, level: levelIndex,
+                        time: time, score: score, hits: hits, precision: !isCity && !level.race ? lastPrecision?.score : nil,
+                        ghost: RivalRun.pack(samples))
     }
+
+    private func saveGhost() {}
 
     // What this round earned (paid as coins at the end)
     private var runDriftPoints = 0
@@ -5239,12 +5321,16 @@ final class ParkingScene: SKScene {
                              nearMisses: runNearMisses, escapes: runEscapes, topSpeed: runTopSpeed,
                              precision: me.time != nil ? lastPrecision?.score : nil)
         let reward = model?.finishRun(stats)
+        // Every finished solo run can be sent as a Rövanş link
+        let shareable = myTime.flatMap { makeRivalRun(time: $0) }
+        model?.lastRun = shareable
         model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex, online: onlineMatch) + " · " + level.name,
                                      entries: entries, footer: footer, newBest: newBest,
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine, reward: reward,
                                      outcome: outcome, roundLine: roundLine,
-                                     precision: me.time != nil && !isCity && !level.race ? lastPrecision?.score : nil)
+                                     precision: me.time != nil && !isCity && !level.race ? lastPrecision?.score : nil,
+                                     rival: rival, canChallenge: shareable != nil)
         // The results own the screen: the pedals and the HUD step aside (back on the next load).
         // At once, not faded: the frame freezes just below and would keep a half-faded HUD
         controlsLayer.removeAllActions()

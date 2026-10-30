@@ -47,6 +47,10 @@ struct ResultsInfo: Identifiable {
     var roundLine: String? = nil
     /// Parking levels: the Santim Ölçer score (0...100) of the park.
     var precision: Int? = nil
+    /// The friend's run this one was raced against (a Rövanş link).
+    var rival: RivalRun? = nil
+    /// This run can be sent as a Rövanş link.
+    var canChallenge = false
 
     var me: ResultEntry? { entries.first { $0.isMe } }
 
@@ -57,6 +61,8 @@ struct ResultsInfo: Identifiable {
                                reward: reward, outcome: outcome, roundLine: roundLine)
         copy.id = id
         copy.precision = precision
+        copy.rival = rival
+        copy.canChallenge = canChallenge
         return copy
     }
 }
@@ -95,7 +101,15 @@ struct ResultsOverlay: View {
 
     private var headline: String {
         if failed { return failedRace ? Strings.raceFailedTitle : Strings.notParkedTitle }
+        if let beat = beatRival { return beat ? Strings.rivalBeat : Strings.rivalLost }
         return info.headline ?? (isFinal ? Strings.allDone : Strings.parkedTitle)
+    }
+
+    /// Raced against a friend's run (a Rövanş link): whether this run beat it.
+    private var beatRival: Bool? {
+        guard let rival = info.rival, let me = info.me, let time = me.time, !failed else { return nil }
+        let mine = me.score.flatMap { $0 >= 0 ? $0 : nil } ?? time
+        return mine < rival.score
     }
 
     private var failReason: String? {
@@ -186,6 +200,12 @@ struct ResultsOverlay: View {
                     }
                 }
                 .opacity(restIn ? 1 : 0)
+                if let rival = info.rival, let time = me.time {
+                    Text(Strings.rivalVs(String(format: "%.1f", time), rival.name, String(format: "%.1f", rival.time)))
+                        .font(.ui(14, .semibold))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .opacity(restIn ? 1 : 0)
+                }
                 if info.newBest {
                     Text(Strings.newBest)
                         .font(.ui(12, .heavy))
@@ -268,17 +288,44 @@ struct ResultsOverlay: View {
                             .buttonStyle(RoundIconStyle())
                             .accessibilityLabel(Strings.next)
                     }
+                } else if info.rival != nil && info.canChallenge {
+                    // Raced a friend: send them this run back
+                    Button { model.shareLastRun() } label: { shareLabel(Text(Strings.rivalRematch)) }
+                        .buttonStyle(MainPillStyle(fill: gold))
+                    Button { model.retryLevel() } label: { Image(systemName: "arrow.clockwise") }
+                        .buttonStyle(RoundIconStyle())
+                        .accessibilityLabel(Strings.retry)
                 } else if hasNext {
                     Button { model.nextLevel() } label: { Text(Strings.next.uppercased()) }
                         .buttonStyle(MainPillStyle(fill: gold))
                     Button { model.retryLevel() } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(RoundIconStyle())
                         .accessibilityLabel(Strings.retry)
+                    if info.canChallenge {
+                        Button { model.shareLastRun() } label: { shareLabel(Image(systemName: "paperplane.fill")) }
+                            .buttonStyle(RoundIconStyle())
+                            .accessibilityLabel(Strings.rivalChallenge)
+                    }
                 } else {
                     Button { model.retryLevel() } label: { Text(Strings.retry.uppercased()) }
                         .buttonStyle(MainPillStyle(fill: gold))
+                    if info.canChallenge {
+                        Button { model.shareLastRun() } label: { shareLabel(Image(systemName: "paperplane.fill")) }
+                            .buttonStyle(RoundIconStyle())
+                            .accessibilityLabel(Strings.rivalChallenge)
+                    }
                 }
             }
+        }
+    }
+
+    /// The share button's content, or a spinner while the link is made.
+    @ViewBuilder
+    private func shareLabel<Content: View>(_ content: Content) -> some View {
+        if model.sharingRun {
+            ProgressView().tint(.white)
+        } else {
+            content
         }
     }
 
