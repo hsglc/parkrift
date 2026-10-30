@@ -5103,7 +5103,7 @@ final class ParkingScene: SKScene {
         if newBest {
             let best = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.newBestShort), color: UIColor(red: 0.85, green: 0.12, blue: 0.16, alpha: 1),
                                                           check: false, fontSize: 18))
-            best.position = CGPoint(x: 62, y: top - 62)
+            best.position = CGPoint(x: 88, y: top - 76)
             best.zRotation = 0.1
             best.alpha = 0
             best.setScale(2.2)
