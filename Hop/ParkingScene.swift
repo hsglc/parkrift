@@ -547,9 +547,9 @@ final class ParkingScene: SKScene {
         world?.fit(size: size, insets: insets, topReserved: 50)
         dotTexture = CarArt.dot()
         // The parked ticket and its stamp are drawn now, not on the frame the car parks
-        _ = CarArt.parkTicket(size: CGSize(width: 300, height: 196), perforationY: 140)
+        _ = CarArt.parkTicket(size: CGSize(width: 340, height: 190), stub: 62)
         _ = CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 22)
+                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 20)
 
         let vignette = SKSpriteNode(texture: CarArt.vignette(size: size))
         vignette.size = size
@@ -4978,83 +4978,83 @@ final class ParkingScene: SKScene {
         layer.addChild(shade)
         shade.run(.fadeAlpha(to: 0.55, duration: 0.3))
 
-        let paper = CGSize(width: 300, height: 196)
+        let paper = CGSize(width: 340, height: 190)
+        let stubWidth: CGFloat = 62
         let ticket = SKNode()
-        let target = CGPoint(x: max(insets.left + 24, 20) + paper.width / 2 + 24, y: size.height * 0.48)
+        let target = CGPoint(x: max(insets.left + 24, 20) + paper.width / 2 + 20, y: size.height * 0.48)
         ticket.position = CGPoint(x: target.x - 60, y: -paper.height)
         ticket.zRotation = -0.42
         layer.addChild(ticket)
-        let base = SKSpriteNode(texture: CarArt.parkTicket(size: paper, perforationY: 140))
+        let base = SKSpriteNode(texture: CarArt.parkTicket(size: paper, stub: stubWidth))
         base.size = CGSize(width: paper.width + 32, height: paper.height + 32)
         ticket.addChild(base)
         let top = paper.height / 2, left = -paper.width / 2, right = paper.width / 2
-        let ink = UIColor(red: 0.1, green: 0.11, blue: 0.14, alpha: 1)
-        let grey = UIColor(red: 0.42, green: 0.44, blue: 0.48, alpha: 1)
+        // Thermal print: near-black ink, a red for the serial number
+        let ink = UIColor(red: 0.13, green: 0.13, blue: 0.15, alpha: 1)
+        let grey = UIColor(red: 0.45, green: 0.46, blue: 0.5, alpha: 1)
+        let red = UIColor(red: 0.78, green: 0.16, blue: 0.18, alpha: 1)
         func text(_ string: String, _ font: UIFont, _ color: UIColor, kern: CGFloat = 0, at point: CGPoint,
-                  align: SKLabelHorizontalAlignmentMode = .left) {
+                  align: SKLabelHorizontalAlignmentMode = .left, rotate: CGFloat = 0) {
             let label = SKLabelNode()
             label.attributedText = NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color, .kern: kern])
             label.horizontalAlignmentMode = align
             label.verticalAlignmentMode = .center
             label.position = point
+            label.zRotation = rotate
             ticket.addChild(label)
         }
-        // Header beside the P sign: what kind of ticket, the level, its number
-        text(Strings.upper(Strings.parkTicket), .systemFont(ofSize: 9, weight: .heavy, width: .expanded), grey, kern: 1.6,
-             at: CGPoint(x: left + 74, y: top - 24))
-        text(level.name, CarArt.raceFont(21, italic: false), ink, at: CGPoint(x: left + 73, y: top - 43))
+        let main = left + stubWidth
+        // Header beside the P sign: the garage (the level) and its number
+        text(level.name, CarArt.raceFont(20, italic: false), ink, at: CGPoint(x: main + 62, y: top - 40))
         text(Levels.title(levelIndex, online: onlineMatch), .systemFont(ofSize: 11, weight: .semibold), grey,
-             at: CGPoint(x: left + 74, y: top - 61))
-        // Receipt rows with dotted leaders
-        var rows: [(String, String)] = [(Strings.statTime, String(format: "%.1f s", localTime)), (Strings.statCrashes, "\(hits)")]
+             at: CGPoint(x: main + 62, y: top - 57))
+        // Printed lines: entry and exit times from the clock, then the round's figures
+        let clock = DateFormatter()
+        clock.dateFormat = "HH:mm:ss"
+        let now = Date()
+        var rows: [(String, String)] = [(Strings.ticketIn, clock.string(from: now.addingTimeInterval(-max(1, localTime)))),
+                                        (Strings.ticketOut, clock.string(from: now)),
+                                        (Strings.statTime, String(format: "%.1f s", localTime)),
+                                        (Strings.statCrashes, "\(hits)")]
         if let precision = lastPrecision { rows.append((Strings.precision, Strings.percent(precision.score))) }
+        let mono = UIFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
+        let monoBold = UIFont.monospacedSystemFont(ofSize: 12, weight: .heavy)
         for (index, row) in rows.enumerated() {
-            let y = top - 86 - CGFloat(index) * 19
-            text(Strings.upper(row.0), .systemFont(ofSize: 10, weight: .heavy, width: .expanded), grey, kern: 1.2,
-                 at: CGPoint(x: left + 18, y: y))
-            // Values in the middle: the right half is where the stamp lands
-            text(row.1, .monospacedDigitSystemFont(ofSize: 15, weight: .heavy), ink, at: CGPoint(x: left + 172, y: y), align: .right)
-            let dots = SKShapeNode(path: {
-                let path = CGMutablePath()
-                path.move(to: CGPoint(x: left + 112, y: y - 4))
-                path.addLine(to: CGPoint(x: left + 128, y: y - 4))
-                return path.copy(dashingWithPhase: 0, lengths: [1.5, 3.5])
-            }())
-            dots.strokeColor = UIColor(white: 0.6, alpha: 0.8)
-            dots.lineWidth = 1.2
-            ticket.addChild(dots)
+            let y = top - 85 - CGFloat(index) * 17
+            text(Strings.upper(row.0), mono, grey, at: CGPoint(x: main + 14, y: y))
+            text(row.1, index >= 2 ? monoBold : mono, ink, at: CGPoint(x: main + 112, y: y))
         }
+        // Stub: the name down its length and a serial number in red
+        text("PARKRIFT", .systemFont(ofSize: 10, weight: .heavy, width: .expanded), grey, kern: 2.4,
+             at: CGPoint(x: left + stubWidth / 2, y: top - 45 - 92), rotate: .pi / 2)
+        text(String(format: "№ %05d", 1000 + (levelIndex * 7919 + Int(localTime * 10)) % 89_000),
+             .monospacedSystemFont(ofSize: 9, weight: .bold), red, at: CGPoint(x: left + stubWidth / 2, y: -top + 14), align: .center)
         // The precision grade, top right (gold for an S)
         if let precision = lastPrecision {
             let grade = precision.grade
             let gold = UIColor(red: 1, green: 0.74, blue: 0.1, alpha: 1)
-            let disc = SKShapeNode(circleOfRadius: 17)
-            disc.fillColor = grade == .s ? gold : UIColor(red: 0.1, green: 0.11, blue: 0.14, alpha: 1)
+            let disc = SKShapeNode(circleOfRadius: 16)
+            disc.fillColor = grade == .s ? gold : ink
             disc.strokeColor = .clear
-            disc.position = CGPoint(x: right - 30, y: top - 32)
+            disc.position = CGPoint(x: right - 28, y: top - 44)
             ticket.addChild(disc)
             let letter = SKLabelNode()
             letter.attributedText = NSAttributedString(string: grade.rawValue, attributes: [
-                .font: CarArt.raceFont(22), .foregroundColor: grade == .s ? UIColor(red: 0.1, green: 0.11, blue: 0.14, alpha: 1) : UIColor.white])
+                .font: CarArt.raceFont(21), .foregroundColor: grade == .s ? ink : UIColor.white])
             letter.verticalAlignmentMode = .center
             letter.position = disc.position
             ticket.addChild(letter)
         }
-        // Stars, punched in after the stamp (solo levels only)
+        // Stars: punched into the stub's marks after the stamp (solo levels only)
         var stars: [SKSpriteNode] = []
         let earned = isCity ? 0 : AppModel.stars(forHits: hits)
         if !isCity {
-            for index in 0..<3 {
-                let slot = makeIcon("star.fill", size: 20, color: UIColor(white: 0.82, alpha: 1))
-                slot.position = CGPoint(x: left + 30 + CGFloat(index) * 28, y: top - 168)
-                ticket.addChild(slot)
-                if index < earned {
-                    let star = makeIcon("star.fill", size: 22, color: UIColor(red: 1, green: 0.74, blue: 0.1, alpha: 1))
-                    star.position = slot.position
-                    star.setScale(0)
-                    ticket.addChild(star)
-                    stars.append(star)
-                }
+            for index in 0..<earned {
+                let star = makeIcon("star.fill", size: 17, color: UIColor(red: 1, green: 0.74, blue: 0.1, alpha: 1))
+                star.position = CGPoint(x: left + stubWidth / 2, y: top - 62 - CGFloat(index) * 30)
+                star.setScale(0)
+                ticket.addChild(star)
+                stars.append(star)
             }
         }
 
@@ -5065,11 +5065,11 @@ final class ParkingScene: SKScene {
         tilt.timingMode = .easeOut
         ticket.run(.sequence([.group([rise, tilt]), .rotate(toAngle: -0.075, duration: 0.12), .rotate(toAngle: -0.06, duration: 0.1)]))
 
-        // The stamp lands
+        // The stamp lands over the right of the ticket
         let stamp = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 22))
-        stamp.position = CGPoint(x: 92, y: top - 150)
-        stamp.zRotation = -0.2
+                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 20))
+        stamp.position = CGPoint(x: right - 82, y: 6)
+        stamp.zRotation = -0.24
         stamp.alpha = 0
         stamp.setScale(2.6)
         ticket.addChild(stamp)
@@ -5107,25 +5107,25 @@ final class ParkingScene: SKScene {
                 self?.audio.play("click", volume: 0.7)
             }
         }
-        // A record: a smaller red stamp across the corner
+        // A record: printed in red after the time, as the printer adds a line
         var hold = 2.1 + Double(stars.count) * 0.12
         if newBest {
-            let best = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.newBestShort), color: UIColor(red: 0.85, green: 0.12, blue: 0.16, alpha: 1),
-                                                          check: false, fontSize: 18))
-            best.position = CGPoint(x: 88, y: top - 76)
-            best.zRotation = 0.1
+            let best = SKLabelNode()
+            best.attributedText = NSAttributedString(string: "★ " + Strings.upper(Strings.newBestShort), attributes: [
+                .font: UIFont.monospacedSystemFont(ofSize: 11, weight: .heavy), .foregroundColor: UIColor(red: 0.78, green: 0.16, blue: 0.18, alpha: 1)])
+            best.horizontalAlignmentMode = .left
+            best.verticalAlignmentMode = .center
+            best.position = CGPoint(x: left + stubWidth + 170, y: top - 85 - 2 * 17)
             best.alpha = 0
-            best.setScale(2.2)
+            best.setScale(1.6)
             ticket.addChild(best)
-            let land = SKAction.group([.scale(to: 1.0, duration: 0.1), .fadeAlpha(to: 0.9, duration: 0.07)])
-            land.timingMode = .easeIn
             let at = 1.05 + Double(stars.count) * 0.2
-            best.run(.sequence([.wait(forDuration: at), land]))
-            run(.wait(forDuration: at + 0.1)) { [weak self] in
-                self?.audio.play("bump", volume: 0.6)
-                self?.bumpHaptic.impactOccurred(intensity: 0.7)
+            best.run(.sequence([.wait(forDuration: at), .group([.fadeIn(withDuration: 0.08), .scale(to: 1, duration: 0.12)])]))
+            run(.wait(forDuration: at)) { [weak self] in
+                self?.audio.play("click", volume: 0.8)
+                self?.tickHaptic.impactOccurred()
             }
-            hold += 0.35
+            hold += 0.3
         }
         // Out: drops away, then the results
         let away = SKAction.group([.moveBy(x: -40, y: -size.height * 0.7, duration: 0.35), .rotate(byAngle: 0.25, duration: 0.35),

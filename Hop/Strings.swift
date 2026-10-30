@@ -138,6 +138,7 @@ enum Strings {
     static var lastRoundDraw: String { t("Son tur berabere", "Last round: a draw", "Última ronda: empate") }
     static var didNotFinish: String { t("Bitiremedi", "Did not finish", "No terminó") }
     static var timeLabel: String { t("SÜRE", "TIME", "TIEMPO") }
+    static var gapLabel: String { t("FARK", "GAP", "DIF.") }
     static var bumpsLabel: String { t("ÇARPMA", "BUMPS", "GOLPES") }
     static var bestLabel: String { t("EN İYİ", "BEST", "MEJOR") }
     static var newBest: String { t("Yeni rekor!", "New best!", "¡Nuevo récord!") }
@@ -182,6 +183,8 @@ enum Strings {
     static var parkedBig: String { t("PARK EDİLDİ!", "PARKED!", "¡APARCADO!") }
     static var levelComplete: String { t("BÖLÜM TAMAMLANDI", "LEVEL COMPLETE", "NIVEL COMPLETADO") }
     static var parkTicket: String { t("Otopark fişi", "Parking ticket", "Ticket de aparcamiento") }
+    static var ticketIn: String { t("Giriş", "In", "Entrada") }
+    static var ticketOut: String { t("Çıkış", "Out", "Salida") }
     // Santim Ölçer (parking precision)
     static var precision: String { t("Hassasiyet", "Precision", "Precisión") }
     static func percent(_ n: Int) -> String { t("%\(n)", "\(n)%", "\(n) %") }
@@ -371,7 +374,8 @@ enum Strings {
     }
     static var dailyTitle: String { t("Günlük", "Daily", "Diario") }
     static var dailyTasks: String { t("Bugünün görevleri", "Today's tasks", "Tareas de hoy") }
-    static var dailyTasksHint: String { t("Her gün yenilenir; tamamlanınca para otomatik eklenir.", "New every day; coins are added as soon as a task is done.", "Nuevas cada día; las monedas se suman al completarlas.") }
+    static var dailyTasksHint: String { t("Her gün yenilenir; tamamladığın görevin ödülünü buradan topla.", "New every day; collect a finished task's coins here.", "Nuevas cada día; recoge aquí las monedas de cada tarea hecha.") }
+    static var rewardWaiting: String { t("Ödül hazır", "Reward ready", "Premio listo") }
     static var dailyGift: String { t("Günlük hediye", "Daily gift", "Regalo diario") }
     static var dailyGiftHint: String { t("Her gün gel, hediye büyüsün. Bir gün kaçırırsan seri baştan başlar.", "Come back daily and the gift grows. Miss a day and the streak restarts.", "Vuelve cada día y el regalo crece. Si faltas un día, la racha se reinicia.") }
     static func dayLabel(_ day: Int) -> String { t("\(day). gün", "Day \(day)", "Día \(day)") }

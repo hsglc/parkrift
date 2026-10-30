@@ -331,17 +331,17 @@ struct DailyView: View {
                     .font(.system(size: 13, weight: .heavy))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                    .layoutPriority(1)
                 Spacer(minLength: 2)
                 if waiting > 0 {
                     // Rewards to collect in this mode
-                    HStack(spacing: 2) {
-                        Image(systemName: "gift.fill").font(.system(size: 9, weight: .black))
-                        Text("\(waiting)").font(.system(size: 11, weight: .heavy)).monospacedDigit()
-                    }
-                    .foregroundStyle(Palette.ink)
-                    .padding(.horizontal, 6).frame(height: 18)
-                    .background(Capsule().fill(Palette.gold))
-                    .scaleEffect(pulse ? 1.08 : 0.94)
+                    // (a small gold disc: the mode's name keeps its room)
+                    Image(systemName: "gift.fill")
+                        .font(.system(size: 9, weight: .black))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Palette.gold))
+                        .scaleEffect(pulse ? 1.08 : 0.94)
                 } else if complete {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 13, weight: .bold))
                         .foregroundStyle(isOn ? Neo.ink : green)
@@ -383,11 +383,15 @@ struct DailyView: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
-                    Text(task.done ? Strings.taskDone : "\(min(task.progress, task.kind.target)) / \(task.kind.target)")
+                    Text(task.claimable ? Strings.rewardWaiting : (task.done ? Strings.taskDone : "\(min(task.progress, task.kind.target)) / \(task.kind.target)"))
                         .font(.system(size: 11, weight: .heavy)).monospacedDigit()
-                        .foregroundStyle(task.done ? green : .white.opacity(0.55))
+                        .foregroundStyle(task.claimable ? Palette.gold : (task.done ? green : .white.opacity(0.55)))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     Spacer(minLength: 4)
                     rewardChip(task)
+                        .fixedSize()
+                        .layoutPriority(2)
                 }
             }
         }
