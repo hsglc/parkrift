@@ -16,13 +16,16 @@ struct RunStats {
     var nearMisses: Int
     var escapes: Int
     var topSpeed: Int
+    /// Parking precision 0...100 (solo parking levels).
+    var precision: Int? = nil
 }
 
 /// Coins earned in a round, line by line, and the daily tasks it completed.
 struct RunReward {
     var lines: [(label: String, coins: Int)]
+    /// Daily tasks this round completed: their coins wait to be collected on the daily screen.
     var tasksDone: [(name: String, coins: Int)]
-    var total: Int { lines.reduce(0) { $0 + $1.coins } + tasksDone.reduce(0) { $0 + $1.coins } }
+    var total: Int { lines.reduce(0) { $0 + $1.coins } }
 }
 
 /// The meta game kept on the device: coins, the cars bought with them, daily tasks for every mode and a
@@ -129,6 +132,11 @@ enum Progression {
         if run.driftPoints > 0 { lines.append((Strings.rewardDrift, min(150, run.driftPoints / 25))) }
         if run.nearMisses > 0 { lines.append((Strings.rewardNearMiss, run.nearMisses * 10)) }
         if run.escapes > 0 { lines.append((Strings.rewardEscape, run.escapes * 75)) }
+        if let precision = run.precision {
+            let grade = ParkPrecision.grade(for: precision)
+            let coins = grade == .s ? 60 : (grade == .a ? 30 : (grade == .b ? 10 : 0))
+            if coins > 0 { lines.append((Strings.rewardPrecision(grade.rawValue), coins)) }
+        }
         lines = lines.filter { $0.coins > 0 }
         // Weekend event: every round pays double
         if isWeekendEvent {
@@ -197,10 +205,12 @@ enum Progression {
         case raceRounds, raceClean, topSpeed, raceDrift, raceNearMiss
         // Online
         case onlineRounds, onlineWin
+        // Parking (added later: kept last so the others keep their numbers)
+        case perfectPark
 
         var mode: TaskMode {
             switch self {
-            case .parkRounds, .threeStars, .parkClean, .parkFlawless, .parkStars: return .park
+            case .parkRounds, .threeStars, .parkClean, .parkFlawless, .parkStars, .perfectPark: return .park
             case .cityRounds, .nearMiss, .escape, .drift, .cityClean: return .city
             case .raceRounds, .raceClean, .topSpeed, .raceDrift, .raceNearMiss: return .race
             case .onlineRounds, .onlineWin: return .online
@@ -226,6 +236,7 @@ enum Progression {
             case .raceNearMiss: return 4
             case .onlineRounds: return 2
             case .onlineWin: return 1
+            case .perfectPark: return 1
             }
         }
 
@@ -236,6 +247,7 @@ enum Progression {
             case .parkStars, .cityClean, .raceClean: return 160
             case .parkFlawless, .escape, .onlineRounds: return 200
             case .onlineWin: return 250
+            case .perfectPark: return 180
             }
         }
 
@@ -255,6 +267,7 @@ enum Progression {
             case .topSpeed: return "speedometer"
             case .onlineRounds: return "person.2.fill"
             case .onlineWin: return "trophy.fill"
+            case .perfectPark: return "scope"
             }
         }
     }
@@ -263,8 +276,12 @@ enum Progression {
         let index: Int
         let kind: TaskKind
         let progress: Int
+        /// Its coins were collected.
+        let claimed: Bool
         var id: Int { index }
         var done: Bool { progress >= kind.target }
+        /// Done, coins waiting to be collected.
+        var claimable: Bool { done && !claimed }
     }
 
     static var todayKey: String { dayKey(Date()) }
@@ -294,17 +311,53 @@ enum Progression {
         return progress
     }
 
+    /// Which of today's tasks had their coins collected. A save from before collecting existed
+    /// paid a task's coins as it was done, so there a done task counts as collected.
+    private static func todaysClaimed(progress: [Int]) -> [Bool] {
+        let kinds = todaysKinds()
+        if let saved = defaults.dictionary(forKey: "pp.daily"), saved["day"] as? String == todayKey,
+           let claimed = saved["c"] as? [Bool], claimed.count == kinds.count {
+            return claimed
+        }
+        return kinds.indices.map { progress[$0] >= kinds[$0].target }
+    }
+
+    private static func saveDaily(progress: [Int], claimed: [Bool]) {
+        defaults.set(["day": todayKey, "p": progress, "c": claimed], forKey: "pp.daily")
+    }
+
     static var tasks: [DailyTask] {
         let progress = todaysProgress()
-        return todaysKinds().enumerated().map { DailyTask(index: $0.offset, kind: $0.element, progress: progress[$0.offset]) }
+        let claimed = todaysClaimed(progress: progress)
+        return todaysKinds().enumerated().map {
+            DailyTask(index: $0.offset, kind: $0.element, progress: progress[$0.offset], claimed: claimed[$0.offset])
+        }
+    }
+
+    /// Tasks done whose coins wait to be collected.
+    static var claimableTasks: [DailyTask] { tasks.filter(\.claimable) }
+
+    /// Collects a done task's coins; returns them (0 if not done or already collected).
+    @discardableResult
+    static func claim(_ index: Int) -> Int {
+        let progress = todaysProgress()
+        var claimed = todaysClaimed(progress: progress)
+        let kinds = todaysKinds()
+        guard kinds.indices.contains(index), progress[index] >= kinds[index].target, !claimed[index] else { return 0 }
+        claimed[index] = true
+        saveDaily(progress: progress, claimed: claimed)
+        coins += kinds[index].reward
+        return kinds[index].reward
     }
 
     /// Today's tasks still open (for the badge on the gift button).
     static var openTasks: Int { tasks.filter { !$0.done }.count }
 
-    /// Adds the round to today's tasks; returns the tasks it just completed (their coins are paid).
+    /// Adds the round to today's tasks; returns the tasks it just completed (their coins wait on
+    /// the daily screen to be collected).
     private static func advanceTasks(with run: RunStats) -> [(name: String, coins: Int)] {
         var progress = todaysProgress()
+        let claimed = todaysClaimed(progress: progress)
         var completed: [(name: String, coins: Int)] = []
         for (index, kind) in todaysKinds().enumerated() {
             let before = progress[index]
@@ -329,11 +382,12 @@ enum Progression {
             case .raceNearMiss: if race { value += run.nearMisses }
             case .onlineRounds: if run.mode == .online && run.finished { value += 1 }
             case .onlineWin: if run.mode == .online && run.won == true { value += 1 }
+            case .perfectPark: if park && run.finished && (run.precision ?? 0) >= 95 { value += 1 }
             }
             progress[index] = min(kind.target, value)
             if progress[index] >= kind.target { completed.append((kind.title, kind.reward)) }
         }
-        defaults.set(["day": todayKey, "p": progress], forKey: "pp.daily")
+        saveDaily(progress: progress, claimed: claimed)
         return completed
     }
 

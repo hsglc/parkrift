@@ -230,6 +230,8 @@ final class PoliceChase {
     private var clock: CGFloat = 0
     private var planClock: CGFloat = 0
     private var spin: CGFloat = 0
+    /// Smoothed point the cruiser closes in on (where the player is heading).
+    private var aim: CGPoint?
     private var wheels: [SCNNode] = []
     private var redLamps: [SCNMaterial] = []
     private var blueLamps: [SCNMaterial] = []
@@ -355,6 +357,21 @@ final class PoliceChase {
         for wheel in wheels { wheel.eulerAngles.x = Float(spin) }
     }
 
+    /// The point `length` along the waypoints from the car.
+    private func point(along length: CGFloat) -> CGPoint? {
+        var remaining = length
+        var from = position
+        for next in waypoints {
+            let d = from.distance(to: next)
+            if d >= remaining, d > 0 {
+                return CGPoint(x: from.x + (next.x - from.x) / d * remaining, y: from.y + (next.y - from.y) / d * remaining)
+            }
+            remaining -= d
+            from = next
+        }
+        return waypoints.last
+    }
+
     /// `trail`: the player's recent positions, oldest first; `playerVelocity` lets the cruiser
     /// aim where the car is going rather than where it is (it cuts corners and comes alongside
     /// instead of trailing straight behind).
@@ -368,47 +385,56 @@ final class PoliceChase {
         distance = position.distance(to: player)
         flashLights()
 
-        // Plan: along the streets while far, along the player's own path when close
+        // Where the player will be by the time we get there (at most a second ahead), smoothed so
+        // the aim does not jump with every twitch of the player's steering
+        let lead = min(1.0, distance / max(speed, 120))
+        let predicted = CGPoint(x: player.x + playerVelocity.dx * lead, y: player.y + playerVelocity.dy * lead)
+        if aim == nil || aim!.distance(to: predicted) > 400 { aim = predicted }
+        aim = CGPoint(x: aim!.x + (predicted.x - aim!.x) * min(1, dt * 4), y: aim!.y + (predicted.y - aim!.y) * min(1, dt * 4))
+
+        // Plan: along the streets while far, along the player's own path when close (both stay on
+        // the road), and only in the last stretch straight at the player
         planClock -= dt
         if planClock <= 0 || waypoints.isEmpty {
-            planClock = 0.5
+            planClock = 0.4
             if distance > 220 {
                 pursuing = false
                 waypoints = Array(map.route(from: position, to: player).dropFirst())
             } else {
                 pursuing = true
-                // Where the car will be by the time we get there (at most a second ahead)
-                let lead = min(1.0, distance / max(speed, 120))
-                let predicted = CGPoint(x: player.x + playerVelocity.dx * lead, y: player.y + playerVelocity.dy * lead)
-                if distance < 140 {
-                    // Close: straight for it, cutting the corner to come alongside
-                    waypoints = [predicted]
+                if distance < 95 {
+                    waypoints = [aim!]
+                    planClock = 0.12
                 } else if let nearest = trail.indices.min(by: { trail[$0].distance(to: position) < trail[$1].distance(to: position) }) {
-                    waypoints = Array(trail[nearest...]) + [predicted]
+                    waypoints = Array(trail[nearest...]) + [aim!]
                 } else {
-                    waypoints = [predicted]
+                    waypoints = [aim!]
                 }
             }
-            // Re-plan more often in the final approach
-            if distance < 140 { planClock = 0.15 }
         }
-        let target: CGFloat = clock < 1.0 ? 120 : (pursuing ? max(playerSpeed * 1.08, 175) : 210)
-        speed += (target - speed) * min(1, dt * 1.5)
-        var move = speed * dt
-        let travelled = move
-        while move > 0, let next = waypoints.first {
-            let d = position.distance(to: next)
-            if d <= move {
-                position = next
-                waypoints.removeFirst()
-                move -= d
-            } else {
-                let desired = atan2(next.y - position.y, next.x - position.x)
-                heading += CGFloat.angleDelta(heading, desired) * min(1, dt * 8)
-                position = CGPoint(x: position.x + (next.x - position.x) / d * move, y: position.y + (next.y - position.y) / d * move)
-                move = 0
-            }
+        if distance < 95, !waypoints.isEmpty { waypoints[waypoints.count - 1] = aim! }
+        // Points already passed are dropped, so it never turns back for one
+        while waypoints.count > 1, position.distance(to: waypoints[0]) < 26 { waypoints.removeFirst() }
+        // It sets off already facing down its route
+        if clock <= dt * 1.5, let first = waypoints.first, first.distance(to: position) > 1 {
+            heading = atan2(first.y - position.y, first.x - position.x)
         }
+
+        // Driven like a car (it used to slide straight at each point, sideways or backwards, with
+        // the body turning after it): it steers at a point a little way along its path, turns no
+        // tighter than its wheels allow at that speed and slows for the bend ahead, braking harder
+        // than it accelerates. A point behind it means a wide U-turn, not a reverse.
+        let lookAhead = max(45, min(130, speed * 0.55))
+        let steerAt = point(along: lookAhead) ?? aim!
+        let desired = atan2(steerAt.y - position.y, steerAt.x - position.x)
+        let error = CGFloat.angleDelta(heading, desired)
+        let maxYaw = min(2.6, max(speed, 40) / 70)
+        heading += max(-maxYaw, min(maxYaw, error * 4)) * dt
+        var target: CGFloat = clock < 1.0 ? 120 : (pursuing ? max(playerSpeed * 1.08, 175) : 210)
+        target *= max(0.32, 1 - abs(error) / .pi * 1.4)
+        speed += (target - speed) * min(1, dt * (target < speed ? 3.5 : 1.6))
+        let travelled = speed * dt
+        position = CGPoint(x: position.x + cos(heading) * travelled, y: position.y + sin(heading) * travelled)
         node.position = World3D.vec(position)
         node.eulerAngles.y = Float(heading)
         spin += travelled / 10 / 0.32

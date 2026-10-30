@@ -203,6 +203,9 @@ struct MenuView: View {
         }
     }
 
+    /// Done daily tasks whose coins wait to be collected (read again whenever the menu redraws).
+    private var claimable: [Progression.DailyTask] { Progression.claimableTasks }
+
     /// Narrow screens drop the garage chip from page top bars (the title needs the room).
     @State private var compactTopBar = false
 
@@ -210,7 +213,13 @@ struct MenuView: View {
         HStack(spacing: 12) {
             ZStack(alignment: .leading) {
                 if page == .home {
-                    EmptyView()
+                    // Coins from finished daily tasks wait here to be collected
+                    if !claimable.isEmpty {
+                        RewardsReadyPill(count: claimable.count, coins: claimable.reduce(0) { $0 + $1.kind.reward }) {
+                            showDaily = true
+                        }
+                        .transition(.scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
+                    }
                 } else {
                     NeoPageTitle(kicker: Strings.chooseMode, title: pageTitle) { go(.home) }
                     .transition(.opacity)
@@ -221,7 +230,7 @@ struct MenuView: View {
                 NeoGarageChip()
             }
             CoinPill(coins: model.coins)
-            NeoIconButton(systemImage: "gift.fill", badge: Progression.pendingGiftDay != nil) { showDaily = true }
+            NeoIconButton(systemImage: "gift.fill", badge: Progression.pendingGiftDay != nil || !claimable.isEmpty) { showDaily = true }
             NeoIconButton(systemImage: "trophy.fill") { GameCenter.showLeaderboards() }
             NeoIconButton(systemImage: "info") { showAbout = true }
             SoundToggle()
@@ -543,7 +552,8 @@ struct LevelPicker: View {
                             LevelTile(index: index,
                                       unlocked: index < model.unlockedLevels,
                                       selected: model.selectedLevel == index,
-                                      stars: model.stars(for: index)) {
+                                      stars: model.stars(for: index),
+                                      precision: ParkPrecision.best(level: index)) {
                                 model.selectedLevel = index
                                 AudioManager.shared.play("click", volume: 0.6)
                             }
@@ -570,6 +580,8 @@ private struct LevelTile: View {
     let unlocked: Bool
     let selected: Bool
     let stars: Int
+    /// Best parking precision (0...100), shown as its grade in the corner.
+    var precision: Int? = nil
     let action: () -> Void
 
     var body: some View {
@@ -602,6 +614,17 @@ private struct LevelTile: View {
                 SlantedShape(skew: 2).fill(TierColor.of(level: index).opacity(unlocked ? 0.9 : 0.3))
                     .frame(width: 22, height: 3)
                     .offset(x: 6, y: -1)
+            }
+            .overlay(alignment: .topTrailing) {
+                if unlocked, let precision = precision {
+                    let grade = ParkPrecision.grade(for: precision)
+                    Text(grade.rawValue)
+                        .font(.race(10))
+                        .foregroundStyle(grade == .s ? Palette.ink : .white)
+                        .frame(width: 15, height: 15)
+                        .background(Circle().fill(grade == .s ? Palette.gold : Color.white.opacity(0.18)))
+                        .offset(x: 3, y: -4)
+                }
             }
             .shadow(color: selected ? Palette.gold.opacity(0.6) : .clear, radius: 8)
             .scaleEffect(selected ? 1.06 : 1)
@@ -1306,5 +1329,72 @@ final class SweepBarView: UIView {
         run.repeatCount = .infinity
         run.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         light.add(run, forKey: "run")
+    }
+}
+
+/// On the home screen while daily tasks are done but not collected: a gold pill with the gift,
+/// how many rewards wait and their coins, and a COLLECT tab; it springs in with a chime and
+/// breathes a glow so it is noticed, and opens the daily screen.
+struct RewardsReadyPill: View {
+    let count: Int
+    let coins: Int
+    let open: () -> Void
+    @State private var glow = false
+    @State private var shown = false
+
+    private var edgeColor: Color { Palette.gold.opacity(glow ? 0.95 : 0.45) }
+    private var glowColor: Color { Palette.gold.opacity(glow ? 0.55 : 0.15) }
+
+    var body: some View {
+        Button {
+            AudioManager.shared.play("click", volume: 0.6)
+            open()
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(Palette.gold.opacity(0.22)).frame(width: 30, height: 30)
+                    Image(systemName: "gift.fill")
+                        .font(.system(size: 14, weight: .black))
+                        .foregroundStyle(Palette.gold)
+                        .rotationEffect(.degrees(glow ? -8 : 8))
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(Strings.rewardsReady(count))
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    HStack(spacing: 3) {
+                        Image(systemName: "dollarsign.circle.fill").font(.system(size: 10, weight: .bold))
+                        Text("+\(coins)").font(.race(13))
+                    }
+                    .foregroundStyle(Palette.gold)
+                }
+                Text(Strings.collectTag)
+                    .font(.race(13))
+                    .foregroundStyle(Palette.ink)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(SlantedShape(skew: 6).fill(Palette.gold))
+            }
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .frame(height: 42)
+            .background(SlantedShape(skew: 8).fill(Neo.ink.opacity(0.82)))
+            .overlay(SlantedShape(skew: 8).strokeBorderCompat(edgeColor, lineWidth: 1.5))
+            .shadow(color: glowColor, radius: glow ? 14 : 6)
+            .scaleEffect(shown ? 1 : 0.7)
+            .opacity(shown ? 1 : 0)
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.6).delay(0.25)) { shown = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                AudioManager.shared.play("park", volume: 0.5)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { glow = true }
+            }
+        }
     }
 }

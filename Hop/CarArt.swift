@@ -201,6 +201,180 @@ enum CarArt {
         }
     }
 
+    // MARK: Parked ticket and stamp
+
+    /// The parking ticket the parked moment is built on: warm paper with rounded corners and a
+    /// soft shadow, a blue "P" sign block, a perforation with notches cut into both edges, and a
+    /// barcode along the foot. Text and stars are separate nodes over it.
+    private static var ticketCache: [String: SKTexture] = [:]
+
+    static func parkTicket(size: CGSize, perforationY: CGFloat) -> SKTexture {
+        let key = "\(size.width)x\(size.height)-\(perforationY)"
+        if let cached = ticketCache[key] { return cached }
+        let texture = drawParkTicket(size: size, perforationY: perforationY)
+        ticketCache[key] = texture
+        return texture
+    }
+
+    private static func drawParkTicket(size: CGSize, perforationY: CGFloat) -> SKTexture {
+        let pad: CGFloat = 16
+        return render(CGSize(width: size.width + pad * 2, height: size.height + pad * 2), scale: 2) { context, s in
+            let rect = CGRect(x: pad, y: pad, width: size.width, height: size.height)
+            let notch: CGFloat = 9
+            let cutY = rect.minY + perforationY
+            let paper = CGMutablePath()
+            paper.addRoundedRect(in: rect, cornerWidth: 12, cornerHeight: 12)
+            // Notches: cut out by drawing them clear afterwards
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: 8), blur: 18, color: UIColor.black.withAlphaComponent(0.45).cgColor)
+            context.addPath(paper)
+            context.setFillColor(UIColor(red: 0.97, green: 0.96, blue: 0.93, alpha: 1).cgColor)
+            context.fillPath()
+            context.restoreGState()
+            context.setBlendMode(.clear)
+            context.fillEllipse(in: CGRect(x: rect.minX - notch, y: cutY - notch, width: notch * 2, height: notch * 2))
+            context.fillEllipse(in: CGRect(x: rect.maxX - notch, y: cutY - notch, width: notch * 2, height: notch * 2))
+            context.setBlendMode(.normal)
+            // Faint paper grain
+            var seed: UInt64 = 0x51ED
+            for _ in 0..<900 {
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                let x = rect.minX + CGFloat((seed >> 33) % UInt64(max(1, rect.width)))
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                let y = rect.minY + CGFloat((seed >> 33) % UInt64(max(1, rect.height)))
+                context.setFillColor(UIColor(white: 0.55, alpha: 0.05).cgColor)
+                context.fill(CGRect(x: x, y: y, width: 1.2, height: 1.2))
+            }
+            // Perforation
+            context.setStrokeColor(UIColor(white: 0.55, alpha: 0.55).cgColor)
+            context.setLineWidth(1.4)
+            context.setLineDash(phase: 0, lengths: [4, 5])
+            context.move(to: CGPoint(x: rect.minX + notch + 6, y: cutY))
+            context.addLine(to: CGPoint(x: rect.maxX - notch - 6, y: cutY))
+            context.strokePath()
+            context.setLineDash(phase: 0, lengths: [])
+            // The "P" sign block
+            let sign = CGRect(x: rect.minX + 16, y: rect.minY + 16, width: 46, height: 46)
+            context.addPath(CGPath(roundedRect: sign, cornerWidth: 9, cornerHeight: 9, transform: nil))
+            context.setFillColor(UIColor(red: 0.1, green: 0.38, blue: 0.95, alpha: 1).cgColor)
+            context.fillPath()
+            context.addPath(CGPath(roundedRect: sign.insetBy(dx: 3, dy: 3), cornerWidth: 7, cornerHeight: 7, transform: nil))
+            context.setStrokeColor(UIColor.white.cgColor)
+            context.setLineWidth(1.6)
+            context.strokePath()
+            let pFont = UIFont.systemFont(ofSize: 32, weight: .black)
+            let pSize = ("P" as NSString).size(withAttributes: [.font: pFont])
+            ("P" as NSString).draw(at: CGPoint(x: sign.midX - pSize.width / 2, y: sign.midY - pSize.height / 2),
+                                   withAttributes: [.font: pFont, .foregroundColor: UIColor.white])
+            // Barcode along the foot, right side
+            var bx = rect.maxX - 112
+            var code: UInt64 = 0xC0FFEE
+            while bx < rect.maxX - 18 {
+                code = code &* 2862933555777941757 &+ 3037000493
+                let w = CGFloat(1 + (code >> 60) % 3)
+                context.setFillColor(UIColor(white: 0.12, alpha: 0.85).cgColor)
+                context.fill(CGRect(x: bx, y: rect.maxY - 30, width: w, height: 16))
+                bx += w + CGFloat(1 + (code >> 56) % 3)
+            }
+        }
+    }
+
+    private static var stampCache: [String: SKTexture] = [:]
+
+    /// A rubber stamp: `text` in heavy condensed capitals inside a double rounded frame, with a
+    /// check in front, in `color` ink that is worn in specks like a real stamp.
+    static func stamp(_ text: String, color: UIColor, check: Bool = true, fontSize: CGFloat = 30) -> SKTexture {
+        let key = "\(text)|\(fontSize)|\(check)|\(color)"
+        if let cached = stampCache[key] { return cached }
+        let font = raceFont(fontSize, weight: .black, italic: false)
+        let textSize = (text as NSString).size(withAttributes: [.font: font, .kern: 1.5])
+        let checkWidth: CGFloat = check ? fontSize * 0.9 : 0
+        let size = CGSize(width: textSize.width + checkWidth + 40, height: textSize.height + 22)
+        let texture = render(size, scale: 2) { context, s in
+            let frame = CGRect(origin: .zero, size: s).insetBy(dx: 3, dy: 3)
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(3.5)
+            context.addPath(CGPath(roundedRect: frame, cornerWidth: 8, cornerHeight: 8, transform: nil))
+            context.strokePath()
+            context.setLineWidth(1.4)
+            context.addPath(CGPath(roundedRect: frame.insetBy(dx: 5, dy: 5), cornerWidth: 5, cornerHeight: 5, transform: nil))
+            context.strokePath()
+            var x = frame.minX + 15
+            if check, let symbol = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: fontSize * 0.62, weight: .black))?
+                .withTintColor(color, renderingMode: .alwaysOriginal) {
+                symbol.draw(at: CGPoint(x: x, y: (s.height - symbol.size.height) / 2))
+                x += checkWidth
+            }
+            (text as NSString).draw(at: CGPoint(x: x, y: (s.height - textSize.height) / 2),
+                                    withAttributes: [.font: font, .foregroundColor: color, .kern: 1.5])
+            // Worn ink: specks where the stamp did not take
+            context.setBlendMode(.clear)
+            var seed: UInt64 = UInt64(truncatingIfNeeded: text.hashValue) | 1
+            for _ in 0..<Int(s.width * s.height / 55) {
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                let px = CGFloat((seed >> 33) % UInt64(max(1, s.width)))
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                let py = CGFloat((seed >> 33) % UInt64(max(1, s.height)))
+                let r = CGFloat((seed >> 20) % 3) * 0.6 + 0.6
+                context.fillEllipse(in: CGRect(x: px, y: py, width: r, height: r))
+            }
+            context.setBlendMode(.normal)
+        }
+        stampCache[key] = texture
+        return texture
+    }
+
+    /// The police warning's plate, in the style of the finish plate: a slanted dark plate with a
+    /// soft shadow and a faint top highlight, with the left block (where the light bar strobes)
+    /// cut a shade darker. Text and lights are separate nodes on top.
+    static func policePlate(size: CGSize, skew: CGFloat, block: CGFloat) -> SKTexture {
+        render(CGSize(width: size.width + 20, height: size.height + 20), scale: 2) { context, s in
+            let rect = CGRect(x: 10, y: 10, width: size.width, height: size.height)
+            func slanted(_ r: CGRect) -> CGPath {
+                let path = CGMutablePath()
+                path.move(to: CGPoint(x: r.minX + skew, y: r.minY))
+                path.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+                path.addLine(to: CGPoint(x: r.maxX - skew, y: r.maxY))
+                path.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+                path.closeSubpath()
+                return path
+            }
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: 4), blur: 10, color: UIColor.black.withAlphaComponent(0.55).cgColor)
+            context.addPath(slanted(rect))
+            context.setFillColor(UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 0.9).cgColor)
+            context.fillPath()
+            context.restoreGState()
+            context.saveGState()
+            context.addPath(slanted(rect))
+            context.clip()
+            if let shine = gradient([UIColor.white.withAlphaComponent(0.09), UIColor.white.withAlphaComponent(0)]) {
+                context.drawLinearGradient(shine, start: CGPoint(x: 0, y: rect.minY), end: CGPoint(x: 0, y: rect.midY), options: [])
+            }
+            context.setFillColor(UIColor.black.withAlphaComponent(0.35).cgColor)
+            context.fill(CGRect(x: rect.minX, y: rect.minY, width: block, height: rect.height))
+            context.restoreGState()
+        }
+    }
+
+    /// One half of the police light bar for the warning's left block: a slanted strip glowing in
+    /// `color` (the red and the blue strips strobe in turn).
+    static func policeStrip(size: CGSize, skew: CGFloat, color: UIColor) -> SKTexture {
+        render(size, scale: 2) { context, s in
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: skew, y: 0))
+            path.addLine(to: CGPoint(x: s.width, y: 0))
+            path.addLine(to: CGPoint(x: s.width - skew, y: s.height))
+            path.addLine(to: CGPoint(x: 0, y: s.height))
+            path.closeSubpath()
+            context.addPath(path)
+            context.clip()
+            if let glow = gradient([color.withAlphaComponent(0.95), color.withAlphaComponent(0.55)]) {
+                context.drawLinearGradient(glow, start: CGPoint(x: 0, y: 0), end: CGPoint(x: s.width, y: 0), options: [])
+            }
+        }
+    }
+
     /// Lower-third result plate for the finish moment, in the style of racing games: a slanted
     /// dark plate with an accent edge, a small kicker, a big white title, a stats line and a
     /// position block on the right. Plain text on a solid plate so it reads over any scene.

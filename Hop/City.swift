@@ -458,8 +458,9 @@ extension Levels {
         // Every round shows a different sky: races start at night, city rounds in the rain
         let weather = Weather(rawValue: (round + (race ? 1 : 2)) % 4) ?? .day
 
-        let forcedDay = ProcessInfo.processInfo.arguments.contains("-dayweather")
-        return ArcadeLayout(alleyBlocks: Set(blocks.prefix(3)), rng: rng, weather: forcedDay ? .day : weather)
+        let arguments = ProcessInfo.processInfo.arguments
+        let forced: Weather? = arguments.contains("-dayweather") ? .day : (arguments.contains("-nightweather") ? .night : nil)
+        return ArcadeLayout(alleyBlocks: Set(blocks.prefix(3)), rng: rng, weather: forced ?? weather)
     }
 
     /// Ramps in the alleys, construction cones, barrels and bins, and the weather.
@@ -646,8 +647,10 @@ final class Traffic {
     /// A player crashed into bot `index`: it is shoved and spun, then drives on.
     func hit(_ index: Int, shove: CGVector, spin: CGFloat) {
         guard bots.indices.contains(index) else { return }
+        // It keeps its own momentum plus the blow, then the tyres scrub the slide off
+        let bot = bots[index]
         bots[index].stunned = 1.1
-        bots[index].shove = shove
+        bots[index].shove = CGVector(dx: cos(bot.heading) * bot.speed + shove.dx, dy: sin(bot.heading) * bot.speed + shove.dy)
         bots[index].spin = spin
         bots[index].speed = 0
     }
@@ -681,7 +684,7 @@ final class Traffic {
                 bot.position.x += bot.shove.dx * dt
                 bot.position.y += bot.shove.dy * dt
                 bot.heading += bot.spin * dt
-                let fade = exp(-dt * 3.2)
+                let fade = exp(-dt * 4.2)
                 bot.shove = CGVector(dx: bot.shove.dx * fade, dy: bot.shove.dy * fade)
                 bot.spin *= fade
                 bot.speed = 0
