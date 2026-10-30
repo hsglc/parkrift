@@ -172,12 +172,12 @@ struct ResultsOverlay: View {
                     .frame(width: 18, height: 18)
                     .background(Circle().fill(accent))
                 Text(info.levelTitle)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ui(13, .semibold))
                     .foregroundStyle(.white.opacity(0.72))
                     .lineLimit(1)
                 if info.newBest {
                     Label(Strings.newBest, systemImage: "bolt.fill")
-                        .font(.system(size: 11, weight: .heavy))
+                        .font(.ui(11, .heavy))
                         .foregroundStyle(Palette.ink)
                         .padding(.horizontal, 8)
                         .frame(height: 20)
@@ -193,7 +193,7 @@ struct ResultsOverlay: View {
                 .padding(.horizontal, 24)
             if let roundLine = info.roundLine {
                 Text(roundLine)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ui(13, .semibold))
                     .foregroundStyle(.white.opacity(0.75))
             }
         }
@@ -281,7 +281,7 @@ struct ResultsOverlay: View {
                     Text(Strings.gapLabel).frame(width: 52, alignment: .trailing)
                     Image(systemName: "car.side.rear.and.collision.and.car.side.front").frame(width: 38, alignment: .trailing)
                 }
-                .font(.system(size: 10, weight: .bold))
+                .font(.ui(10, .bold))
                 .foregroundStyle(.white.opacity(0.45))
                 .padding(.trailing, 10)
                 ForEach(Array(ranked.enumerated()), id: \.element.id) { index, entry in
@@ -317,7 +317,7 @@ struct ResultsOverlay: View {
     private func figure(_ label: String, value: String, unit: String, big: Bool, tint: Color = .white) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label)
-                .font(.system(size: 11, weight: .bold))
+                .font(.ui(11, .bold))
                 .foregroundStyle(.white.opacity(0.5))
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value)
@@ -363,7 +363,7 @@ struct ResultsOverlay: View {
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(entry.isWinner ? Palette.gold : Palette.player(entry.slot)))
             Text(entry.name)
-                .font(.system(size: 15, weight: .heavy))
+                .font(.ui(15, .heavy))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .padding(.leading, 10)
@@ -375,19 +375,19 @@ struct ResultsOverlay: View {
             }
             Spacer(minLength: 6)
             Text(finished ? String(format: "%.1f", entry.time ?? 0) : Strings.didNotFinish)
-                .font(finished ? .race(21) : .system(size: 11, weight: .bold))
+                .font(finished ? .race(21) : .ui(11, .bold))
                 .monospacedDigit()
                 .foregroundStyle(finished ? Color.white : Color.white.opacity(0.5))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .frame(width: 64, alignment: .trailing)
             Text(gapText(entry, leader: leader))
-                .font(.system(size: 13, weight: .bold))
+                .font(.ui(13, .bold))
                 .monospacedDigit()
                 .foregroundStyle(Color(red: 1, green: 0.72, blue: 0.3))
                 .frame(width: 52, alignment: .trailing)
             Text("\(entry.hits)")
-                .font(.system(size: 15, weight: .heavy))
+                .font(.ui(15, .heavy))
                 .monospacedDigit()
                 .foregroundStyle(entry.hits == 0 ? Color(red: 0.45, green: 0.95, blue: 0.6) : Color.white.opacity(0.8))
                 .frame(width: 38, alignment: .trailing)
@@ -426,7 +426,7 @@ struct ResultsOverlay: View {
                                 .monospacedDigit()
                                 .foregroundStyle(Palette.gold.opacity(0.9))
                         }
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.ui(12, .semibold))
                         .foregroundStyle(.white.opacity(0.65))
                     }
                 }
@@ -441,7 +441,7 @@ struct ResultsOverlay: View {
         HStack(spacing: 5) {
             Image(systemName: "gift.fill").font(.system(size: 10, weight: .black))
             Text("\(Strings.taskReadyTag) +\(coins)")
-                .font(.system(size: 10, weight: .heavy))
+                .font(.ui(10, .heavy))
                 .lineLimit(1)
         }
         .foregroundStyle(Palette.ink)
@@ -459,7 +459,7 @@ struct ResultsOverlay: View {
         case .autoNext:
             VStack(spacing: 7) {
                 Text(Strings.nextLevelSoon)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.ui(13, .bold))
                     .foregroundStyle(.white.opacity(0.75))
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
@@ -544,7 +544,7 @@ struct ResultButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let primary = fill != nil
         return configuration.label
-            .font(primary ? .race(20) : .system(size: 15, weight: .bold))
+            .font(primary ? .race(20) : .ui(15, .bold))
             .labelStyle(ResultLabelStyle())
             .foregroundStyle(primary ? Palette.ink : Color.white)
             .lineLimit(1)

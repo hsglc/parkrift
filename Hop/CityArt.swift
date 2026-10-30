@@ -481,7 +481,7 @@ enum CityArt {
         context.setStrokeColor(UIColor.white.cgColor)
         context.setLineWidth(3)
         context.stroke(CGRect(x: 4, y: 4, width: 56, height: 56))
-        let font = UIFont.systemFont(ofSize: 44, weight: .black)
+        let font = UIFont.ui(44, .black)
         ("P" as NSString).draw(at: CGPoint(x: 18, y: 4), withAttributes: [.font: font, .foregroundColor: UIColor.white])
     }
 
@@ -493,7 +493,7 @@ enum CityArt {
         context.fillEllipse(in: CGRect(x: 10, y: 8, width: 44, height: 44))
         context.setFillColor(UIColor(white: 0.08, alpha: 1).cgColor)
         context.fill(CGRect(x: 8, y: 62, width: 48, height: 58))
-        let font = UIFont.monospacedDigitSystemFont(ofSize: 12, weight: .bold)
+        let font = UIFont.ui(12, .bold).tabular
         for (k, price) in ["44.9", "46.2", "47.8"].enumerated() {
             (price as NSString).draw(at: CGPoint(x: 18, y: 66 + CGFloat(k) * 17),
                                      withAttributes: [.font: font, .foregroundColor: UIColor(red: 1.0, green: 0.55, blue: 0.1, alpha: 1)])
@@ -524,7 +524,7 @@ enum CityArt {
         context.setFillColor(UIColor(white: 1, alpha: 0.95).cgColor)
         context.fill(CGRect(x: 0, y: 6, width: s.width, height: 4))
         context.fill(CGRect(x: 0, y: s.height - 10, width: s.width, height: 4))
-        let font = UIFont.systemFont(ofSize: 20, weight: .black)
+        let font = UIFont.ui(20, .black)
         ("N2O" as NSString).draw(at: CGPoint(x: 10, y: 20), withAttributes: [.font: font, .foregroundColor: UIColor.white])
     }
 

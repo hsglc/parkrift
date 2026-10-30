@@ -95,7 +95,7 @@ struct DailyView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 12, weight: .bold))
                     Text(Strings.resetsIn(Self.untilMidnight(from: context.date)))
-                        .font(.system(size: 12, weight: .bold)).monospacedDigit()
+                        .font(.ui(12, .bold)).monospacedDigit()
                 }
                 .foregroundStyle(.white.opacity(0.75))
                 .padding(.horizontal, 12).frame(height: 32)
@@ -107,7 +107,7 @@ struct DailyView: View {
                 Button { collectAll(waiting) } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "sparkles").font(.system(size: 12, weight: .black))
-                        Text(Strings.collectAll).font(.system(size: 13, weight: .heavy))
+                        Text(Strings.collectAll).font(.ui(13, .heavy))
                         Text("+\(waiting.reduce(0) { $0 + $1.kind.reward })").font(.race(14))
                     }
                     .foregroundStyle(Palette.ink)
@@ -145,7 +145,7 @@ struct DailyView: View {
                     Image(systemName: "flame.fill").foregroundStyle(Palette.goldDeep)
                     Text(Strings.streakDays(pending.map { $0 - 1 } ?? collected))
                 }
-                .font(.system(size: 12, weight: .heavy))
+                .font(.ui(12, .heavy))
                 .foregroundStyle(.white.opacity(0.85))
                 .padding(.horizontal, 10).frame(height: 24)
                 .background(Capsule().fill(Palette.goldDeep.opacity(0.16)))
@@ -174,7 +174,7 @@ struct DailyView: View {
                         .font(.race(32)).foregroundStyle(.white)
                         .contentTransition(.numericText())
                     Text(Strings.dailyGiftHint)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ui(10, .semibold))
                         .foregroundStyle(.white.opacity(0.5))
                         .lineLimit(3)
                         .minimumScaleFactor(0.75)
@@ -255,7 +255,7 @@ struct DailyView: View {
                     }
                     .frame(height: 34)
                     Text("\(Progression.streakRewards[day - 1])")
-                        .font(.system(size: 9.5, weight: .heavy)).monospacedDigit()
+                        .font(.ui(9.5, .heavy)).monospacedDigit()
                         .foregroundStyle(today ? Palette.gold : .white.opacity(done ? 0.4 : 0.6))
                         .fixedSize()
                 }
@@ -275,7 +275,7 @@ struct DailyView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Strings.dailyTasks.uppercased()).font(.kicker(10)).tracking(1.6).foregroundStyle(Neo.cyan)
                     Text(Strings.dailyTasksHint)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ui(10, .semibold))
                         .foregroundStyle(.white.opacity(0.45))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -287,7 +287,7 @@ struct DailyView: View {
                         .trim(from: 0, to: CGFloat(doneCount) / CGFloat(max(1, tasks.count)))
                         .stroke(green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                    Text("\(doneCount)/\(tasks.count)").font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                    Text("\(doneCount)/\(tasks.count)").font(.ui(10, .heavy)).monospacedDigit()
                         .foregroundStyle(.white)
                 }
                 .frame(width: 36, height: 36)
@@ -328,7 +328,7 @@ struct DailyView: View {
                     .font(.system(size: 12, weight: .black))
                     .frame(width: 18)
                 Text(m.short)
-                    .font(.system(size: 13, weight: .heavy))
+                    .font(.ui(13, .heavy))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .layoutPriority(1)
@@ -347,7 +347,7 @@ struct DailyView: View {
                         .foregroundStyle(isOn ? Neo.ink : green)
                 } else {
                     Text("\(done)/\(modeTasks.count)")
-                        .font(.system(size: 11, weight: .heavy)).monospacedDigit()
+                        .font(.ui(11, .heavy)).monospacedDigit()
                         .opacity(0.75)
                 }
             }
@@ -378,13 +378,13 @@ struct DailyView: View {
             .frame(width: 42, height: 42)
             VStack(alignment: .leading, spacing: 6) {
                 Text(task.kind.title)
-                    .font(.system(size: 13.5, weight: .bold))
+                    .font(.ui(13.5, .bold))
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
                     Text(task.claimable ? Strings.rewardWaiting : (task.done ? Strings.taskDone : "\(min(task.progress, task.kind.target)) / \(task.kind.target)"))
-                        .font(.system(size: 11, weight: .heavy)).monospacedDigit()
+                        .font(.ui(11, .heavy)).monospacedDigit()
                         .foregroundStyle(task.claimable ? Palette.gold : (task.done ? green : .white.opacity(0.55)))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)

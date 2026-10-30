@@ -54,7 +54,7 @@ struct UpgradeView: View {
                 }
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: choice.rim)
                 Text(Strings.upgradeHint)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.ui(11, .semibold))
                     .foregroundStyle(.white.opacity(0.5))
             }
             .padding(20)
@@ -81,7 +81,7 @@ struct UpgradeView: View {
                     .foregroundStyle(.white)
             }
             Text(info)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.ui(11, .semibold))
                 .foregroundStyle(.white.opacity(0.6))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)

@@ -264,7 +264,7 @@ enum VenueDecor {
         format.scale = 1
         format.opaque = false
         return UIGraphicsImageRenderer(size: size, format: format).image { context in
-            let font = UIFont(name: "AvenirNext-Heavy", size: 150) ?? UIFont.systemFont(ofSize: 150, weight: .heavy)
+            let font = UIFont(name: "Barlow-ExtraBold", size: 150) ?? UIFont.ui(150, .heavy)
             let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor(red: 1, green: 0.97, blue: 0.9, alpha: 1)]
             let textSize = (text as NSString).size(withAttributes: attributes)
             let origin = CGPoint(x: (size.width - textSize.width) / 2, y: (size.height - textSize.height) / 2)

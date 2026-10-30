@@ -211,7 +211,7 @@ private struct ModeArtTile: View {
                             .background(SlantedShape(skew: 7).fill(accent))
                     }
                     Text(detail)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.ui(11, .semibold))
                         .foregroundStyle(.white.opacity(0.65))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -403,7 +403,7 @@ struct ArtActionTile: View {
                     .minimumScaleFactor(0.6)
                     .shadow(color: .black.opacity(0.5), radius: 8)
                 Text(detail)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ui(12, .semibold))
                     .foregroundStyle(.white.opacity(0.72))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -531,7 +531,7 @@ struct LevelDetailPanel: View {
                             HStack(spacing: 6) {
                                 Image(systemName: rule.icon).font(.system(size: 10, weight: .black)).foregroundStyle(tier)
                                     .frame(width: 14)
-                                Text(rule.text).font(.system(size: 11, weight: .bold)).foregroundStyle(.white.opacity(0.85))
+                                Text(rule.text).font(.ui(11, .bold)).foregroundStyle(.white.opacity(0.85))
                                     .lineLimit(1).minimumScaleFactor(0.7)
                             }
                         }

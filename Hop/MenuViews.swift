@@ -53,8 +53,8 @@ enum Calm {
     static let sky = Color(red: 0.50, green: 0.75, blue: 1.0)
     static let rose = Color(red: 1.0, green: 0.62, blue: 0.72)
 
-    static func title(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold, design: .rounded) }
-    static func body(_ size: CGFloat) -> Font { .system(size: size, weight: .medium, design: .rounded) }
+    static func title(_ size: CGFloat) -> Font { .ui(size, .semibold) }
+    static func body(_ size: CGFloat) -> Font { .ui(size, .medium) }
 }
 
 /// Frosted glass card used across the menu.
@@ -311,11 +311,11 @@ struct MenuView: View {
                 ProgressView().tint(.white)
                 Text(model.matchmaking ? Strings.searching : Strings.connecting)
             }
-            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .font(.ui(13, .bold))
             .foregroundStyle(.white.opacity(0.8))
         } else if let error = model.errorText {
             Label(error, systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(.ui(13, .bold))
                 .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.55))
         }
     }
@@ -489,7 +489,7 @@ private struct JoinPanel: View {
                         let letters = Array(code)
                         let active = focused && index == min(letters.count, 3)
                         Text(index < letters.count ? String(letters[index]) : "")
-                            .font(.system(size: 26, weight: .black, design: .rounded))
+                            .font(.ui(26, .black))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 52)
                             .background(SlantedShape(skew: 8).fill(Neo.ink.opacity(0.8)))
@@ -518,7 +518,7 @@ private struct JoinPanel: View {
                 focused = false
                 withAnimation(.spring(response: 0.3)) { showJoin = false }
             }
-            .font(.system(size: 14, weight: .bold, design: .rounded))
+            .font(.ui(14, .bold))
             .foregroundStyle(.white.opacity(0.65))
         }
         .onAppear { focused = true }
@@ -542,7 +542,7 @@ struct LevelPicker: View {
                     .monospacedDigit()
                     .foregroundStyle(.white)
             }
-            .font(.system(size: 12, weight: .black))
+            .font(.ui(12, .black))
 
             let columns = Array(repeating: GridItem(.fixed(54), spacing: 8), count: 5)
             ScrollViewReader { proxy in
@@ -702,7 +702,7 @@ struct AboutView: View {
                 }
                 Section {
                     Text(Strings.aboutText)
-                        .font(.system(size: 14))
+                        .font(.ui(14, .regular))
                     Link(destination: URL(string: AboutView.site + "/privacy")!) {
                         Label(Strings.privacyPolicy, systemImage: "hand.raised.fill")
                     }
@@ -714,9 +714,9 @@ struct AboutView: View {
                     ForEach(credits) { credit in
                         Link(destination: URL(string: credit.link)!) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(credit.what).font(.system(size: 15, weight: .semibold))
+                                Text(credit.what).font(.ui(15, .semibold))
                                 Text("\(credit.author) · \(credit.license)")
-                                    .font(.system(size: 12))
+                                    .font(.ui(12, .regular))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -724,7 +724,7 @@ struct AboutView: View {
                     Text(Strings.pick("Modeller oyun için değiştirildi (küçültüldü, logolar kaldırıldı). Lisans: creativecommons.org/licenses/by/4.0",
                                       "Models were modified for the game (simplified, logos removed). License: creativecommons.org/licenses/by/4.0",
                                       "Los modelos se adaptaron al juego (simplificados, sin logotipos). Licencia: creativecommons.org/licenses/by/4.0"))
-                        .font(.system(size: 11))
+                        .font(.ui(11, .regular))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -751,13 +751,13 @@ struct LobbyView: View {
                 // Room code
                 VStack(spacing: 12) {
                     Text(Strings.roomCode.uppercased())
-                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .font(.ui(13, .black))
                         .foregroundStyle(.white.opacity(0.6))
                         .tracking(1.5)
                     HStack(spacing: 8) {
                         ForEach(Array(model.roomCode.enumerated()), id: \.offset) { _, letter in
                             Text(String(letter))
-                                .font(.system(size: 40, weight: .black, design: .rounded))
+                                .font(.ui(40, .black))
                                 .foregroundStyle(.white)
                                 .frame(width: 58, height: 70)
                                 .background(
@@ -774,16 +774,16 @@ struct LobbyView: View {
                             ProgressView().tint(.white)
                             Text(Strings.searching)
                         }
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.ui(13, .bold))
                         .foregroundStyle(.white.opacity(0.8))
                     } else if model.isHost {
                         Text(Strings.shareCode)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(.ui(13, .bold))
                             .foregroundStyle(.white.opacity(0.65))
                         ShareLink(item: "Parkrift – \(Strings.roomCode): \(model.roomCode)") {
                             Label(Strings.shareCode, systemImage: "square.and.arrow.up")
                                 .labelStyle(.iconOnly)
-                                .font(.system(size: 15, weight: .black))
+                                .font(.ui(15, .black))
                                 .foregroundStyle(.white)
                                 .frame(width: 40, height: 40)
                                 .background(Circle().fill(Color.white.opacity(0.12)))
@@ -796,7 +796,7 @@ struct LobbyView: View {
                 // Players and start
                 VStack(alignment: .leading, spacing: 12) {
                     Text(Strings.players.uppercased())
-                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .font(.ui(13, .black))
                         .foregroundStyle(.white.opacity(0.6))
                         .tracking(1.5)
                     PlayerChip(name: Strings.you, slot: model.mySlot, present: true, car: model.carChoice.spec.name)
@@ -826,7 +826,7 @@ struct LobbyView: View {
                                  enabled: model.isHost) { model.setOnlineMode(.park) }
                     }
                     Text(model.onlineMode == .race ? Strings.onlineRaceInfo : Strings.onlineParkInfo)
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(.ui(11, .bold))
                         .foregroundStyle(.white.opacity(0.6))
                         .fixedSize(horizontal: false, vertical: true)
                     if model.isHost {
@@ -841,7 +841,7 @@ struct LobbyView: View {
                             Text(Strings.waitingHost)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.ui(13, .bold))
                         .foregroundStyle(.white.opacity(0.75))
                     }
                 }
@@ -925,7 +925,7 @@ private struct ModeChip: View {
                 Image(systemName: icon)
                     .font(.system(size: 15, weight: .black))
                 Text(title)
-                    .font(.system(size: 11, weight: .black, design: .rounded))
+                    .font(.ui(11, .black))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
@@ -1030,7 +1030,7 @@ struct LoadingView: View {
                                 .font(.system(size: 13, weight: .black))
                                 .foregroundStyle(accent)
                             Text(tip)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.ui(12, .semibold))
                                 .foregroundStyle(.white.opacity(0.8))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1249,7 +1249,7 @@ struct CurtainView: View {
                                 .minimumScaleFactor(0.6)
                             if !subtitle.isEmpty {
                                 Text(subtitle)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.ui(13, .semibold))
                                     .foregroundStyle(.white.opacity(0.6))
                             }
                         }
@@ -1263,7 +1263,7 @@ struct CurtainView: View {
                             onCancel()
                         } label: {
                             Label(Strings.cancelAction, systemImage: "xmark")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.ui(14, .bold))
                                 .foregroundStyle(.white.opacity(0.85))
                                 .padding(.horizontal, 16)
                                 .frame(height: 38)
@@ -1360,7 +1360,7 @@ struct RewardsReadyPill: View {
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     Text(Strings.rewardsReady(count))
-                        .font(.system(size: 12, weight: .heavy))
+                        .font(.ui(12, .heavy))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     HStack(spacing: 3) {
