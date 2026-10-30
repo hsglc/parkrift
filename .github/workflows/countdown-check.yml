@@ -150,7 +150,7 @@ jobs:
 
       - name: Online check (two simulators in one room)
         if: ${{ inputs.net != 'false' }}
-        timeout-minutes: 12
+        timeout-minutes: 16
         run: |
           mkdir -p shots
           read A B <<< $(xcrun simctl list devices available -j | python3 -c '
@@ -166,7 +166,8 @@ jobs:
           for D in $A $B; do
             echo "boot $D"
             xcrun simctl boot "$D" 2>/dev/null || true
-            timeout 240 xcrun simctl bootstatus "$D" -b > /dev/null || echo "bootstatus timed out"
+            # (macOS has no `timeout`: perl's alarm bounds the wait)
+            perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$D" -b > /dev/null || echo "bootstatus timed out"
             xcrun simctl install "$D" build/Build/Products/Release-iphonesimulator/Hop.app
             xcrun simctl terminate "$D" com.huseyingulcu.hop 2>/dev/null || true
             echo "ready $D"
@@ -178,8 +179,8 @@ jobs:
           xcrun simctl launch --console-pty "$B" com.huseyingulcu.hop -benchmark -netjoin $CODE -dayweather -AppleLanguages "(tr)" > shots/net-guest.log 2>&1 &
           for t in 30 45 60 75; do
             sleep 15
-            xcrun simctl io "$A" screenshot "shots/net-host-$t.png" || true
-            xcrun simctl io "$B" screenshot "shots/net-guest-$t.png" || true
+            perl -e 'alarm 20; exec @ARGV' xcrun simctl io "$A" screenshot "shots/net-host-$t.png" || true
+            perl -e 'alarm 20; exec @ARGV' xcrun simctl io "$B" screenshot "shots/net-guest-$t.png" || true
           done
           # The apps hold the console: close them so the step ends
           xcrun simctl terminate "$A" com.huseyingulcu.hop 2>/dev/null || true
@@ -188,7 +189,7 @@ jobs:
           kill %1 %2 2>/dev/null || true
           echo "--- host"; grep -a "PPNET" shots/net-host.log | head -40
           echo "--- guest"; grep -a "PPNET" shots/net-guest.log | head -40
-          grep -a "PPNET hit" shots/net-*.log | while read -r line; do echo "::notice::$line"; done || true
+          grep -a "PPNET hit\|PPNET fast\|path=" shots/net-*.log | while read -r line; do echo "::notice::$line"; done || true
           cp ~/Library/Logs/DiagnosticReports/Hop* shots/ 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
