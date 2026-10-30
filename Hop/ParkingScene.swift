@@ -1,13 +1,3 @@
-        policeReason = reason
-        // Drops in from just above with a slight overshoot
-        policeBanner.removeAllActions()
-        let home = CGPoint(x: size.width / 2 + 40, y: hudTop - 52)
-        policeBanner.position = CGPoint(x: home.x, y: home.y + 16)
-        policeBanner.alpha = 0
-        policeBanner.setScale(1)
-        let drop = SKAction.move(to: home, duration: 0.28)
-        drop.timingMode = .easeOut
-        policeBanner.run(.group([drop, .fadeIn(withDuration: 0.18)]))
 import SpriteKit
 import SceneKit
 import UIKit
@@ -3884,10 +3874,15 @@ final class ParkingScene: SKScene {
         policeWarningShown = true
         placeStatus()
         policeReason = reason
+        // Drops in from just above with a slight overshoot
         policeBanner.removeAllActions()
-        policeBanner.alpha = 1
-        policeBanner.setScale(0.7)
-        policeBanner.run(.sequence([.scale(to: 1.08, duration: 0.14), .scale(to: 1.0, duration: 0.1)]))
+        let home = CGPoint(x: size.width / 2 + 40, y: hudTop - 52)
+        policeBanner.position = CGPoint(x: home.x, y: home.y + 16)
+        policeBanner.alpha = 0
+        policeBanner.setScale(1)
+        let drop = SKAction.move(to: home, duration: 0.28)
+        drop.timingMode = .easeOut
+        policeBanner.run(.group([drop, .fadeIn(withDuration: 0.18)]))
         audio.play("beep", volume: 0.6)
     }
 
