@@ -157,7 +157,6 @@ struct ResultsOverlay: View {
                     Rectangle().frame(height: printed ? 1200 : 0)
                 }
                 .offset(y: printed ? 6 : -10)
-                .overlay(alignment: .center) { stamp }
             // The slot it comes out of
             UnevenRoundedRectangle(bottomLeadingRadius: 10, bottomTrailingRadius: 10)
                 .fill(Color(red: 0.05, green: 0.055, blue: 0.065))
@@ -167,7 +166,7 @@ struct ResultsOverlay: View {
                 .frame(width: 300, height: 14)
                 .shadow(color: .black.opacity(0.5), radius: 6, y: 3)
         }
-        .frame(maxHeight: maxHeight, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private let ink = Color(red: 0.12, green: 0.12, blue: 0.13)
@@ -201,6 +200,10 @@ struct ResultsOverlay: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 3)
             }
+            // A clear band where the stamp comes down (it never covers the printed lines)
+            stamp
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
             dashes
             lines
             if hasReward, let reward = info.reward {
@@ -337,11 +340,10 @@ struct ResultsOverlay: View {
             .padding(.vertical, 1)
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(stampInk, lineWidth: 3))
             .frame(maxWidth: 220)
-            .opacity(stamped ? 0.88 : 0)
+            .opacity(stamped ? 0.9 : 0)
             .scaleEffect(stamped ? 1 : 1.8)
-            .rotationEffect(.degrees(-13))
+            .rotationEffect(.degrees(-6))
             .blendMode(.multiply)
-            .offset(x: 6, y: -18)
     }
 
     private var stampInk: Color {
@@ -480,7 +482,7 @@ struct KeyButtonStyle: ButtonStyle {
     var primary: Color? = nil
 
     func makeBody(configuration: Configuration) -> some View {
-        let fill = primary ?? Color(red: 0.09, green: 0.1, blue: 0.12)
+        let fill = primary ?? Color(red: 0.15, green: 0.16, blue: 0.19)
         let lip = primary.map { $0.opacity(0.55) } ?? Color.black
         let pressed = configuration.isPressed
         return configuration.label
