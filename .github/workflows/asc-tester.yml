@@ -1,0 +1,36 @@
+name: TestFlight tester
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: Tester email
+        required: true
+      first:
+        description: First name
+        default: ""
+      last:
+        description: Last name
+        default: ""
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID || '668Y8934S8' }}
+      ASC_ISSUER_ID: 1e043955-17da-4831-838a-b4e2d593d0b5
+      BUNDLE_ID: com.huseyingulcu.hop
+      EMAIL: ${{ inputs.email }}
+      FIRST_NAME: ${{ inputs.first }}
+      LAST_NAME: ${{ inputs.last }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/key.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/key.p8" >> "$GITHUB_ENV"
+      - run: pip install pyjwt cryptography requests
+      - run: python3 tools/asc_tester.py
