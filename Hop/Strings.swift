@@ -184,6 +184,7 @@ enum Strings {
     static var parkTicket: String { t("Otopark fişi", "Parking ticket", "Ticket de aparcamiento") }
     // Santim Ölçer (parking precision)
     static var precision: String { t("Hassasiyet", "Precision", "Precisión") }
+    static func percent(_ n: Int) -> String { t("%\(n)", "\(n)%", "\(n) %") }
     static var precisionCheck: String { t("SANTİM ÖLÇER", "PRECISION CHECK", "MEDIDOR DE PRECISIÓN") }
     static var gapLeft: String { t("SOL", "LEFT", "IZQ") }
     static var gapRight: String { t("SAĞ", "RIGHT", "DER") }

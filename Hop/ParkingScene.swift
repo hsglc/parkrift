@@ -549,7 +549,7 @@ final class ParkingScene: SKScene {
         // The parked ticket and its stamp are drawn now, not on the frame the car parks
         _ = CarArt.parkTicket(size: CGSize(width: 300, height: 196), perforationY: 140)
         _ = CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 26)
+                         color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 22)
 
         let vignette = SKSpriteNode(texture: CarArt.vignette(size: size))
         vignette.size = size
@@ -4752,10 +4752,14 @@ final class ParkingScene: SKScene {
         kicker.run(.fadeIn(withDuration: 0.2))
 
         // The bay outline lights up
-        let corners = [bay(-halfLength, -halfWidth), bay(halfLength, -halfWidth), bay(halfLength, halfWidth), bay(-halfLength, halfWidth)].map(screen)
-        let outline = CGMutablePath()
-        outline.addLines(between: corners + [corners[0]])
-        let bayNode = SKShapeNode(path: outline)
+        let bayCorners = [bay(-halfLength, -halfWidth), bay(halfLength, -halfWidth), bay(halfLength, halfWidth), bay(-halfLength, halfWidth)]
+        func outlinePath() -> CGPath {
+            let corners = bayCorners.map(screen)
+            let path = CGMutablePath()
+            path.addLines(between: corners + [corners[0]])
+            return path
+        }
+        let bayNode = SKShapeNode(path: outlinePath())
         bayNode.strokeColor = cyan
         bayNode.lineWidth = 2.5
         bayNode.blendMode = .add
@@ -4781,6 +4785,8 @@ final class ParkingScene: SKScene {
         ]))
         audio.play("whoosh", volume: 0.4)
 
+        // Everything pinned to the road is laid out again every frame
+        var followers: [(CGFloat) -> Void] = [{ _ in bayNode.path = outlinePath() }]
         // Measuring lines: from each side of the car to its bay line, with the gap
         let carU = CGVector(dx: cos(heading), dy: sin(heading))
         let carV = CGVector(dx: -sin(heading), dy: cos(heading))
@@ -4790,25 +4796,28 @@ final class ParkingScene: SKScene {
         for (index, side) in sides.enumerated() {
             let from = CGPoint(x: carPosition.x + carV.dx * carHalfWidth * side.0, y: carPosition.y + carV.dy * carHalfWidth * side.0)
             let to = bay(carAlong, halfWidth * side.0)
-            let a = screen(from), b = screen(to)
             let line = SKShapeNode()
             line.strokeColor = cyan
             line.lineWidth = 2
             line.blendMode = .add
             node.addChild(line)
             let at = 0.7 + Double(index) * 0.22
-            line.run(.sequence([.wait(forDuration: at), .customAction(withDuration: 0.18) { node, t in
-                let k = min(1, t / 0.18)
+            let tag = measureTag(side.2, "\(max(0, side.1)) cm", color: cyan)
+            // Drawn out from the car to the line, then kept on it every frame (the camera may
+            // still be settling); the tag sits past the line's end so it never covers the car
+            let drawStart = at
+            func place(_ elapsed: CGFloat) {
+                let a = screen(from), b = screen(to)
+                let k = max(0, min(1, (Double(elapsed) - drawStart) / 0.18))
                 let path = CGMutablePath()
                 path.move(to: a)
-                path.addLine(to: CGPoint(x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k))
-                (node as? SKShapeNode)?.path = path
-            }]))
-            let tag = measureTag(side.2, "\(max(0, side.1)) cm", color: cyan)
-            // Pushed out past the line's end so it never covers the car
-            let out = CGVector(dx: b.x - a.x, dy: b.y - a.y)
-            let length = max(1, hypot(out.dx, out.dy))
-            tag.position = CGPoint(x: b.x + out.dx / length * 34, y: b.y + out.dy / length * 18 + 4)
+                path.addLine(to: CGPoint(x: a.x + (b.x - a.x) * CGFloat(k), y: a.y + (b.y - a.y) * CGFloat(k)))
+                line.path = path
+                let out = CGVector(dx: b.x - a.x, dy: b.y - a.y)
+                let length = max(1, hypot(out.dx, out.dy))
+                tag.position = CGPoint(x: b.x + out.dx / length * 34, y: b.y + out.dy / length * 18 + 4)
+            }
+            followers.append(place)
             tag.alpha = 0
             tag.setScale(0.6)
             node.addChild(tag)
@@ -4819,9 +4828,12 @@ final class ParkingScene: SKScene {
             }
         }
         // The angle at the nose
-        let nose = screen(CGPoint(x: carPosition.x + carU.dx * Levels.carSize.width * 0.75, y: carPosition.y + carU.dy * Levels.carSize.width * 0.75))
+        let nosePoint = CGPoint(x: carPosition.x + carU.dx * Levels.carSize.width * 0.75, y: carPosition.y + carU.dy * Levels.carSize.width * 0.75)
         let angleTag = measureTag(Strings.angleShort, String(format: "%.1f°", precision.angle), color: cyan)
-        angleTag.position = CGPoint(x: nose.x, y: nose.y + 26)
+        followers.append { _ in
+            let nose = screen(nosePoint)
+            angleTag.position = CGPoint(x: nose.x, y: nose.y + 26)
+        }
         angleTag.alpha = 0
         angleTag.setScale(0.6)
         node.addChild(angleTag)
@@ -4919,6 +4931,8 @@ final class ParkingScene: SKScene {
                 self.bumpHaptic.impactOccurred(intensity: 0.7)
             }
         }
+        let pinned = followers
+        node.run(.customAction(withDuration: 2.3) { _, elapsed in pinned.forEach { $0(elapsed) } })
         // Out together as the ticket comes
         node.run(.sequence([.wait(forDuration: 2.05), .fadeOut(withDuration: 0.25), .removeFromParent()]))
     }
@@ -4984,17 +4998,17 @@ final class ParkingScene: SKScene {
              at: CGPoint(x: left + 74, y: top - 61))
         // Receipt rows with dotted leaders
         var rows: [(String, String)] = [(Strings.statTime, String(format: "%.1f s", localTime)), (Strings.statCrashes, "\(hits)")]
-        if let precision = lastPrecision { rows.append((Strings.precision, "%\(precision.score)")) }
+        if let precision = lastPrecision { rows.append((Strings.precision, Strings.percent(precision.score))) }
         for (index, row) in rows.enumerated() {
             let y = top - 86 - CGFloat(index) * 19
             text(Strings.upper(row.0), .systemFont(ofSize: 10, weight: .heavy, width: .expanded), grey, kern: 1.2,
                  at: CGPoint(x: left + 18, y: y))
             // Values in the middle: the right half is where the stamp lands
-            text(row.1, .monospacedDigitSystemFont(ofSize: 15, weight: .heavy), ink, at: CGPoint(x: left + 196, y: y), align: .right)
+            text(row.1, .monospacedDigitSystemFont(ofSize: 15, weight: .heavy), ink, at: CGPoint(x: left + 172, y: y), align: .right)
             let dots = SKShapeNode(path: {
                 let path = CGMutablePath()
-                path.move(to: CGPoint(x: left + 118, y: y - 4))
-                path.addLine(to: CGPoint(x: left + 150, y: y - 4))
+                path.move(to: CGPoint(x: left + 112, y: y - 4))
+                path.addLine(to: CGPoint(x: left + 128, y: y - 4))
                 return path.copy(dashingWithPhase: 0, lengths: [1.5, 3.5])
             }())
             dots.strokeColor = UIColor(white: 0.6, alpha: 0.8)
@@ -5044,9 +5058,9 @@ final class ParkingScene: SKScene {
 
         // The stamp lands
         let stamp = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
-                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 26))
-        stamp.position = CGPoint(x: 82, y: top - 104)
-        stamp.zRotation = -0.24
+                                                       color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 22))
+        stamp.position = CGPoint(x: 92, y: top - 150)
+        stamp.zRotation = -0.2
         stamp.alpha = 0
         stamp.setScale(2.6)
         ticket.addChild(stamp)
@@ -5089,8 +5103,8 @@ final class ParkingScene: SKScene {
         if newBest {
             let best = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.newBestShort), color: UIColor(red: 0.85, green: 0.12, blue: 0.16, alpha: 1),
                                                           check: false, fontSize: 18))
-            best.position = CGPoint(x: right - 70, y: top - 166)
-            best.zRotation = 0.14
+            best.position = CGPoint(x: 62, y: top - 62)
+            best.zRotation = 0.1
             best.alpha = 0
             best.setScale(2.2)
             ticket.addChild(best)
