@@ -114,8 +114,9 @@ struct ResultsOverlay: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                // The frozen frame stays visible on the right, darker towards the left
-                LinearGradient(colors: [Color.black.opacity(0.82), Color.black.opacity(0.55), Color.black.opacity(0.35)],
+                // The frozen frame shows through faintly (the HUD under it must not compete), a
+                // little more on the right
+                LinearGradient(colors: [Color.black.opacity(0.88), Color.black.opacity(0.74), Color.black.opacity(0.6)],
                                startPoint: .leading, endPoint: .trailing)
                     .ignoresSafeArea()
                     .opacity(appeared ? 1 : 0)
@@ -139,7 +140,9 @@ struct ResultsOverlay: View {
                 }
                 .padding(.leading, max(24, geo.safeAreaInsets.leading + 8))
                 .padding(.trailing, max(24, geo.safeAreaInsets.trailing + 8))
-                .padding(.top, max(18, geo.safeAreaInsets.top + 10))
+                // Sits a little above the middle of the screen
+                .frame(maxHeight: .infinity, alignment: .center)
+                .offset(y: -geo.size.height * 0.04)
             }
         }
         .task(id: info.id) { await animateIn() }

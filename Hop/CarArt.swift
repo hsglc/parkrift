@@ -275,7 +275,7 @@ enum CarArt {
             let starImage = UIImage(systemName: "star", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold))?
                 .withTintColor(UIColor(white: 0.62, alpha: 1), renderingMode: .alwaysOriginal)
             for index in 0..<3 {
-                let center = CGPoint(x: rect.minX + stub / 2, y: rect.minY + 62 + CGFloat(index) * 30)
+                let center = CGPoint(x: rect.minX + stub / 2, y: rect.minY + 44 + CGFloat(index) * 26)
                 if let star = starImage {
                     star.draw(at: CGPoint(x: center.x - star.size.width / 2, y: center.y - star.size.height / 2))
                 }

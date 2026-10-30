@@ -5022,13 +5022,13 @@ final class ParkingScene: SKScene {
         for (index, row) in rows.enumerated() {
             let y = top - 85 - CGFloat(index) * 17
             text(Strings.upper(row.0), mono, grey, at: CGPoint(x: main + 14, y: y))
-            text(row.1, index >= 2 ? monoBold : mono, ink, at: CGPoint(x: main + 112, y: y))
+            text(row.1, index >= 2 ? monoBold : mono, ink, at: CGPoint(x: main + 94, y: y))
         }
         // Stub: the name down its length and a serial number in red
-        text("PARKRIFT", .systemFont(ofSize: 10, weight: .heavy, width: .expanded), grey, kern: 2.4,
-             at: CGPoint(x: left + stubWidth / 2, y: top - 45 - 92), rotate: .pi / 2)
+        text("PARKRIFT", .systemFont(ofSize: 8, weight: .heavy, width: .expanded), grey, kern: 1.6,
+             at: CGPoint(x: left + stubWidth / 2, y: top - 140), align: .center, rotate: .pi / 2)
         text(String(format: "№ %05d", 1000 + (levelIndex * 7919 + Int(localTime * 10)) % 89_000),
-             .monospacedSystemFont(ofSize: 9, weight: .bold), red, at: CGPoint(x: left + stubWidth / 2, y: -top + 14), align: .center)
+             .monospacedSystemFont(ofSize: 8, weight: .bold), red, at: CGPoint(x: left + stubWidth / 2, y: -top + 9), align: .center)
         // The precision grade, top right (gold for an S)
         if let precision = lastPrecision {
             let grade = precision.grade
@@ -5051,7 +5051,7 @@ final class ParkingScene: SKScene {
         if !isCity {
             for index in 0..<earned {
                 let star = makeIcon("star.fill", size: 17, color: UIColor(red: 1, green: 0.74, blue: 0.1, alpha: 1))
-                star.position = CGPoint(x: left + stubWidth / 2, y: top - 62 - CGFloat(index) * 30)
+                star.position = CGPoint(x: left + stubWidth / 2, y: top - 44 - CGFloat(index) * 26)
                 star.setScale(0)
                 ticket.addChild(star)
                 stars.append(star)
@@ -5068,8 +5068,8 @@ final class ParkingScene: SKScene {
         // The stamp lands over the right of the ticket
         let stamp = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
                                                        color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1), fontSize: 20))
-        stamp.position = CGPoint(x: right - 82, y: 6)
-        stamp.zRotation = -0.24
+        stamp.position = CGPoint(x: right - 64, y: 2)
+        stamp.zRotation = -0.22
         stamp.alpha = 0
         stamp.setScale(2.6)
         ticket.addChild(stamp)
@@ -5115,7 +5115,7 @@ final class ParkingScene: SKScene {
                 .font: UIFont.monospacedSystemFont(ofSize: 11, weight: .heavy), .foregroundColor: UIColor(red: 0.78, green: 0.16, blue: 0.18, alpha: 1)])
             best.horizontalAlignmentMode = .left
             best.verticalAlignmentMode = .center
-            best.position = CGPoint(x: left + stubWidth + 170, y: top - 85 - 2 * 17)
+            best.position = CGPoint(x: left + stubWidth + 152, y: top - 85 - 2 * 17)
             best.alpha = 0
             best.setScale(1.6)
             ticket.addChild(best)
