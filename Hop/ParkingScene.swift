@@ -5115,7 +5115,8 @@ final class ParkingScene: SKScene {
                 .font: UIFont.monospacedSystemFont(ofSize: 11, weight: .heavy), .foregroundColor: UIColor(red: 0.78, green: 0.16, blue: 0.18, alpha: 1)])
             best.horizontalAlignmentMode = .left
             best.verticalAlignmentMode = .center
-            best.position = CGPoint(x: left + stubWidth + 152, y: top - 85 - 2 * 17)
+            // On its own line under the figures, clear of the stamp
+            best.position = CGPoint(x: left + stubWidth + 14, y: -top + 18)
             best.alpha = 0
             best.setScale(1.6)
             ticket.addChild(best)
