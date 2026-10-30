@@ -247,7 +247,7 @@ final class GarageStage {
 
         // The turntable stops with the nose towards the camera's right
         turntable.removeAction(forKey: "spin")
-        let turn = SCNAction.rotateTo(x: 0, y: -0.62, z: 0, duration: 0.7, usesShortestUnitArc: true)
+        let turn = SCNAction.rotateTo(x: 0, y: -1.0, z: 0, duration: 0.7, usesShortestUnitArc: true)
         turn.timingMode = .easeInEaseOut
         turntable.runAction(turn, forKey: "reveal")
 
@@ -297,9 +297,9 @@ final class GarageStage {
         ]))
 
         // Camera: low and close at the front three-quarter, then a slow glide round the car
-        let target = SCNVector3(-0.75, 0.55, 0)
-        let from = SCNVector3(3.2, 0.75, 6.4)
-        let to = SCNVector3(-2.4, 1.15, 6.9)
+        let target = SCNVector3(-1.9, 0.5, 0)
+        let from = SCNVector3(2.4, 0.85, 8.6)
+        let to = SCNVector3(-3.0, 1.3, 9.0)
         let startPosition = cameraNode.position
         cameraNode.removeAction(forKey: "unlock")
         let moveIn = SCNAction.customAction(duration: 0.55) { node, t in
@@ -414,7 +414,7 @@ final class GarageStage {
         guard revealing else { return }
         revealing = false
         let start = cameraNode.position
-        let startTarget = SCNVector3(-0.75, 0.55, 0)
+        let startTarget = SCNVector3(-1.9, 0.5, 0)
         cameraNode.removeAction(forKey: "unlock")
         cameraNode.runAction(.customAction(duration: 0.8) { node, t in
             let k = Float(GarageStage.ease(Double(t / 0.8)))
