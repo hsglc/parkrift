@@ -893,8 +893,8 @@ struct RootView: View {
                 model.roomCode = "KXRT"
                 model.isHost = true
                 model.friendHere = true
-                model.screen = .lobby
-                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { saveWindowSnapshot(named: "menu-shot") }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { model.screen = .lobby }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) { saveWindowSnapshot(named: "menu-shot") }
                 return
             }
             if PerfSettings.benchmark && args.contains("-staylevels") {

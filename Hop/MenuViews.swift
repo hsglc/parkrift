@@ -171,7 +171,10 @@ struct MenuView: View {
                at + 1 < ProcessInfo.processInfo.arguments.count {
                 // Design screenshots of the menu pages, saved by the app itself
                 let target: Page = ["levels": .levels, "city": .city, "online": .online][ProcessInfo.processInfo.arguments[at + 1]] ?? .home
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { page = target }
+                // Animations started at launch can stall on the test simulator, so the page (the
+                // home too) is opened again once the app runs
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { page = target == .home ? .city : .home }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { page = target }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 6) { saveWindowSnapshot(named: "menu-shot") }
             }
             if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch && !PerfSettings.benchmark {
