@@ -4,6 +4,10 @@ name: Garage check
 # renderer, to check car models and materials before they go to TestFlight.
 on:
   workflow_dispatch:
+    inputs:
+      unlock:
+        description: "Only the unlock reveal (a burst of screenshots)"
+        default: "false"
 
 jobs:
   garage:
@@ -45,6 +49,20 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
           mkdir -p garage
+          if [ "${{ inputs.unlock }}" = "true" ]; then
+            for CAR in 5 0; do
+              xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
+              sleep 2
+              xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -staygarage -unlocktest -pp.car $CAR -pp.paint 0 -AppleLanguages "(tr)" > /dev/null 2>&1
+              # The app saves frames of the reveal itself (unlock-*.png in its Documents)
+              sleep 30
+              DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
+              for F in "$DATA"/Documents/unlock-*.png; do cp "$F" "garage/car$CAR-$(basename "$F")"; done
+              rm -f "$DATA"/Documents/unlock-*.png
+            done
+            ls -la garage
+            exit 0
+          fi
           # Car raw values: italia 0, strada 3, toro 4, arrow 5, bison 6, classico 7; paints 0 red, 1 blue, 6 white
           for CAR in 0 3 4 5 6 7; do
             for PAINT in 0 1; do

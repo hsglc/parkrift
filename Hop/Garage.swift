@@ -17,6 +17,12 @@ final class GarageStage {
     /// builds geometry or compiles shaders.
     private var cars: [CarModelID: Car3D] = [:]
     private var shown: CarChoice?
+    /// Studio lights with their normal intensities (dimmed for the unlock reveal).
+    private var studioLights: [(SCNLight, CGFloat)] = []
+    private static let cameraHome = SCNVector3(-0.6, 1.9, 9.6)
+    private static let cameraHomeTarget = SCNVector3(1.9, 0.45, 0)
+    private var revealNodes: [SCNNode] = []
+    private var revealing = false
     /// Extra yaw from dragging, added to the slow automatic turn.
     private var dragYaw: Float = 0
     weak var view: SCNView?
@@ -100,6 +106,7 @@ final class GarageStage {
         keyNode.position = SCNVector3(-4, 9, 7)
         keyNode.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(keyNode)
+        studioLights.append((key, key.intensity))
         for (position, color, intensity) in [(SCNVector3(-6, 3, -6), UIColor(red: 0.35, green: 0.6, blue: 1.0, alpha: 1), CGFloat(600)),
                                              (SCNVector3(6, 2.5, -5), UIColor(red: 1.0, green: 0.55, blue: 0.3, alpha: 1), CGFloat(450)),
                                              (SCNVector3(5, 4, 6), UIColor.white, CGFloat(250))] {
@@ -113,10 +120,12 @@ final class GarageStage {
             node.light = light
             node.position = position
             scene.rootNode.addChildNode(node)
+            studioLights.append((light, intensity))
         }
         let ambient = SCNLight()
         ambient.type = .ambient
         ambient.intensity = 120
+        studioLights.append((ambient, 120))
         let ambientNode = SCNNode()
         ambientNode.light = ambient
         scene.rootNode.addChildNode(ambientNode)
@@ -136,8 +145,8 @@ final class GarageStage {
         camera.vignettingIntensity = 0.6
         camera.vignettingPower = 0.8
         cameraNode.camera = camera
-        cameraNode.position = SCNVector3(-0.6, 1.9, 9.6)
-        cameraNode.look(at: SCNVector3(1.9, 0.45, 0))
+        cameraNode.position = GarageStage.cameraHome
+        cameraNode.look(at: GarageStage.cameraHomeTarget)
         scene.rootNode.addChildNode(cameraNode)
 
         turntable.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 26)), forKey: "spin")
@@ -221,107 +230,248 @@ final class GarageStage {
         }
     }
 
-    /// Unlock reveal on the stage: the platform ring flashes white, a light column sweeps up
-    /// through the car, sparks burst from the ring in the car's accent colour, the car hops and
-    /// spins once and the camera pushes in and settles back.
+    /// Unlock reveal on the stage, staged like a car launch: the studio goes dark and the car
+    /// turns to a three-quarter front view as a silhouette with an accent rim light behind it; a
+    /// bright light sweeps along its body, picking out the paint; then the lights slam on with a
+    /// bloom burst, a shockwave runs out over the floor and embers drift up from the ring, while
+    /// the camera, low and close, glides slowly round the car. `finishUnlock` takes it all back.
     func celebrateUnlock(_ choice: CarChoice) {
-        guard let car = cars[choice.model] else { return }
+        guard let car = cars[choice.model], let camera = cameraNode.camera else { return }
+        clearReveal()
+        revealing = true
         let accent = choice.color.lighter(by: 0.25)
-
-        // Ring flash: white, then back to the accent
-        ringMaterial.emission.contents = UIColor.white
-        floorGlow.multiply.contents = UIColor.white
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.ringMaterial.emission.contents = accent
-            self?.floorGlow.multiply.contents = accent
-        }
-
-        // Light column rising through the car
-        let beam = SCNCylinder(radius: 3.0, height: 0.02)
-        beam.radialSegmentCount = 64
-        let beamMaterial = SCNMaterial()
-        beamMaterial.lightingModel = .constant
-        beamMaterial.diffuse.contents = UIColor.black
-        beamMaterial.emission.contents = accent
-        beamMaterial.blendMode = .add
-        beamMaterial.writesToDepthBuffer = false
-        beamMaterial.isDoubleSided = true
-        beam.materials = [beamMaterial]
-        let beamNode = SCNNode(geometry: beam)
-        beamNode.position = SCNVector3(0, 0.12, 0)
-        beamNode.opacity = 0.9
-        scene.rootNode.addChildNode(beamNode)
-        let rise = SCNAction.move(to: SCNVector3(0, 2.6, 0), duration: 0.7)
-        rise.timingMode = .easeOut
-        beamNode.runAction(.sequence([.group([rise, .fadeOut(duration: 0.7),
-                                               .customAction(duration: 0.7) { node, t in
-                                                   (node.geometry as? SCNCylinder)?.radius = 3.0 - 1.4 * t / 0.7
-                                               }]),
-                                       .removeFromParentNode()]))
-
-        // Sparks from the ring
-        let sparks = SCNParticleSystem()
-        sparks.particleImage = CarArt.glowParticle()
-        sparks.birthRate = 2600
-        sparks.emissionDuration = 0.12
-        sparks.loops = false
-        sparks.particleLifeSpan = 1.1
-        sparks.particleLifeSpanVariation = 0.4
-        sparks.particleSize = 0.09
-        sparks.particleSizeVariation = 0.05
-        sparks.particleVelocity = 4.2
-        sparks.particleVelocityVariation = 2.0
-        sparks.emittingDirection = SCNVector3(0, 1, 0)
-        sparks.spreadingAngle = 35
-        sparks.acceleration = SCNVector3(0, -6.5, 0)
-        sparks.particleColor = accent
-        sparks.particleColorVariation = SCNVector4(0.05, 0.1, 0.2, 0)
-        sparks.blendMode = .additive
-        sparks.emitterShape = SCNTube(innerRadius: 3.2, outerRadius: 3.35, height: 0.05)
-        sparks.birthLocation = .surface
-        let emitter = SCNNode()
-        emitter.position = SCNVector3(0, 0.12, 0)
-        emitter.addParticleSystem(sparks)
-        scene.rootNode.addChildNode(emitter)
-        emitter.runAction(.sequence([.wait(duration: 2.2), .removeFromParentNode()]))
-
-        // The car hops and turns once
         car.node.removeAllActions()
         car.node.position = SCNVector3(0, 0.1, 0)
         car.node.scale = SCNVector3(1, 1, 1)
         car.node.opacity = 1
-        let up = SCNAction.move(to: SCNVector3(0, 0.55, 0), duration: 0.32)
-        up.timingMode = .easeOut
-        let down = SCNAction.move(to: SCNVector3(0, 0.1, 0), duration: 0.38)
-        down.timingMode = .easeIn
-        let spin = SCNAction.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 0.95)
-        spin.timingMode = .easeInEaseOut
-        let squash = SCNAction.sequence([.scale(to: 1.04, duration: 0.08), .scale(to: 1, duration: 0.2)])
-        car.node.runAction(.sequence([.wait(duration: 0.1), .group([.sequence([up, down, squash]), spin])]))
 
-        // Camera push-in and back
-        let home = cameraNode.position
-        let closer = SCNVector3(home.x + 0.5, home.y - 0.3, home.z - 2.4)
-        let push = SCNAction.move(to: closer, duration: 0.5)
-        push.timingMode = .easeOut
-        let back = SCNAction.move(to: home, duration: 1.1)
-        back.timingMode = .easeInEaseOut
+        // The turntable stops with the nose towards the camera's right
+        turntable.removeAction(forKey: "spin")
+        let turn = SCNAction.rotateTo(x: 0, y: -1.0, z: 0, duration: 0.7, usesShortestUnitArc: true)
+        turn.timingMode = .easeInEaseOut
+        turntable.runAction(turn, forKey: "reveal")
+
+        // Blackout: the car becomes a silhouette
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = 0.25
+        for (light, _) in studioLights { light.intensity = light.type == .ambient ? 8 : 20 }
+        scene.lightingEnvironment.intensity = 0.06
+        ringMaterial.emission.contents = UIColor(white: 0.08, alpha: 1)
+        floorGlow.multiply.contents = UIColor.black
+        camera.exposureOffset = -0.4
+        SCNTransaction.commit()
+
+        // Rim light behind the car, in its colour: an outline against the dark
+        let rim = SCNLight()
+        rim.type = .omni
+        rim.color = accent
+        rim.intensity = 0
+        rim.attenuationStartDistance = 2
+        rim.attenuationEndDistance = 9
+        let rimNode = SCNNode()
+        rimNode.light = rim
+        rimNode.position = SCNVector3(0.6, 1.6, -3.4)
+        scene.rootNode.addChildNode(rimNode)
+        revealNodes.append(rimNode)
+        rimNode.runAction(.customAction(duration: 0.6) { _, t in rim.intensity = 2200 * t / 0.6 })
+
+        // The light sweep along the body (its reflection runs over the paint)
+        let sweep = SCNLight()
+        sweep.type = .omni
+        sweep.color = UIColor.white
+        sweep.intensity = 0
+        sweep.attenuationStartDistance = 0.4
+        sweep.attenuationEndDistance = 3.4
+        let sweepNode = SCNNode()
+        sweepNode.light = sweep
+        sweepNode.position = SCNVector3(-3.4, 1.3, 2.4)
+        scene.rootNode.addChildNode(sweepNode)
+        revealNodes.append(sweepNode)
+        let across = SCNAction.move(to: SCNVector3(3.4, 1.0, 1.6), duration: 0.95)
+        across.timingMode = .easeInEaseOut
+        sweepNode.runAction(.sequence([
+            .wait(duration: 0.3),
+            .group([across, .customAction(duration: 0.95) { _, t in
+                sweep.intensity = 3800 * sin(.pi * min(1, t / 0.95))
+            }]),
+        ]))
+
+        // Camera: low and close at the front three-quarter, then a slow glide round the car
+        let target = SCNVector3(-1.9, 0.5, 0)
+        let from = SCNVector3(2.4, 0.85, 8.6)
+        let to = SCNVector3(-3.0, 1.3, 9.0)
+        let startPosition = cameraNode.position
         cameraNode.removeAction(forKey: "unlock")
-        cameraNode.runAction(.sequence([push, .wait(duration: 0.6), back]), forKey: "unlock")
-        if let camera = cameraNode.camera {
-            let bloom = camera.bloomIntensity
+        let moveIn = SCNAction.customAction(duration: 0.55) { node, t in
+            let k = Float(GarageStage.ease(Double(t / 0.55)))
+            node.position = GarageStage.mix(startPosition, from, k)
+            node.look(at: GarageStage.mix(GarageStage.cameraHomeTarget, target, k))
+        }
+        let glide = SCNAction.customAction(duration: 5.5) { node, t in
+            let k = Float(GarageStage.easeOut(Double(t / 5.5)))
+            node.position = GarageStage.mix(from, to, k)
+            node.look(at: target)
+        }
+        cameraNode.runAction(.sequence([moveIn, glide]), forKey: "unlock")
+        camera.fieldOfView = 30
+
+        // Ignition: the lights slam on
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) { [weak self] in
+            guard let self = self, self.revealing else { return }
+            self.ignite(accent: accent, car: car)
+        }
+    }
+
+    private func ignite(accent: UIColor, car: Car3D) {
+        guard let camera = cameraNode.camera else { return }
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = 0.18
+        for (light, intensity) in studioLights { light.intensity = intensity * 1.25 }
+        scene.lightingEnvironment.intensity = 1.1
+        ringMaterial.emission.contents = UIColor.white
+        floorGlow.multiply.contents = accent
+        camera.exposureOffset = 0.25
+        camera.bloomIntensity = 1.4
+        SCNTransaction.completionBlock = { [weak self] in
+            guard let self = self else { return }
             SCNTransaction.begin()
-            SCNTransaction.animationDuration = 0.2
-            camera.bloomIntensity = 1.2
-            SCNTransaction.completionBlock = {
-                SCNTransaction.begin()
-                SCNTransaction.animationDuration = 1.0
-                camera.bloomIntensity = bloom
-                SCNTransaction.commit()
-            }
+            SCNTransaction.animationDuration = 1.2
+            for (light, intensity) in self.studioLights { light.intensity = intensity }
+            self.scene.lightingEnvironment.intensity = 0.9
+            self.ringMaterial.emission.contents = accent
+            camera.exposureOffset = -0.15
+            camera.bloomIntensity = 0.45
+            SCNTransaction.commit()
+        }
+        SCNTransaction.commit()
+
+        // Shockwave over the floor
+        let wave = SCNPlane(width: 2, height: 2)
+        let waveMaterial = SCNMaterial()
+        waveMaterial.lightingModel = .constant
+        waveMaterial.diffuse.contents = GarageStage.shockRing
+        waveMaterial.multiply.contents = accent.lighter(by: 0.3)
+        waveMaterial.blendMode = .add
+        waveMaterial.writesToDepthBuffer = false
+        wave.materials = [waveMaterial]
+        let waveNode = SCNNode(geometry: wave)
+        waveNode.eulerAngles.x = -Float.pi / 2
+        waveNode.position.y = 0.13
+        waveNode.scale = SCNVector3(3.0, 3.0, 3.0)
+        scene.rootNode.addChildNode(waveNode)
+        let grow = SCNAction.scale(to: 9, duration: 0.9)
+        grow.timingMode = .easeOut
+        waveNode.runAction(.sequence([.group([grow, .fadeOut(duration: 0.9)]), .removeFromParentNode()]))
+
+        // Embers rising slowly from the ring
+        let embers = SCNParticleSystem()
+        embers.particleImage = CarArt.glowParticle()
+        embers.birthRate = 260
+        embers.emissionDuration = 1.8
+        embers.loops = false
+        embers.particleLifeSpan = 2.2
+        embers.particleLifeSpanVariation = 0.8
+        embers.particleSize = 0.05
+        embers.particleSizeVariation = 0.03
+        embers.particleVelocity = 0.9
+        embers.particleVelocityVariation = 0.6
+        embers.emittingDirection = SCNVector3(0, 1, 0)
+        embers.spreadingAngle = 12
+        embers.acceleration = SCNVector3(0, 0.25, 0)
+        embers.particleColor = accent.lighter(by: 0.35)
+        embers.particleColorVariation = SCNVector4(0.03, 0.1, 0.25, 0)
+        embers.blendMode = .additive
+        embers.emitterShape = SCNTube(innerRadius: 3.2, outerRadius: 3.4, height: 0.05)
+        embers.birthLocation = .surface
+        let fade = CAKeyframeAnimation()
+        fade.values = [0, 1, 1, 0]
+        fade.keyTimes = [0, 0.15, 0.6, 1]
+        let controller = SCNParticlePropertyController(animation: fade)
+        embers.propertyControllers = [.opacity: controller]
+        let emitter = SCNNode()
+        emitter.position = SCNVector3(0, 0.12, 0)
+        emitter.addParticleSystem(embers)
+        scene.rootNode.addChildNode(emitter)
+        revealNodes.append(emitter)
+
+        // The car settles on its springs as the lights hit
+        let dip = SCNAction.move(to: SCNVector3(0, 0.06, 0), duration: 0.1)
+        dip.timingMode = .easeOut
+        let rise = SCNAction.move(to: SCNVector3(0, 0.1, 0), duration: 0.45)
+        rise.timingMode = .easeInEaseOut
+        car.node.runAction(.sequence([dip, rise]))
+
+        // The sweep and rim fade away; the studio light carries on
+        for node in revealNodes where node.light != nil {
+            let light = node.light!
+            let startIntensity = light.intensity
+            node.runAction(.customAction(duration: 0.8) { _, t in light.intensity = startIntensity * (1 - t / 0.8) })
+        }
+    }
+
+    /// Back to the normal showroom after the reveal: camera home, the turntable turning again.
+    func finishUnlock() {
+        guard revealing else { return }
+        revealing = false
+        let start = cameraNode.position
+        let startTarget = SCNVector3(-1.9, 0.5, 0)
+        cameraNode.removeAction(forKey: "unlock")
+        cameraNode.runAction(.customAction(duration: 0.8) { node, t in
+            let k = Float(GarageStage.ease(Double(t / 0.8)))
+            node.position = GarageStage.mix(start, GarageStage.cameraHome, k)
+            node.look(at: GarageStage.mix(startTarget, GarageStage.cameraHomeTarget, k))
+        }, forKey: "unlock")
+        turntable.removeAction(forKey: "reveal")
+        turntable.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 26)), forKey: "spin")
+        let nodes = revealNodes
+        revealNodes = []
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { nodes.forEach { $0.removeFromParentNode() } }
+        if let shown = shown {
+            let accent = shown.color.lighter(by: 0.15)
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = 0.5
+            for (light, intensity) in studioLights { light.intensity = intensity }
+            scene.lightingEnvironment.intensity = 0.9
+            ringMaterial.emission.contents = accent
+            floorGlow.multiply.contents = accent
+            cameraNode.camera?.exposureOffset = -0.15
+            cameraNode.camera?.bloomIntensity = 0.25
             SCNTransaction.commit()
         }
     }
+
+    private func clearReveal() {
+        revealNodes.forEach { $0.removeFromParentNode() }
+        revealNodes = []
+    }
+
+    private static func mix(_ a: SCNVector3, _ b: SCNVector3, _ k: Float) -> SCNVector3 {
+        SCNVector3(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k)
+    }
+
+    private static func ease(_ t: Double) -> Double {
+        let x = max(0, min(1, t))
+        return x * x * (3 - 2 * x)
+    }
+
+    private static func easeOut(_ t: Double) -> Double {
+        let x = max(0, min(1, t))
+        return 1 - pow(1 - x, 3)
+    }
+
+    /// A soft bright ring (the floor shockwave).
+    private static let shockRing: UIImage = {
+        let size = CGSize(width: 256, height: 256)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            let cg = context.cgContext
+            let center = CGPoint(x: 128, y: 128)
+            let colors = [UIColor(white: 1, alpha: 0).cgColor, UIColor(white: 1, alpha: 0.9).cgColor,
+                          UIColor(white: 1, alpha: 0).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0.72, 0.9, 1.0]) {
+                cg.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: 127, options: [])
+            }
+        }
+    }()
 
     private var warmed = false
 
@@ -523,6 +673,7 @@ struct GarageView: View {
 
             if let spec = unlocked {
                 UnlockReveal(spec: spec, accent: accent) {
+                    stage.finishUnlock()
                     withAnimation(.easeOut(duration: 0.3)) { unlocked = nil }
                 }
                 .transition(.opacity)
@@ -535,6 +686,21 @@ struct GarageView: View {
             stage.setActive(true)
             stage.show(choice, animated: false)
             withAnimation(.easeOut(duration: 0.6).delay(0.15)) { statsShown = true }
+            #if BENCHMARK
+            // Test hook: the unlock reveal on the shown car
+            if ProcessInfo.processInfo.arguments.contains("-unlocktest") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    stage.celebrateUnlock(choice)
+                    withAnimation(.easeOut(duration: 0.25)) { unlocked = choice.spec }
+                    // Frames of the reveal, saved by the app itself
+                    for at in [0.6, 1.0, 1.5, 2.2, 3.2, 4.5, 6.0] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + at) {
+                            saveWindowSnapshot(named: "unlock-\(Int(at * 10))")
+                        }
+                    }
+                }
+            }
+            #endif
         }
         .onDisappear { stage.setActive(false) }
         .onChange(of: choice) { old, new in
@@ -777,7 +943,6 @@ struct GarageView: View {
         let affordable = model.coins >= price
         return Button {
             if model.buyCar(choice.model) {
-                AudioManager.shared.play("park", volume: 0.8)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 stage.celebrateUnlock(choice)
                 withAnimation(.easeOut(duration: 0.25)) { unlocked = choice.spec }
@@ -859,123 +1024,216 @@ struct PressScaleStyle: ButtonStyle {
     }
 }
 
-/// Full-screen reveal after buying a car: a flash, a lock that springs open, the car's name
-/// wiped in on a slanted neon band, its maker and class, then it fades by itself (or on a tap).
+/// Full-screen reveal after buying a car, over the stage's own reveal (`celebrateUnlock`):
+/// cinema bars close in while the studio is dark, an anamorphic flare streaks across when the
+/// lights come on, then the car's card builds in the lower left so the car itself stays clear: a
+/// kicker with a drawn accent line, the maker, the name rising letter by letter under a light
+/// sweep, its class, and the performance bars filling up. A tap (or a few seconds) ends it.
 struct UnlockReveal: View {
     let spec: CarSpec
     let accent: Color
     let done: () -> Void
 
-    @State private var flash = 1.0
-    @State private var lockOpen = false
-    @State private var bandWidth: CGFloat = 0
-    @State private var nameShown = false
-    @State private var detailsShown = false
+    @State private var bars = false
+    @State private var flare: CGFloat = 0
+    @State private var kicker = false
+    @State private var line: CGFloat = 0
+    @State private var letters = 0
     @State private var shine: CGFloat = -1
-    @State private var ringScale: CGFloat = 0.4
-    @State private var ringOpacity = 0.9
+    @State private var details = false
+    @State private var fill: CGFloat = 0
+    @State private var hint = false
+    @State private var closing = false
+    @State private var finished = false
+
+    private var name: [Character] { Array(spec.name.uppercased()) }
 
     var body: some View {
-        ZStack {
-            // Edge darkening so the text reads over the stage, with the car visible in the middle
-            RadialGradient(colors: [.clear, Color.black.opacity(0.75)], center: .center, startRadius: 120, endRadius: 520)
-                .ignoresSafeArea()
-            Color.white.opacity(flash).ignoresSafeArea().blendMode(.plusLighter)
+        GeometryReader { geo in
+            let barHeight = geo.size.height * 0.11
+            ZStack(alignment: .bottomLeading) {
+                // Shade on the left for the card; the car on the right stays clear
+                LinearGradient(colors: [Color.black.opacity(0.8), Color.black.opacity(0.35), .clear],
+                               startPoint: .leading, endPoint: .init(x: 0.62, y: 0.5))
+                    .ignoresSafeArea()
+                    .opacity(kicker ? 1 : 0)
 
-            VStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .stroke(accent, lineWidth: 3)
-                        .frame(width: 92, height: 92)
-                        .scaleEffect(ringScale)
-                        .opacity(ringOpacity)
-                    Circle()
-                        .fill(Color.black.opacity(0.55))
-                        .frame(width: 64, height: 64)
-                        .overlay(Circle().stroke(accent.opacity(0.9), lineWidth: 1.5))
-                    Image(systemName: lockOpen ? "lock.open.fill" : "lock.fill")
-                        .font(.system(size: 26, weight: .black))
-                        .foregroundStyle(lockOpen ? accent : .white)
-                        .rotationEffect(.degrees(lockOpen ? -12 : 0))
-                        .scaleEffect(lockOpen ? 1.12 : 1)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                Text(Strings.carUnlocked.uppercased())
-                    .font(.kicker(12))
-                    .tracking(4)
-                    .foregroundStyle(accent)
-                    .opacity(detailsShown || nameShown ? 1 : 0)
+                // Anamorphic flare as the lights come on
+                Capsule()
+                    .fill(LinearGradient(colors: [.clear, accent.opacity(0.9), .white, accent.opacity(0.9), .clear],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(width: geo.size.width * 1.4 * flare, height: 3 + 5 * flare)
+                    .blur(radius: 1.5)
+                    .shadow(color: accent, radius: 18)
+                    .opacity(flare > 0 ? Double(1 - flare) : 0)
+                    .position(x: geo.size.width * 0.62, y: geo.size.height * 0.5)
+                    .blendMode(.plusLighter)
+                    .allowsHitTesting(false)
 
-                ZStack {
-                    // Slanted neon band the name sits on
-                    SlantedShape(skew: 26)
-                        .fill(LinearGradient(colors: [accent.opacity(0.95), accent.opacity(0.55)], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: bandWidth, height: 70)
-                        .shadow(color: accent.opacity(0.8), radius: 18)
-                    Text(spec.name.uppercased())
-                        .font(.race(54, weight: .black))
-                        .italic()
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.5), radius: 6, y: 2)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .padding(.horizontal, 40)
-                        .opacity(nameShown ? 1 : 0)
-                        .offset(x: nameShown ? 0 : -40)
-                        .overlay(
-                            // Light sweep over the name
-                            LinearGradient(colors: [.clear, .white.opacity(0.85), .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 90)
-                                .rotationEffect(.degrees(18))
-                                .offset(x: shine * 320)
-                                .blendMode(.plusLighter)
-                                .mask(Text(spec.name.uppercased()).font(.race(54, weight: .black)).italic())
-                        )
-                }
-                .frame(height: 80)
-
-                HStack(spacing: 10) {
+                // The car's card
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        Rectangle()
+                            .fill(accent)
+                            .frame(width: 36 * line, height: 3)
+                            .shadow(color: accent, radius: 6)
+                        Text(Strings.carUnlocked.uppercased())
+                            .font(.kicker(12))
+                            .tracking(4)
+                            .foregroundStyle(accent)
+                            .opacity(kicker ? 1 : 0)
+                            .offset(x: kicker ? 0 : -12)
+                    }
                     Text(spec.maker.uppercased())
-                        .font(.kicker(11))
-                        .tracking(2)
-                        .foregroundStyle(.white.opacity(0.8))
-                    Text(Strings.carClass + " " + spec.className)
-                        .font(.race(12, weight: .heavy))
-                        .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(SlantedShape(skew: 6).fill(accent))
-                    Text(Strings.addedToGarage.uppercased())
-                        .font(.kicker(11))
-                        .tracking(2)
-                        .foregroundStyle(.white.opacity(0.8))
-                }
-                .opacity(detailsShown ? 1 : 0)
-                .offset(y: detailsShown ? 0 : 10)
+                        .font(.kicker(12))
+                        .tracking(5)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .opacity(kicker ? 1 : 0)
+                        .padding(.top, 6)
 
+                    // The name, letter by letter, with a light sweep once it is complete
+                    HStack(spacing: 0) {
+                        ForEach(Array(name.enumerated()), id: \.offset) { index, letter in
+                            Text(String(letter))
+                                .font(.race(64, weight: .black))
+                                .italic()
+                                .foregroundStyle(.white)
+                                .opacity(index < letters ? 1 : 0)
+                                .offset(y: index < letters ? 0 : 26)
+                                .blur(radius: index < letters ? 0 : 6)
+                        }
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .shadow(color: accent.opacity(0.55), radius: 16)
+                    .overlay(
+                        LinearGradient(colors: [.clear, .white.opacity(0.9), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 70)
+                            .rotationEffect(.degrees(18))
+                            .offset(x: shine * 300)
+                            .blendMode(.plusLighter)
+                            .mask(Text(spec.name.uppercased()).font(.race(64, weight: .black)).italic()
+                                    .frame(maxWidth: .infinity, alignment: .leading))
+                            .allowsHitTesting(false)
+                    )
+
+                    HStack(spacing: 10) {
+                        Text(Strings.carClass + " " + spec.className)
+                            .font(.race(13, weight: .heavy))
+                            .foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(SlantedShape(skew: 6).fill(accent))
+                        Text(Strings.addedToGarage.uppercased())
+                            .font(.kicker(11))
+                            .tracking(2)
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+                    .opacity(details ? 1 : 0)
+                    .offset(y: details ? 0 : 8)
+
+                    // Performance
+                    VStack(alignment: .leading, spacing: 7) {
+                        statRow(Strings.statSpeed, spec.stats.speed, delay: 0)
+                        statRow(Strings.statAccel, spec.stats.acceleration, delay: 0.08)
+                        statRow(Strings.statHandling, spec.stats.handling, delay: 0.16)
+                    }
+                    .padding(.top, 12)
+                    .opacity(details ? 1 : 0)
+                }
+                .padding(.leading, max(28, geo.safeAreaInsets.leading + 12))
+                .padding(.bottom, barHeight + 18)
+
+                // Tap hint, lower right
                 Text(Strings.tapToContinue)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.top, 14)
-                    .opacity(detailsShown ? 1 : 0)
+                    .foregroundStyle(.white.opacity(hint ? 0.65 : 0))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, max(28, geo.safeAreaInsets.trailing + 12))
+                    .padding(.bottom, barHeight + 18)
+
+                // Cinema bars
+                VStack {
+                    Color.black.frame(height: barHeight).offset(y: bars ? 0 : -barHeight - 40)
+                    Spacer()
+                    Color.black.frame(height: barHeight).offset(y: bars ? 0 : barHeight + 40)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             }
+            .opacity(closing ? 0 : 1)
         }
         .contentShape(Rectangle())
-        .onTapGesture { done() }
+        .onTapGesture { close() }
         .onAppear(perform: play)
     }
 
-    private func play() {
-        withAnimation(.easeOut(duration: 0.45)) { flash = 0 }
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.2)) { lockOpen = true }
-        withAnimation(.easeOut(duration: 0.7).delay(0.2)) { ringScale = 2.2; ringOpacity = 0 }
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.82).delay(0.35)) { bandWidth = 520 }
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8).delay(0.5)) { nameShown = true }
-        withAnimation(.easeInOut(duration: 0.8).delay(0.75)) { shine = 1 }
-        withAnimation(.easeOut(duration: 0.4).delay(0.9)) { detailsShown = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+    private func statRow(_ label: String, _ value: Double, delay: Double) -> some View {
+        HStack(spacing: 10) {
+            Text(label.uppercased())
+                .font(.kicker(10))
+                .tracking(2)
+                .foregroundStyle(.white.opacity(0.65))
+                .frame(width: 96, alignment: .leading)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.12))
+                Capsule()
+                    .fill(LinearGradient(colors: [accent.opacity(0.7), accent], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: 180 * CGFloat(value) * fill)
+                    .shadow(color: accent.opacity(0.8), radius: 5)
+                    .animation(.easeOut(duration: 0.9).delay(delay), value: fill)
+            }
+            .frame(width: 180, height: 5)
+            Text("\(Int((value * 100 * Double(fill)).rounded()))")
+                .font(.race(13, weight: .heavy))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .frame(width: 34, alignment: .trailing)
+                .animation(.easeOut(duration: 0.9).delay(delay), value: fill)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) { done() }
+    }
+
+    private func play() {
+        // 0.0  dark studio, cinema bars close in
+        withAnimation(.easeOut(duration: 0.5)) { bars = true }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        // 0.3  the light sweep on the car
+        after(0.3) { AudioManager.shared.play("whoosh", volume: 0.7) }
+        // 1.25 the lights slam on: flare, thump, the card starts
+        after(1.25) {
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            AudioManager.shared.play("nitro", volume: 0.8)
+            withAnimation(.easeOut(duration: 0.7)) { flare = 1 }
+        }
+        after(1.45) {
+            withAnimation(.easeOut(duration: 0.35)) { kicker = true }
+            withAnimation(.easeOut(duration: 0.45).delay(0.05)) { line = 1 }
+        }
+        for index in 0..<name.count {
+            after(1.65 + Double(index) * 0.045) {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) { letters = index + 1 }
+                if index % 2 == 0 { UISelectionFeedbackGenerator().selectionChanged() }
+            }
+        }
+        let named = 1.65 + Double(name.count) * 0.045 + 0.15
+        after(named) {
+            withAnimation(.easeInOut(duration: 0.75)) { shine = 1 }
+            withAnimation(.easeOut(duration: 0.35)) { details = true }
+            fill = 1
+            AudioManager.shared.play("park", volume: 0.6)
+        }
+        after(named + 1.0) { withAnimation(.easeIn(duration: 0.4)) { hint = true } }
+        after(7.5) { close() }
+    }
+
+    private func close() {
+        guard !finished else { return }
+        finished = true
+        withAnimation(.easeIn(duration: 0.3)) { bars = false; closing = true }
+        after(0.3) { done() }
+    }
+
+    private func after(_ delay: Double, _ work: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 }
