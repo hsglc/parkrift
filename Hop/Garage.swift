@@ -692,6 +692,12 @@ struct GarageView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     stage.celebrateUnlock(choice)
                     withAnimation(.easeOut(duration: 0.25)) { unlocked = choice.spec }
+                    // Frames of the reveal, saved by the app itself
+                    for at in [0.6, 1.0, 1.5, 2.2, 3.2, 4.5, 6.0] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + at) {
+                            saveWindowSnapshot(named: "unlock-\(Int(at * 10))")
+                        }
+                    }
                 }
             }
             #endif
