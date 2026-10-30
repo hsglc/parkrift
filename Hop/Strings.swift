@@ -47,6 +47,11 @@ enum Strings {
     static var isTurkish: Bool { current == .turkish }
     static var isSpanish: Bool { current == .spanish }
 
+    /// Upper case by the game's language (Turkish i → İ, not I).
+    static func upper(_ text: String) -> String {
+        text.uppercased(with: Locale(identifier: current == .turkish ? "tr" : (current == .spanish ? "es" : "en")))
+    }
+
     private static func t(_ tr: String, _ en: String, _ es: String) -> String {
         switch current {
         case .turkish: return tr

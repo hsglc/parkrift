@@ -694,6 +694,35 @@ final class Car3D {
         headlight?.isHidden = !on
     }
 
+    private var nightLights: SCNNode?
+
+    /// Night lights for traffic and the friend's car, without a real light (a spot per car would
+    /// cost a draw of the whole street each): a soft warm pool on the road ahead, two glowing
+    /// headlamps seen from the front and two red tail lamps seen from behind. Kept faint so the
+    /// player's own beam stays the brightest thing on the road. Three quads sharing materials.
+    func setNightLights(_ on: Bool) {
+        if on, nightLights == nil {
+            let holder = SCNNode()
+            holder.name = "nightLights"
+            let pool = SCNNode(geometry: NightLights.pool)
+            pool.eulerAngles.x = -Float.pi / 2
+            pool.position = SCNVector3(2.2 + 2.9, 0.03, 0)
+            holder.addChildNode(pool)
+            let front = SCNNode(geometry: NightLights.heads)
+            front.eulerAngles.y = Float.pi / 2                   // faces +x, the way the car points
+            front.position = SCNVector3(2.25, 0.66, 0)
+            holder.addChildNode(front)
+            let back = SCNNode(geometry: NightLights.tails)
+            back.eulerAngles.y = -Float.pi / 2                   // faces -x, behind the car
+            back.position = SCNVector3(-2.25, 0.74, 0)
+            holder.addChildNode(back)
+            holder.renderingOrder = 5
+            node.addChildNode(holder)
+            nightLights = holder
+        }
+        nightLights?.isHidden = !on
+    }
+
     /// Water spray behind the rear wheels in the rain; `amount` 0...1 follows the speed.
     private var sprays: [SCNParticleSystem] = []
     func setSpray(_ amount: CGFloat) {
@@ -3122,4 +3151,70 @@ final class World3D {
 func easeStep(_ a: Float, _ b: Float, _ x: Float) -> Float {
     let t = max(0, min(1, (x - a) / (b - a)))
     return t * t * (3 - 2 * t)
+}
+
+/// Shared geometry for the traffic's night lights (see `Car3D.setNightLights`).
+enum NightLights {
+    private static func glowMaterial(_ image: UIImage, doubleSided: Bool) -> SCNMaterial {
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = image
+        material.blendMode = .add
+        material.writesToDepthBuffer = false
+        material.isDoubleSided = doubleSided
+        return material
+    }
+
+    /// The light thrown on the road: a soft cone, brightest near the car.
+    static let pool: SCNPlane = {
+        let plane = SCNPlane(width: 5.8, height: 3.6)
+        let image = CarArt.image(CGSize(width: 192, height: 128), scale: 1) { context, s in
+            // Cone from the left edge (the car's nose) opening to the right
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: 0, y: s.height * 0.38))
+            path.addLine(to: CGPoint(x: s.width, y: 0))
+            path.addLine(to: CGPoint(x: s.width, y: s.height))
+            path.addLine(to: CGPoint(x: 0, y: s.height * 0.62))
+            path.closeSubpath()
+            context.addPath(path)
+            context.clip()
+            let colors = [UIColor(red: 1, green: 0.9, blue: 0.7, alpha: 0.30).cgColor,
+                          UIColor(red: 1, green: 0.9, blue: 0.7, alpha: 0.12).cgColor,
+                          UIColor(red: 1, green: 0.9, blue: 0.7, alpha: 0).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.45, 1]) {
+                context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: s.width, y: 0), options: [])
+            }
+        }
+        plane.materials = [glowMaterial(image, doubleSided: true)]
+        return plane
+    }()
+
+    /// Two soft dots side by side (the lamps), in `color`.
+    private static func lamps(_ color: UIColor, core: UIColor) -> UIImage {
+        CarArt.image(CGSize(width: 128, height: 32), scale: 1) { context, s in
+            for x in [s.width * 0.17, s.width * 0.83] {
+                let center = CGPoint(x: x, y: s.height / 2)
+                let colors = [core.cgColor, color.withAlphaComponent(0.55).cgColor, color.withAlphaComponent(0).cgColor] as CFArray
+                if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.25, 1]) {
+                    context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: s.height / 2, options: [])
+                }
+            }
+        }
+    }
+
+    /// Headlamps, seen only from in front of the car.
+    static let heads: SCNPlane = {
+        let plane = SCNPlane(width: 2.1, height: 0.52)
+        plane.materials = [glowMaterial(lamps(UIColor(red: 1, green: 0.92, blue: 0.75, alpha: 1),
+                                              core: UIColor(white: 0.95, alpha: 1)), doubleSided: false)]
+        return plane
+    }()
+
+    /// Tail lamps, seen only from behind.
+    static let tails: SCNPlane = {
+        let plane = SCNPlane(width: 1.9, height: 0.4)
+        plane.materials = [glowMaterial(lamps(UIColor(red: 1, green: 0.08, blue: 0.05, alpha: 1),
+                                              core: UIColor(red: 1, green: 0.35, blue: 0.3, alpha: 1)), doubleSided: false)]
+        return plane
+    }()
 }

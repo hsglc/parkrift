@@ -458,8 +458,9 @@ extension Levels {
         // Every round shows a different sky: races start at night, city rounds in the rain
         let weather = Weather(rawValue: (round + (race ? 1 : 2)) % 4) ?? .day
 
-        let forcedDay = ProcessInfo.processInfo.arguments.contains("-dayweather")
-        return ArcadeLayout(alleyBlocks: Set(blocks.prefix(3)), rng: rng, weather: forcedDay ? .day : weather)
+        let arguments = ProcessInfo.processInfo.arguments
+        let forced: Weather? = arguments.contains("-dayweather") ? .day : (arguments.contains("-nightweather") ? .night : nil)
+        return ArcadeLayout(alleyBlocks: Set(blocks.prefix(3)), rng: rng, weather: forced ?? weather)
     }
 
     /// Ramps in the alleys, construction cones, barrels and bins, and the weather.

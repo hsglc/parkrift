@@ -1,3 +1,13 @@
+        policeReason = reason
+        // Drops in from just above with a slight overshoot
+        policeBanner.removeAllActions()
+        let home = CGPoint(x: size.width / 2 + 40, y: hudTop - 52)
+        policeBanner.position = CGPoint(x: home.x, y: home.y + 16)
+        policeBanner.alpha = 0
+        policeBanner.setScale(1)
+        let drop = SKAction.move(to: home, duration: 0.28)
+        drop.timingMode = .easeOut
+        policeBanner.run(.group([drop, .fadeIn(withDuration: 0.18)]))
 import SpriteKit
 import SceneKit
 import UIKit
@@ -1005,6 +1015,9 @@ final class ParkingScene: SKScene {
                 botCars.append(world.makeCar(color: CarArt.parkedColors[bot.tint % CarArt.parkedColors.count],
                                              style: CarStyle(rawValue: index % 3) ?? .sedan, variety: index &* 7 &+ bot.tint))
             }
+            // At night the traffic drives with its lights on (faint, so it reads without glare)
+            let night = level.weather == .night
+            botCars.forEach { $0.setNightLights(night) }
         }
         lap("traffic cars")
         // People on the sidewalks (each player simulates their own: they are scenery that reacts)
@@ -1072,6 +1085,7 @@ final class ParkingScene: SKScene {
         driftLabel.alpha = 0.002
         // Beams at night only (rain and snow levels are daytime)
         localCar?.setHeadlights(level.city != nil && level.weather == .night)
+        remoteCar?.setNightLights(level.city != nil && level.weather == .night)
         audio.setLoop("rain", volume: isRaining ? 0.3 : 0)
         audio.setLoop("snow", volume: isSnowing ? 0.32 : 0)
         // Spray particles exist from the start (no first-use hitch), idle until the car moves
@@ -3722,39 +3736,101 @@ final class ParkingScene: SKScene {
     private var remotePolice: PoliceChase?
     private var policeBanner = SKNode()
     private var policeTitle = SKLabelNode()
-    private var policeDetail = SKLabelNode()
-    private var policeBannerBack = SKShapeNode()
     private var policeEdges: [SKShapeNode] = []
     private var policeReason = ""
 
-    /// Built with the HUD (hidden), so the first chase does not stall on new nodes.
+    private var policeKicker = SKLabelNode()
+    private var policeDistance = SKLabelNode()
+    private var policeRed = SKSpriteNode()
+    private var policeBlue = SKSpriteNode()
+    private var policeBarFill = SKSpriteNode()
+    private var policeStripe = SKSpriteNode()
+    private let policeBarWidth: CGFloat = 62
+    private static let policeRedColor = UIColor(red: 1, green: 0.16, blue: 0.2, alpha: 1)
+    private static let policeBlueColor = UIColor(red: 0.2, green: 0.45, blue: 1, alpha: 1)
+
+    /// Built with the HUD (hidden), so the first chase does not stall on new nodes. In the game's
+    /// racing style: a slanted dark plate; on its left a light bar block whose red and blue
+    /// halves strobe in turn under a beacon icon; the reason as a small spaced kicker over a big
+    /// italic title; on the right how far the police is, with a bar that fills as it closes in.
     private func setupPoliceWarning() {
         policeBanner.removeFromParent()
         policeEdges.forEach { $0.removeFromParent() }
         policeEdges.removeAll()
         policeBanner = SKNode()
-        // Stacked under the top bar and the turn pill (it sat on the pill and the timer before);
-        // the status line and bonus texts move below it while it shows
-        policeBanner.position = CGPoint(x: size.width / 2 + 40, y: hudTop - 50)
+        // Stacked under the top bar and the turn pill; the status line and bonus texts move
+        // below it while it shows
+        policeBanner.position = CGPoint(x: size.width / 2 + 40, y: hudTop - 52)
         policeBanner.zPosition = 22
         // Not 0: SpriteKit skips fully transparent nodes, so the label's text would be laid out
         // only on the first chase
         policeBanner.alpha = 0.002
-        let width = min(size.width - 40, 330)
-        policeBannerBack = SKShapeNode(rect: CGRect(x: -width / 2, y: -24, width: width, height: 48), cornerRadius: 14)
-        policeBannerBack.fillColor = UIColor(red: 0.08, green: 0.02, blue: 0.04, alpha: 0.82)
-        policeBannerBack.strokeColor = UIColor(red: 1, green: 0.2, blue: 0.2, alpha: 1)
-        policeBannerBack.lineWidth = 2.5
-        policeBanner.addChild(policeBannerBack)
-        policeTitle = makeLabel(Strings.policeComing, size: 18, color: .white)
-        policeTitle.position = CGPoint(x: 0, y: 2)
+        let width = min(size.width - 40, 360)
+        let height: CGFloat = 56
+        let skew: CGFloat = 14
+        let block: CGFloat = 62
+        let left = -width / 2
+
+        let plate = SKSpriteNode(texture: CarArt.policePlate(size: CGSize(width: width, height: height), skew: skew, block: block))
+        plate.size = CGSize(width: width + 20, height: height + 20)
+        policeBanner.addChild(plate)
+
+        // Light bar block: red over the top half, blue under it, strobing in turn
+        let stripSize = CGSize(width: block - 4, height: height / 2)
+        policeRed = SKSpriteNode(texture: CarArt.policeStrip(size: stripSize, skew: skew / 2, color: ParkingScene.policeRedColor))
+        policeRed.size = stripSize
+        policeRed.position = CGPoint(x: left + block / 2 + 2, y: height / 4)
+        policeRed.blendMode = .add
+        policeBanner.addChild(policeRed)
+        policeBlue = SKSpriteNode(texture: CarArt.policeStrip(size: stripSize, skew: skew / 2, color: ParkingScene.policeBlueColor))
+        policeBlue.size = stripSize
+        policeBlue.position = CGPoint(x: left + block / 2 - 5, y: -height / 4)
+        policeBlue.blendMode = .add
+        policeBanner.addChild(policeBlue)
+        let beacon = makeIcon("light.beacon.max.fill", size: 22)
+        beacon.position = CGPoint(x: left + block / 2 - 1, y: 0)
+        policeBanner.addChild(beacon)
+
+        // Kicker (the reason) and title
+        let textX = left + block + 12
+        policeKicker = SKLabelNode()
+        policeKicker.horizontalAlignmentMode = .left
+        policeKicker.verticalAlignmentMode = .center
+        policeKicker.position = CGPoint(x: textX + 4, y: 14)
+        policeBanner.addChild(policeKicker)
+        policeTitle = SKLabelNode()
+        policeTitle.horizontalAlignmentMode = .left
+        policeTitle.verticalAlignmentMode = .center
+        policeTitle.position = CGPoint(x: textX, y: -6)
         policeBanner.addChild(policeTitle)
-        policeDetail = makeLabel("", size: 11, color: UIColor(white: 1, alpha: 0.85))
-        policeDetail.position = CGPoint(x: 0, y: -16)
-        policeBanner.addChild(policeDetail)
+
+        // Distance and the closing-in bar
+        let right = width / 2 - skew - 10
+        policeDistance = SKLabelNode()
+        policeDistance.horizontalAlignmentMode = .right
+        policeDistance.verticalAlignmentMode = .center
+        policeDistance.position = CGPoint(x: right, y: 6)
+        policeBanner.addChild(policeDistance)
+        let track = SKSpriteNode(color: UIColor(white: 1, alpha: 0.14), size: CGSize(width: policeBarWidth, height: 4))
+        track.anchorPoint = CGPoint(x: 1, y: 0.5)
+        track.position = CGPoint(x: right - 4, y: -15)
+        policeBanner.addChild(track)
+        policeBarFill = SKSpriteNode(color: ParkingScene.policeRedColor, size: CGSize(width: policeBarWidth, height: 4))
+        policeBarFill.anchorPoint = CGPoint(x: 1, y: 0.5)
+        policeBarFill.position = track.position
+        policeBarFill.xScale = 0.1
+        policeBanner.addChild(policeBarFill)
+
+        // Strobe line along the bottom edge
+        policeStripe = SKSpriteNode(color: ParkingScene.policeRedColor, size: CGSize(width: width - skew * 2 - block, height: 2))
+        policeStripe.position = CGPoint(x: left + block + (width - skew * 2 - block) / 2, y: -height / 2 + 1)
+        policeStripe.blendMode = .add
+        policeBanner.addChild(policeStripe)
         hud.addChild(policeBanner)
+        setPoliceTexts(title: Strings.policeComing, reason: "", meters: 0)
+
         // Red and blue glow on the screen edges
-        for (index, color) in [UIColor(red: 1, green: 0.1, blue: 0.1, alpha: 1), UIColor(red: 0.15, green: 0.4, blue: 1, alpha: 1)].enumerated() {
+        for (index, color) in [ParkingScene.policeRedColor, ParkingScene.policeBlueColor].enumerated() {
             let edge = SKShapeNode(rect: CGRect(x: index == 0 ? 0 : size.width - 16, y: 0, width: 16, height: size.height))
             edge.fillColor = color
             edge.strokeColor = .clear
@@ -3767,13 +3843,32 @@ final class ParkingScene: SKScene {
         }
     }
 
+    private var policeTextKey = ""
+
+    /// Lays out the warning's texts (only when they change: attributed text is not free).
+    private func setPoliceTexts(title: String, reason: String, meters: Int) {
+        let key = "\(title)|\(reason)|\(meters)"
+        guard key != policeTextKey else { return }
+        policeTextKey = key
+        let kickerFont = UIFont.systemFont(ofSize: 10, weight: .heavy, width: .expanded)
+        policeKicker.attributedText = NSAttributedString(string: Strings.upper(reason), attributes: [
+            .font: kickerFont, .foregroundColor: UIColor(white: 1, alpha: 0.72), .kern: 1.6])
+        policeTitle.attributedText = NSAttributedString(string: title.replacingOccurrences(of: "!", with: ""), attributes: [
+            .font: CarArt.raceFont(25), .foregroundColor: UIColor.white, .kern: 0.4])
+        let distance = NSMutableAttributedString(string: "\(meters)", attributes: [
+            .font: UIFont.monospacedDigitSystemFont(ofSize: 22, weight: .heavy), .foregroundColor: UIColor.white])
+        distance.append(NSAttributedString(string: " M", attributes: [
+            .font: UIFont.systemFont(ofSize: 10, weight: .heavy, width: .expanded), .foregroundColor: UIColor(white: 1, alpha: 0.6)]))
+        policeDistance.attributedText = distance
+    }
+
     /// The HUD's top line (the level/timer bar); the turn pill, police banner and status line stack under it.
     private var hudTop: CGFloat = 0
     private var policeWarningShown = false
 
     /// The status line (and bonus texts) under the police banner while it shows, under the turn pill otherwise.
     private func placeStatus() {
-        statusLabel.position = CGPoint(x: size.width / 2 + 40, y: hudTop - (policeWarningShown ? 98 : 52))
+        statusLabel.position = CGPoint(x: size.width / 2 + 40, y: hudTop - (policeWarningShown ? 104 : 52))
     }
 
     /// The turn guidance in the top bar, or the level name (and score) when there is none.
@@ -3807,11 +3902,15 @@ final class ParkingScene: SKScene {
     private func updatePoliceWarning(_ chase: PoliceChase) {
         let meters = Int((chase.distance / 10).rounded())
         let title = chase.pursuing ? Strings.policeChase : Strings.policeComing
-        if policeTitle.text != title { policeTitle.text = title }
-        let detail = "\(policeReason) · \(meters) m"
-        if policeDetail.text != detail { policeDetail.text = detail }
+        setPoliceTexts(title: title, reason: policeReason, meters: meters)
         let flash = Int(lastUpdate * 6) % 2 == 0
-        policeBannerBack.strokeColor = flash ? UIColor(red: 1, green: 0.2, blue: 0.2, alpha: 1) : UIColor(red: 0.25, green: 0.5, blue: 1, alpha: 1)
+        policeRed.alpha = flash ? 1 : 0.18
+        policeBlue.alpha = flash ? 0.18 : 1
+        policeStripe.color = flash ? ParkingScene.policeRedColor : ParkingScene.policeBlueColor
+        // How close it is: the bar fills from 60 m away to the catch
+        let close = max(0.04, min(1, 1 - (chase.distance - 34) / 566))
+        policeBarFill.xScale += (close - policeBarFill.xScale) * 0.25
+        policeBarFill.color = close > 0.75 ? ParkingScene.policeRedColor : UIColor(red: 1, green: 0.72, blue: 0.2, alpha: 1)
         // The closer the police, the stronger the edge glow
         let strength = max(0.25, min(0.7, 0.8 - chase.distance / 1500))
         if policeEdges.count == 2 {

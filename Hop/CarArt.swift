@@ -201,6 +201,57 @@ enum CarArt {
         }
     }
 
+    /// The police warning's plate, in the style of the finish plate: a slanted dark plate with a
+    /// soft shadow and a faint top highlight, with the left block (where the light bar strobes)
+    /// cut a shade darker. Text and lights are separate nodes on top.
+    static func policePlate(size: CGSize, skew: CGFloat, block: CGFloat) -> SKTexture {
+        render(CGSize(width: size.width + 20, height: size.height + 20), scale: 2) { context, s in
+            let rect = CGRect(x: 10, y: 10, width: size.width, height: size.height)
+            func slanted(_ r: CGRect) -> CGPath {
+                let path = CGMutablePath()
+                path.move(to: CGPoint(x: r.minX + skew, y: r.minY))
+                path.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+                path.addLine(to: CGPoint(x: r.maxX - skew, y: r.maxY))
+                path.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+                path.closeSubpath()
+                return path
+            }
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: 4), blur: 10, color: UIColor.black.withAlphaComponent(0.55).cgColor)
+            context.addPath(slanted(rect))
+            context.setFillColor(UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 0.9).cgColor)
+            context.fillPath()
+            context.restoreGState()
+            context.saveGState()
+            context.addPath(slanted(rect))
+            context.clip()
+            if let shine = gradient([UIColor.white.withAlphaComponent(0.09), UIColor.white.withAlphaComponent(0)]) {
+                context.drawLinearGradient(shine, start: CGPoint(x: 0, y: rect.minY), end: CGPoint(x: 0, y: rect.midY), options: [])
+            }
+            context.setFillColor(UIColor.black.withAlphaComponent(0.35).cgColor)
+            context.fill(CGRect(x: rect.minX, y: rect.minY, width: block, height: rect.height))
+            context.restoreGState()
+        }
+    }
+
+    /// One half of the police light bar for the warning's left block: a slanted strip glowing in
+    /// `color` (the red and the blue strips strobe in turn).
+    static func policeStrip(size: CGSize, skew: CGFloat, color: UIColor) -> SKTexture {
+        render(size, scale: 2) { context, s in
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: skew, y: 0))
+            path.addLine(to: CGPoint(x: s.width, y: 0))
+            path.addLine(to: CGPoint(x: s.width - skew, y: s.height))
+            path.addLine(to: CGPoint(x: 0, y: s.height))
+            path.closeSubpath()
+            context.addPath(path)
+            context.clip()
+            if let glow = gradient([color.withAlphaComponent(0.95), color.withAlphaComponent(0.55)]) {
+                context.drawLinearGradient(glow, start: CGPoint(x: 0, y: 0), end: CGPoint(x: s.width, y: 0), options: [])
+            }
+        }
+    }
+
     /// Lower-third result plate for the finish moment, in the style of racing games: a slanted
     /// dark plate with an accent edge, a small kicker, a big white title, a stats line and a
     /// position block on the right. Plain text on a solid plate so it reads over any scene.

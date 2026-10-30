@@ -11,6 +11,9 @@ on:
       net:
         description: "Online check with two simulators"
         default: "true"
+      only:
+        description: "Only this screenshot run (daily, venues, fail, card, streets, city); empty for all"
+        default: ""
 
 jobs:
   countdown:
@@ -71,7 +74,9 @@ jobs:
           mkdir -p shots
           rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
           DATA=""
-          for RUN in "daily" "venues" "fail" "card" "-parklevel 2" "streets" "city"; do
+          RUNS=("daily" "venues" "fail" "card" "-parklevel 2" "streets" "city")
+          if [ -n "${{ inputs.only }}" ]; then RUNS=("${{ inputs.only }}"); fi
+          for RUN in "${RUNS[@]}"; do
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
             if [ "$RUN" = "daily" ]; then
@@ -130,7 +135,7 @@ jobs:
               cp "$DATA/Documents/shot-card.png" shots/ 2>/dev/null || true
               continue
             elif [ "$RUN" = "streets" ]; then
-              xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playcity -pedtest -policetest -dayweather -AppleLanguages "(tr)" > shots/streets-console.log 2>&1 &
+              xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playcity -pedtest -policetest -nightweather -AppleLanguages "(tr)" > shots/streets-console.log 2>&1 &
               # Screens once the police banner is up (the app marks it), however slow the runner
               sleep 4
               DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
