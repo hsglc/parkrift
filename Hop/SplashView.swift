@@ -85,7 +85,7 @@ final class SplashLayerView: UIView {
         sheenHolder.mask = sheenMask
         sheenHolder.name = "sheen"
         layer.addSublayer(sheenHolder)
-        let line = ImageRenderer(content: Text(Strings.splashTagline.uppercased()).font(.kicker(11)).tracking(3)
+        let line = ImageRenderer(content: Text(Strings.splashTagline.localUpper).font(.kicker(11)).tracking(3)
             .foregroundStyle(.white.opacity(0.6)))
         line.scale = UIScreen.main.scale
         if let image = line.uiImage {

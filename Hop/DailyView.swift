@@ -89,7 +89,7 @@ struct DailyView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(Strings.dailyTitle.uppercased()).font(.race(26)).foregroundStyle(.white)
+            Text(Strings.dailyTitle.localUpper).font(.race(26)).foregroundStyle(.white)
             Spacer()
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 6) {
@@ -139,7 +139,7 @@ struct DailyView: View {
         let reward = Progression.streakRewards[max(0, min(6, shownDay - 1))]
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(Strings.dailyGift.uppercased()).font(.kicker(10)).tracking(1.6).foregroundStyle(Palette.gold)
+                Text(Strings.dailyGift.localUpper).font(.kicker(10)).tracking(1.6).foregroundStyle(Palette.gold)
                 Spacer()
                 HStack(spacing: 4) {
                     Image(systemName: "flame.fill").foregroundStyle(Palette.goldDeep)
@@ -168,7 +168,7 @@ struct DailyView: View {
                         .foregroundStyle(pending == nil ? green : Palette.gold)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(Strings.dayN(shownDay).uppercased())
+                    Text(Strings.dayN(shownDay).localUpper)
                         .font(.kicker(9)).tracking(1.4).foregroundStyle(.white.opacity(0.55))
                     Text("+\(justCollected ?? reward)")
                         .font(.race(32)).foregroundStyle(.white)
@@ -196,14 +196,14 @@ struct DailyView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "gift.fill").font(.system(size: 15, weight: .black))
-                        Text("\(Strings.collect.uppercased())  +\(Progression.streakRewards[day - 1])")
+                        Text("\(Strings.collect.localUpper)  +\(Progression.streakRewards[day - 1])")
                     }
                 }
                 .buttonStyle(RaceButtonStyle(color: Palette.gold, textColor: Neo.ink, height: 44, fontSize: 18))
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(green)
-                    Text((justCollected.map { "\(Strings.collected) +\($0)" } ?? Strings.comeBackTomorrow).uppercased())
+                    Text((justCollected.map { "\(Strings.collected) +\($0)" } ?? Strings.comeBackTomorrow).localUpper)
                         .contentTransition(.numericText())
                 }
                 .font(.race(15))
@@ -273,7 +273,7 @@ struct DailyView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(Strings.dailyTasks.uppercased()).font(.kicker(10)).tracking(1.6).foregroundStyle(Neo.cyan)
+                    Text(Strings.dailyTasks.localUpper).font(.kicker(10)).tracking(1.6).foregroundStyle(Neo.cyan)
                     Text(Strings.dailyTasksHint)
                         .font(.ui(10, .semibold))
                         .foregroundStyle(.white.opacity(0.45))
@@ -427,7 +427,7 @@ struct DailyView: View {
                 }
                 .foregroundStyle(Palette.ink)
                 .padding(.horizontal, 10).frame(height: 26)
-                .background(SlantedShape(skew: 6).fill(Palette.gold))
+                .background(Capsule().fill(Palette.gold))
                 .shadow(color: Palette.gold.opacity(pulse ? 0.7 : 0.25), radius: pulse ? 10 : 4)
                 .scaleEffect(pulse ? 1.04 : 0.98)
             }

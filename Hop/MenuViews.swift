@@ -167,6 +167,13 @@ struct MenuView: View {
                 // Store and design screenshots of the daily screen
                 DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration + 0.9) { showDaily = true }
             }
+            if PerfSettings.benchmark, let at = ProcessInfo.processInfo.arguments.firstIndex(of: "-menupage"),
+               at + 1 < ProcessInfo.processInfo.arguments.count {
+                // Design screenshots of the menu pages, saved by the app itself
+                let target: Page = ["levels": .levels, "city": .city, "online": .online][ProcessInfo.processInfo.arguments[at + 1]] ?? .home
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { page = target }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { saveWindowSnapshot(named: "menu-shot") }
+            }
             if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch && !PerfSettings.benchmark {
                 MenuView.giftShownThisLaunch = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + SplashView.duration + 0.9) { showDaily = true }
@@ -203,6 +210,15 @@ struct MenuView: View {
         }
     }
 
+    private var pageSubtitle: String {
+        switch page {
+        case .home: return ""
+        case .levels: return Strings.levelsCount(Levels.all.count)
+        case .city: return Strings.chooseMode
+        case .online: return Strings.chooseMode
+        }
+    }
+
     /// Done daily tasks whose coins wait to be collected (read again whenever the menu redraws).
     private var claimable: [Progression.DailyTask] { Progression.claimableTasks }
 
@@ -210,7 +226,7 @@ struct MenuView: View {
     @State private var compactTopBar = false
 
     private var topBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             ZStack(alignment: .leading) {
                 if page == .home {
                     // Coins from finished daily tasks wait here to be collected
@@ -221,7 +237,7 @@ struct MenuView: View {
                         .transition(.scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
                     }
                 } else {
-                    NeoPageTitle(kicker: Strings.chooseMode, title: pageTitle) { go(.home) }
+                    NeoPageTitle(subtitle: pageSubtitle, title: pageTitle) { go(.home) }
                     .transition(.opacity)
                 }
             }
@@ -235,7 +251,7 @@ struct MenuView: View {
             NeoIconButton(systemImage: "info") { showAbout = true }
             SoundToggle()
         }
-        .frame(height: 46)
+        .frame(height: 48)
         .background(GeometryReader { proxy in
             Color.clear.onAppear { compactTopBar = proxy.size.width < 700 }
                 .onChange(of: proxy.size.width) { _, width in compactTopBar = width < 700 }
@@ -270,10 +286,10 @@ struct MenuView: View {
             HStack(spacing: 12) {
                 ArtActionTile(image: "menu_duo.jpg", kicker: Strings.homeOnlineKicker, title: Strings.quickMatch,
                               detail: Strings.quickMatchSub, accent: Neo.magenta, icon: "bolt.fill",
-                              buttonTitle: Strings.playNow, skew: 16) { model.quickMatch() }
+                              buttonTitle: Strings.playNow) { model.quickMatch() }
                 ArtActionTile(image: "menu_room.jpg", kicker: Strings.homePrivateKicker, title: Strings.createRoom,
                               detail: Strings.createRoomSub, accent: Neo.cyan, icon: "plus",
-                              buttonTitle: Strings.createRoom, skew: 16) { model.createRoom() }
+                              buttonTitle: Strings.createRoom) { model.createRoom() }
                 ZStack {
                     if showJoin {
                         ZStack {
@@ -281,13 +297,13 @@ struct MenuView: View {
                             JoinPanel(showJoin: $showJoin)
                                 .padding(.horizontal, 20)
                         }
-                        .clipShape(SlantedShape(skew: 16))
-                        .overlay(SlantedShape(skew: 16).strokeBorderCompat(Color.white.opacity(0.14), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
                     } else {
                         ArtActionTile(image: "menu_join.jpg", kicker: Strings.homePrivateKicker, title: Strings.joinRoom,
                                       detail: Strings.joinRoomSub, accent: Palette.gold, icon: "keyboard",
-                                      buttonTitle: Strings.enterCode, skew: 16) {
+                                      buttonTitle: Strings.enterCode) {
                             withAnimation(pageAnimation) { showJoin = true }
                         }
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
@@ -470,8 +486,8 @@ private struct JoinPanel: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Text(Strings.joinRoom.uppercased())
-                .font(.race(22))
+            Text(Strings.joinRoom)
+                .font(.race(24))
                 .foregroundStyle(.white)
             ZStack {
                 TextField("", text: $code)
@@ -492,9 +508,9 @@ private struct JoinPanel: View {
                             .font(.ui(26, .black))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 52)
-                            .background(SlantedShape(skew: 8).fill(Neo.ink.opacity(0.8)))
-                            .overlay(SlantedShape(skew: 8)
-                                .strokeBorderCompat(active ? Palette.gold : Color.white.opacity(0.22), lineWidth: active ? 2 : 1))
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black.opacity(0.5)))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(active ? Palette.gold : Color.white.opacity(0.18), lineWidth: active ? 2 : 1))
                     }
                 }
                 .allowsHitTesting(false)
@@ -506,12 +522,10 @@ private struct JoinPanel: View {
                 focused = false
                 model.joinRoom(code: code)
             } label: {
-                HStack(spacing: 8) {
-                    Text(Strings.join.uppercased())
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .black))
-                }
+                Text(Strings.join.localUpper)
             }
-            .buttonStyle(RaceButtonStyle(color: code.count == 4 ? Palette.gold : Color(white: 0.35), textColor: Neo.ink, height: 44, fontSize: 18))
+            .buttonStyle(GaragePillStyle(fill: code.count == 4 ? Palette.gold : Color(white: 0.35), fontSize: 19))
+            .frame(maxWidth: 240)
             .disabled(code.count != 4 || model.connecting)
 
             Button(Strings.back) {
@@ -530,19 +544,24 @@ struct LevelPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text(Strings.levels.uppercased())
-                    .font(.kicker(10))
-                    .tracking(1.5)
-                    .foregroundStyle(Neo.cyan)
+            HStack(spacing: 5) {
+                Text(Strings.levels)
+                    .font(.ui(13, .semibold))
+                    .foregroundStyle(.white.opacity(0.65))
                 Spacer()
-                Image(systemName: "star.fill").foregroundStyle(Palette.gold)
-                Text("\(totalStars)/\(Levels.all.count * 3)")
-                    .font(.race(15))
+                Image(systemName: "star.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Palette.gold)
+                Text("\(totalStars)")
+                    .font(.race(16))
                     .monospacedDigit()
                     .foregroundStyle(.white)
+                Text("/ \(Levels.all.count * 3)")
+                    .font(.ui(12, .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.45))
             }
-            .font(.ui(12, .black))
+            .padding(.horizontal, 2)
 
             let columns = Array(repeating: GridItem(.fixed(54), spacing: 8), count: 5)
             ScrollViewReader { proxy in
@@ -567,7 +586,7 @@ struct LevelPicker: View {
         }
         .frame(width: 302)
         .padding(12)
-        .background(NeoPanel())
+        .background(NeoPanel(radius: 24))
     }
 
     private var totalStars: Int {
@@ -600,20 +619,18 @@ private struct LevelTile: View {
             }
             .frame(width: 54, height: 48)
             .background(
-                SlantedShape(skew: 7)
-                    .fill(selected
-                          ? AnyShapeStyle(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .top, endPoint: .bottom))
-                          : AnyShapeStyle(Neo.ink.opacity(unlocked ? 0.85 : 0.45)))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(selected ? Palette.gold : Color.white.opacity(unlocked ? 0.08 : 0.03))
             )
             .overlay(
-                SlantedShape(skew: 7)
-                    .strokeBorderCompat(selected ? Color.white.opacity(0.7) : Color.white.opacity(unlocked ? 0.14 : 0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.white.opacity(selected ? 0 : (unlocked ? 0.12 : 0.05)), lineWidth: 1)
             )
-            .overlay(alignment: .bottomLeading) {
-                // Difficulty tier as a thin coloured base line
-                SlantedShape(skew: 2).fill(TierColor.of(level: index).opacity(unlocked ? 0.9 : 0.3))
-                    .frame(width: 22, height: 3)
-                    .offset(x: 6, y: -1)
+            .overlay(alignment: .bottom) {
+                // Difficulty tier as a short coloured line along the bottom
+                Capsule().fill(TierColor.of(level: index).opacity(unlocked ? (selected ? 0 : 0.9) : 0.3))
+                    .frame(width: 18, height: 3)
+                    .offset(y: -4)
             }
             .overlay(alignment: .topTrailing) {
                 if unlocked, let precision = precision {
@@ -626,7 +643,7 @@ private struct LevelTile: View {
                         .offset(x: 3, y: -4)
                 }
             }
-            .shadow(color: selected ? Palette.gold.opacity(0.6) : .clear, radius: 8)
+            .shadow(color: selected ? Palette.gold.opacity(0.45) : .clear, radius: 10)
             .scaleEffect(selected ? 1.06 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: selected)
         }
@@ -750,7 +767,7 @@ struct LobbyView: View {
             HStack(spacing: 18) {
                 // Room code
                 VStack(spacing: 12) {
-                    Text(Strings.roomCode.uppercased())
+                    Text(Strings.roomCode.localUpper)
                         .font(.ui(13, .black))
                         .foregroundStyle(.white.opacity(0.6))
                         .tracking(1.5)
@@ -795,7 +812,7 @@ struct LobbyView: View {
 
                 // Players and start
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(Strings.players.uppercased())
+                    Text(Strings.players.localUpper)
                         .font(.ui(13, .black))
                         .foregroundStyle(.white.opacity(0.6))
                         .tracking(1.5)
@@ -808,7 +825,7 @@ struct LobbyView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "wrench.and.screwdriver.fill")
-                            Text(Strings.changeCar.uppercased())
+                            Text(Strings.changeCar.localUpper)
                         }
                         .font(.race(14, weight: .heavy))
                         .foregroundStyle(.white)
@@ -890,7 +907,7 @@ private struct PlayerChip: View {
                     .font(.race(17))
                     .foregroundStyle(.white.opacity(present ? 1 : 0.5))
                 if let car = car {
-                    Text(car.uppercased())
+                    Text(car.localUpper)
                         .font(.kicker(8))
                         .tracking(1)
                         .foregroundStyle(.white.opacity(0.55))
@@ -999,17 +1016,14 @@ struct LoadingView: View {
                     Wordmark(size: 22)
                     Spacer()
                     HStack(spacing: 8) {
-                        Text(modeTitle.uppercased())
+                        Text(modeTitle.localUpper)
                             .font(.kicker(10)).tracking(1.5)
                             .foregroundStyle(.white.opacity(0.75))
                         if !Levels.isCity(level) {
-                            Text(Strings.tierNames[min(4, max(0, level) / 10)])
-                                .font(.race(11)).foregroundStyle(Neo.ink)
-                                .padding(.horizontal, 8).padding(.vertical, 1)
-                                .background(SlantedShape(skew: 5).fill(accent))
+                            TierChip(index: level)
                         }
                     }
-                    Text(levelName.uppercased())
+                    Text(levelName.localUpper)
                         .font(.race(44))
                         .foregroundStyle(.white)
                         .lineLimit(1)
@@ -1019,7 +1033,7 @@ struct LoadingView: View {
                     HStack(spacing: 10) {
                         LoadingBar(shownAt: shownAt, expected: expected, endsAt: endsAt, color: UIColor(accent))
                             .frame(width: 260, height: 6)
-                        Text(Strings.loadingText.uppercased())
+                        Text(Strings.loadingText.localUpper)
                             .font(.kicker(9)).tracking(1.2)
                             .foregroundStyle(.white.opacity(0.55))
                     }
@@ -1242,7 +1256,7 @@ struct CurtainView: View {
                             .frame(width: 44, height: 44)
                             .background(Circle().fill(Neo.cyan.opacity(0.14)))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(title.uppercased())
+                            Text(title.localUpper)
                                 .font(.race(38))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
@@ -1374,13 +1388,13 @@ struct RewardsReadyPill: View {
                     .foregroundStyle(Palette.ink)
                     .padding(.horizontal, 10)
                     .frame(height: 26)
-                    .background(SlantedShape(skew: 6).fill(Palette.gold))
+                    .background(Capsule().fill(Palette.gold))
             }
-            .padding(.leading, 6)
-            .padding(.trailing, 8)
+            .padding(.leading, 5)
+            .padding(.trailing, 7)
             .frame(height: 42)
-            .background(SlantedShape(skew: 8).fill(Neo.ink.opacity(0.82)))
-            .overlay(SlantedShape(skew: 8).strokeBorderCompat(edgeColor, lineWidth: 1.5))
+            .background(Capsule().fill(Color.black.opacity(0.5)))
+            .overlay(Capsule().strokeBorder(edgeColor, lineWidth: 1.5))
             .shadow(color: glowColor, radius: glow ? 14 : 6)
             .scaleEffect(shown ? 1 : 0.7)
             .opacity(shown ? 1 : 0)

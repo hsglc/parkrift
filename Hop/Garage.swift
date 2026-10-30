@@ -687,6 +687,11 @@ struct GarageView: View {
             stage.show(choice, animated: false)
             withAnimation(.easeOut(duration: 0.6).delay(0.15)) { statsShown = true }
             #if BENCHMARK
+            // Test hook: a picture of the garage, saved by the app itself (the simulator's own
+            // screenshot can miss the SceneKit view)
+            if ProcessInfo.processInfo.arguments.contains("-staygarage") && !ProcessInfo.processInfo.arguments.contains("-unlocktest") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { saveWindowSnapshot(named: "garage-shot") }
+            }
             // Test hook: the unlock reveal on the shown car
             if ProcessInfo.processInfo.arguments.contains("-unlocktest") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -865,7 +870,7 @@ struct GarageView: View {
                     .frame(height: 22)
                     .background(Capsule().fill(Palette.gold))
             }
-            Text(spec.name.uppercased())
+            Text(spec.name.localUpper)
                 .font(.race(44))
                 .foregroundStyle(.white)
                 .lineLimit(1)
@@ -931,7 +936,7 @@ struct GarageView: View {
                         model.carChoice = choice
                         model.leaveGarage(confirmed: true)
                     } label: {
-                        Text(isPlay ? Strings.raceStart.uppercased() : Strings.selectCar.uppercased())
+                        Text(isPlay ? Strings.raceStart.localUpper : Strings.selectCar.localUpper)
                     }
                     .buttonStyle(GaragePillStyle(fill: Palette.gold))
                 } else {
@@ -1067,7 +1072,7 @@ struct UnlockReveal: View {
     @State private var closing = false
     @State private var finished = false
 
-    private var name: [Character] { Array(spec.name.uppercased()) }
+    private var name: [Character] { Array(spec.name.localUpper) }
 
     var body: some View {
         GeometryReader { geo in
@@ -1098,14 +1103,14 @@ struct UnlockReveal: View {
                             .fill(accent)
                             .frame(width: 36 * line, height: 3)
                             .shadow(color: accent, radius: 6)
-                        Text(Strings.carUnlocked.uppercased())
+                        Text(Strings.carUnlocked.localUpper)
                             .font(.kicker(12))
                             .tracking(4)
                             .foregroundStyle(accent)
                             .opacity(kicker ? 1 : 0)
                             .offset(x: kicker ? 0 : -12)
                     }
-                    Text(spec.maker.uppercased())
+                    Text(spec.maker.localUpper)
                         .font(.kicker(12))
                         .tracking(5)
                         .foregroundStyle(.white.opacity(0.7))
@@ -1133,7 +1138,7 @@ struct UnlockReveal: View {
                             .rotationEffect(.degrees(18))
                             .offset(x: shine * 300)
                             .blendMode(.plusLighter)
-                            .mask(Text(spec.name.uppercased()).font(.race(64, weight: .black)).italic()
+                            .mask(Text(spec.name.localUpper).font(.race(64, weight: .black)).italic()
                                     .frame(maxWidth: .infinity, alignment: .leading))
                             .allowsHitTesting(false)
                     )
@@ -1145,7 +1150,7 @@ struct UnlockReveal: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                             .background(SlantedShape(skew: 6).fill(accent))
-                        Text(Strings.addedToGarage.uppercased())
+                        Text(Strings.addedToGarage.localUpper)
                             .font(.kicker(11))
                             .tracking(2)
                             .foregroundStyle(.white.opacity(0.75))
@@ -1191,7 +1196,7 @@ struct UnlockReveal: View {
 
     private func statRow(_ label: String, _ value: Double, delay: Double) -> some View {
         HStack(spacing: 10) {
-            Text(label.uppercased())
+            Text(label.localUpper)
                 .font(.kicker(10))
                 .tracking(2)
                 .foregroundStyle(.white.opacity(0.65))

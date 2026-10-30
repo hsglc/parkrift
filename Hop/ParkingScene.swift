@@ -715,7 +715,7 @@ final class ParkingScene: SKScene {
         holdModule.position = holdHome
         holdModule.zPosition = 6
         holdModule.addChild(makeGlass(width: 196, height: 46))
-        holdLabel = makeLabel(Strings.hold.uppercased(), size: 13, color: .white, font: "Barlow-ExtraBold")
+        holdLabel = makeLabel(Strings.hold.localUpper, size: 13, color: .white, font: "Barlow-ExtraBold")
         holdLabel.position = CGPoint(x: 0, y: 6)
         holdModule.addChild(holdLabel)
         let holdTrack = SKSpriteNode(color: UIColor(white: 1, alpha: 0.14), size: CGSize(width: 156, height: 4))
@@ -954,7 +954,7 @@ final class ParkingScene: SKScene {
         if level.race {
             // Draws once with the plate's fonts so the finish moment does not lay out glyphs cold
             // Letters and chips of the finish title are drawn now, so the finish starts without a hitch
-            for title in [Strings.youWon.uppercased(), Strings.finishBig, Strings.parkedBig] where finishGlyphs[title] == nil {
+            for title in [Strings.youWon.localUpper, Strings.finishBig, Strings.parkedBig] where finishGlyphs[title] == nil {
                 finishGlyphs[title] = CarArt.titleGlyphs(title, size: 88)
             }
             _ = CarArt.finishStats([.init(icon: "stopwatch.fill", label: Strings.statTime, value: "0.0", unit: "s")], accent: .white)
@@ -4476,7 +4476,7 @@ final class ParkingScene: SKScene {
                 if benchmark {
                     run(.wait(forDuration: 0.4)) { saveWindowSnapshot(named: "shot-hold") }
                 }
-                holdLabel.text = Strings.hold.uppercased()
+                holdLabel.text = Strings.hold.localUpper
                 holdModule.removeAllActions()
                 holdModule.position = holdHome
                 holdModule.setScale(0.95)
@@ -4510,7 +4510,7 @@ final class ParkingScene: SKScene {
         phase = .finished
         holdRing.path = nil
         holdFill.xScale = 1
-        holdLabel.text = Strings.parked.uppercased()
+        holdLabel.text = Strings.parked.localUpper
         holdModule.run(.sequence([.wait(forDuration: 0.6), .fadeOut(withDuration: 0.25)]))
         holdShown = false
         world?.setTargetMarker(hidden: true, progress: 1)
@@ -5360,7 +5360,7 @@ final class ParkingScene: SKScene {
         live.verticalAlignmentMode = .center
         live.position = CGPoint(x: 12, y: 0)
         tag.addChild(live)
-        let what = SKLabelNode(text: Strings.spectatingFriend.uppercased())
+        let what = SKLabelNode(text: Strings.spectatingFriend.localUpper)
         what.fontName = "Barlow-SemiBold"
         what.fontSize = 12
         what.fontColor = UIColor.white.withAlphaComponent(0.7)

@@ -14,11 +14,11 @@ struct UpgradeView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(Strings.upgrade.uppercased())
+                        Text(Strings.upgrade.localUpper)
                             .font(.kicker(11))
                             .tracking(1.5)
                             .foregroundStyle(Palette.neon)
-                        Text(choice.spec.name.uppercased())
+                        Text(choice.spec.name.localUpper)
                             .font(.race(28))
                             .foregroundStyle(.white)
                     }
@@ -32,7 +32,7 @@ struct UpgradeView: View {
                     upgradeCard(.nitro, icon: "flame.fill", title: Strings.upgradeNitro, info: Strings.upgradeNitroInfo)
                 }
                 HStack(spacing: 10) {
-                    Text(Strings.rims.uppercased())
+                    Text(Strings.rims.localUpper)
                         .font(.kicker(10))
                         .tracking(1.5)
                         .foregroundStyle(.white.opacity(0.6))
@@ -76,7 +76,7 @@ struct UpgradeView: View {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .black))
                     .foregroundStyle(Palette.gold)
-                Text(title.uppercased())
+                Text(title.localUpper)
                     .font(.race(18))
                     .foregroundStyle(.white)
             }

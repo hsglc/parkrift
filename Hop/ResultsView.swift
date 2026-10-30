@@ -117,7 +117,7 @@ struct ResultsOverlay: View {
                     .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
                     .opacity(titleIn ? 1 : 0)
-                Text(headline.uppercased())
+                Text(headline.localUpper)
                     .font(.race(58))
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -253,7 +253,7 @@ struct ResultsOverlay: View {
                 .frame(width: 240, height: 6)
             }
         case .final:
-            Button { model.leaveToMenu() } label: { Text(Strings.backToMenu.uppercased()) }
+            Button { model.leaveToMenu() } label: { Text(Strings.backToMenu.localUpper) }
                 .buttonStyle(MainPillStyle(fill: gold))
         case .solo(let hasNext):
             HStack(spacing: 14) {
@@ -261,7 +261,7 @@ struct ResultsOverlay: View {
                     .buttonStyle(RoundIconStyle())
                     .accessibilityLabel(Strings.menu)
                 if failed {
-                    Button { model.retryLevel() } label: { Text(Strings.tryAgain.uppercased()) }
+                    Button { model.retryLevel() } label: { Text(Strings.tryAgain.localUpper) }
                         .buttonStyle(MainPillStyle(fill: Color(red: 1, green: 0.56, blue: 0.22)))
                     if nextOpen {
                         Button { model.nextLevel() } label: { Image(systemName: "chevron.right") }
@@ -269,13 +269,13 @@ struct ResultsOverlay: View {
                             .accessibilityLabel(Strings.next)
                     }
                 } else if hasNext {
-                    Button { model.nextLevel() } label: { Text(Strings.next.uppercased()) }
+                    Button { model.nextLevel() } label: { Text(Strings.next.localUpper) }
                         .buttonStyle(MainPillStyle(fill: gold))
                     Button { model.retryLevel() } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(RoundIconStyle())
                         .accessibilityLabel(Strings.retry)
                 } else {
-                    Button { model.retryLevel() } label: { Text(Strings.retry.uppercased()) }
+                    Button { model.retryLevel() } label: { Text(Strings.retry.localUpper) }
                         .buttonStyle(MainPillStyle(fill: gold))
                 }
             }

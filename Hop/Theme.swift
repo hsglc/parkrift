@@ -199,7 +199,7 @@ struct SlantedShape: Shape {
     }
 }
 
-/// Big slanted call-to-action button with a light sweep.
+/// Big rounded call-to-action pill.
 struct RaceButtonStyle: ButtonStyle {
     var color: Color = Palette.gold
     var textColor: Color = Palette.ink
@@ -209,16 +209,14 @@ struct RaceButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.race(fontSize))
-            .tracking(0.5)
             .foregroundStyle(textColor)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 18)
             .frame(maxWidth: .infinity)
             .frame(height: height)
-            .background(
-                SlantedShape(skew: 16)
-                    .fill(LinearGradient(colors: [color, color.opacity(0.82)], startPoint: .top, endPoint: .bottom))
-            )
-            .overlay(SlantedShape(skew: 16).strokeBorderCompat(Color.white.opacity(0.45), lineWidth: 1))
-            .shadow(color: color.opacity(0.45), radius: configuration.isPressed ? 4 : 14, y: configuration.isPressed ? 2 : 6)
+            .background(Capsule().fill(color))
+            .shadow(color: color.opacity(0.35), radius: configuration.isPressed ? 4 : 14, y: 5)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
     }
@@ -267,6 +265,7 @@ struct CoinPill: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: "dollarsign.circle.fill")
+                .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(Palette.gold)
             Text("\(coins)")
                 .monospacedDigit()
@@ -274,13 +273,13 @@ struct CoinPill: View {
                 .fixedSize()
                 .contentTransition(.numericText())
         }
-        .font(.race(17))
+        .font(.race(18))
         .foregroundStyle(.white)
-        .padding(.leading, 14)
-        .padding(.trailing, 12)
-        .frame(height: 34)
-        .background(SlantedShape(skew: 7).fill(Neo.ink.opacity(0.75)))
-        .overlay(SlantedShape(skew: 7).strokeBorderCompat(Palette.gold.opacity(0.45), lineWidth: 1))
+        .padding(.leading, 10)
+        .padding(.trailing, 14)
+        .frame(height: 40)
+        .background(Capsule().fill(Color.black.opacity(0.4)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
         .animation(.easeOut(duration: 0.3), value: coins)
     }
 }
