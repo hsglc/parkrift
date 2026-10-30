@@ -90,9 +90,24 @@ final class FastLink: NSObject {
         guard let peer = peer else { return }
         incoming?.delegate = nil
         incoming?.close()
+        receivingReported = false
         incoming = peer.dataChannel(forLabel: "s-in", configuration: FastLink.channelConfig(id))
         incoming?.delegate = self
+        // The channel can open before its delegate is set (the transport is already up), and that
+        // first state change is then never heard: look at it directly as well
+        let channel = incoming
+        for delay in [0.0, 0.5, 1.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self, let channel = channel, channel === self.incoming,
+                      channel.readyState == .open, !self.receivingReported else { return }
+                self.receivingReported = true
+                self.onReceiving?(true)
+            }
+        }
     }
+
+    /// Whether "receiving" was already reported for the current incoming channel.
+    private var receivingReported = false
 
     func send(_ data: Data) {
         guard let out = out, out.readyState == .open else { return }
@@ -159,8 +174,14 @@ extension FastLink: RTCDataChannelDelegate {
         let state = dataChannel.readyState
         DispatchQueue.main.async { [weak self] in
             guard let self = self, dataChannel === self.incoming else { return }
-            if state == .open { self.onReceiving?(true) }
-            if state == .closed { self.onReceiving?(false) }
+            if state == .open && !self.receivingReported {
+                self.receivingReported = true
+                self.onReceiving?(true)
+            }
+            if state == .closed {
+                self.receivingReported = false
+                self.onReceiving?(false)
+            }
         }
     }
 
