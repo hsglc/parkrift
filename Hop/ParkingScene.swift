@@ -1024,7 +1024,7 @@ final class ParkingScene: SKScene {
         pedestrianStates.removeAll()
         pedestrianSince.removeAll()
         if let city = level.city {
-            let people = PedestrianSystem(map: city, count: 22, seed: UInt64(levelIndex * 131 + 5))
+            let people = PedestrianSystem(map: city, count: city.blocks.count >= 20 ? 36 : 22, seed: UInt64(levelIndex * 131 + 5))
             LeakWatch.track(people, "PedestrianSystem")
             pedestrians = people
             for _ in people.people {
@@ -1633,6 +1633,7 @@ final class ParkingScene: SKScene {
             "renderCpuMsAvg": (summary.renderCpuAverage * 1000).rounded() / 1000,
             "renderCpuMsP95": (summary.renderCpuP95 * 1000).rounded() / 1000,
             "drawCallsAtCamera": effective.0, "trianglesAtCamera": effective.1,
+            "nodeBreakdown": world.map { SceneStats.breakdown($0.scene.rootNode) } ?? [:],
             "sceneNodes": stats.0, "geometryNodes": stats.1, "drawCallsFullDetail": stats.2, "triangles": stats.3,
             "levelLoadMs": (levelLoadMilliseconds * 10).rounded() / 10,
             "hits": hits,
@@ -2112,8 +2113,16 @@ final class ParkingScene: SKScene {
             updateArcade(dt, traffic: traffic)
             let detailRange = PerfSettings.carDetailDistance * 10
             var botDetailChanges = 0
+            let sweeping = world?.isSweeping ?? false
+            let hideBeyond = world?.hiddenBeyond ?? .greatestFiniteMagnitude
             for (index, bot) in traffic.bots.enumerated() where index < botCars.count {
-                let near = (world?.isSweeping ?? false)
+                // In the fog past the far plane: hidden and not posed (nothing to see)
+                let viewer = spectateClock > 1.4 ? remotePosition : carPosition
+                let dx = bot.position.x - viewer.x, dy = bot.position.y - viewer.y
+                let far = !sweeping && dx * dx + dy * dy > hideBeyond * hideBeyond
+                if botCars[index].node.isHidden != far { botCars[index].node.isHidden = far }
+                if far { continue }
+                let near = sweeping
                     || (abs(bot.position.x - carPosition.x) < detailRange && abs(bot.position.y - carPosition.y) < detailRange)
                 if botCars[index].setDetail(near) { botDetailChanges += 1 }
                 botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)
