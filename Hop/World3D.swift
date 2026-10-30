@@ -1088,6 +1088,8 @@ final class World3D {
     let cameraNode = SCNNode()
     private let levelRoot = SCNNode()
     private var parkedCars3D: [(car: Car3D, position: CGPoint)] = []
+    /// Cones by their index in the level's obstacles (they can be knocked over).
+    private var coneNodes: [Int: SCNNode] = [:]
     /// Lit lamp of every traffic light head, moved between the red/yellow/green slots.
     private var signalHeads: [(node: Int, horizontal: Bool, lamp: SCNNode, slots: [SCNVector3], state: Int)] = []
     private var cityMap: CityMap?
@@ -2209,6 +2211,7 @@ final class World3D {
         stopCinematic()
         setRenderingPaused(false)
         parkedCars3D.removeAll()
+        coneNodes.removeAll()
         arrowNode = nil
         lotRoot.isHidden = level.city != nil
         if level.city == nil { applyVenue(levelVenue) }
@@ -2330,7 +2333,7 @@ final class World3D {
                 levelRoot.addChildNode(parkedCars.flattenedClone())
             }
         }
-        for obstacle in level.obstacles {
+        for (obstacleIndex, obstacle) in level.obstacles.enumerated() {
             switch obstacle.kind {
             case .car:
                 let car = Car3D(color: CarArt.parkedColors[obstacle.tint % CarArt.parkedColors.count],
@@ -2430,8 +2433,50 @@ final class World3D {
                 bandNode.position.y = 0.66
                 holder.addChildNode(bandNode)
                 levelRoot.addChildNode(holder)
+                coneNodes[obstacleIndex] = holder
             }
         }
+    }
+
+    /// A cone hit by a car: it is thrown along `direction` (level radians) as far as the speed
+    /// takes it, tumbling over onto its side, and stays there.
+    func knockCone(_ index: Int, direction: CGFloat, speed: CGFloat) {
+        guard let cone = coneNodes[index] else { return }
+        cone.removeAllActions()
+        let d = CGVector(dx: cos(direction), dy: sin(direction))
+        let distance = min(70, 14 + speed * 0.35) / 10                     // metres
+        let from = cone.position
+        let to = SCNVector3(from.x + Float(d.dx * distance), 0.3, from.z - Float(d.dy * distance))
+        // Up a little, then down onto its side (a short arc)
+        let half = 0.22 + Double(min(1, speed / 150)) * 0.12
+        let rise = SCNAction.move(to: SCNVector3((from.x + to.x) / 2, 0.75 + Float(min(1, speed / 150)) * 0.5, (from.z + to.z) / 2), duration: half)
+        rise.timingMode = .easeOut
+        let fall = SCNAction.move(to: to, duration: half)
+        fall.timingMode = .easeIn
+        // Tips over the way it was hit (the top goes first), with a turn of its own
+        let axis = SCNVector3(Float(-d.dy), 0, Float(-d.dx))
+        let tip = SCNAction.rotate(by: .pi / 2, around: axis, duration: half * 2)
+        let spin = SCNAction.rotateBy(x: 0, y: CGFloat.random(in: -2...2), z: 0, duration: half * 2)
+        // A last small roll where it lands
+        let roll = SCNAction.moveBy(x: CGFloat(d.dx) * 0.25, y: 0, z: -CGFloat(d.dy) * 0.25, duration: 0.25)
+        roll.timingMode = .easeOut
+        cone.runAction(.sequence([.group([.sequence([rise, fall]), tip, spin]), roll]))
+    }
+
+    /// A parked car hit at `point` from `direction` (level radians): it rocks on its springs
+    /// away from the blow and settles.
+    func rockParkedCar(near point: CGPoint, direction: CGFloat, strength: CGFloat) {
+        guard let entry = parkedCars3D.min(by: { $0.position.distance(to: point) < $1.position.distance(to: point) }),
+              entry.position.distance(to: point) < 60 else { return }
+        let node = entry.car.node
+        guard node.action(forKey: "rock") == nil else { return }
+        let d = CGVector(dx: cos(direction), dy: sin(direction))
+        let axis = SCNVector3(Float(-d.dy), 0, Float(-d.dx))
+        let a = CGFloat(0.05 + 0.09 * min(1, strength))
+        let steps: [(CGFloat, TimeInterval)] = [(a, 0.07), (-1.7 * a, 0.14), (1.1 * a, 0.12), (-0.55 * a, 0.1), (0.15 * a, 0.08)]
+        let rock = SCNAction.sequence(steps.map { SCNAction.rotate(by: $0.0, around: axis, duration: $0.1) })
+        rock.timingMode = .easeInEaseOut
+        node.runAction(rock, forKey: "rock")
     }
 
     /// Checkered finish line across the street with two posts, a banner and a light beam.

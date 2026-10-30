@@ -932,6 +932,9 @@ final class ParkingScene: SKScene {
         overlay.removeAllChildren()
         finalButton = nil
         obstacleBoxes = level.obstacles.map { $0.box }
+        coneIndices = Set(level.obstacles.indices.filter { level.obstacles[$0].kind == .cone })
+        knockedCones.removeAll()
+        lastHitPosition = CGPoint(x: -9999, y: -9999)
         let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
         var lapClock = CACurrentMediaTime()
         func lap(_ what: String) {
@@ -3124,11 +3127,8 @@ final class ParkingScene: SKScene {
             // A real crash (not just leaning on a stopped car); the same rule for every car
             var friendJustHitUs = false
             if case .remoteCar = impact.contact { friendJustHitUs = lastUpdate - hitByFriendAt < 0.5 }
-            if impact.closing > 22 && lastUpdate - lastHitAt > 0.45 && !friendJustHitUs {
-                lastHitAt = lastUpdate
-                hits += 1
-                if benchmark { FrameMonitor.shared.mark("hit") }
-                hitsLabel.text = "\(hits)"
+            if impact.closing > 22 && lastUpdate - lastHitAt > 0.45 && !friendJustHitUs && freshHit() {
+                countHit()
                 crashCar(impact)
             } else {
                 // Leaning on a car (or still touching after a crash): we do not drive into it
@@ -3196,25 +3196,21 @@ final class ParkingScene: SKScene {
             }
         }
         if slid {
-            if lostSpeed > 45 && lastUpdate - lastHitAt > 0.6 {
-                lastHitAt = lastUpdate
-                hits += 1
-                if benchmark { FrameMonitor.shared.mark("hit") }
-                hitsLabel.text = "\(hits)"
+            if lostSpeed > 45 && lastUpdate - lastHitAt > 0.6 && freshHit() {
+                countHit()
                 bumpHaptic.impactOccurred(intensity: 0.5)
                 audio.play("bump", volume: 0.5)
+                rockHitCars(OBB(center: newPosition, size: Levels.carSize, angle: newHeading), speed: lostSpeed)
             } else if lostSpeed > 8 {
                 tickHaptic.impactOccurred(intensity: 0.25)
             }
         } else if blocked(moving: OBB(center: newPosition, size: Levels.carSize, angle: newHeading), to: newPosition) {
             let impact = abs(velocity)
             var crashed = false
-            if lastUpdate - lastHitAt > 0.6 && impact > 18 {
-                lastHitAt = lastUpdate
-                hits += 1
-                if benchmark { FrameMonitor.shared.mark("hit") }
-                hitsLabel.text = "\(hits)"
+            if lastUpdate - lastHitAt > 0.6 && impact > 18 && freshHit() {
+                countHit()
                 bumpHaptic.impactOccurred(intensity: min(1, impact / 120 + 0.4))
+                rockHitCars(OBB(center: newPosition, size: Levels.carSize, angle: newHeading), speed: impact)
                 let direction: CGFloat = velocity >= 0 ? 1 : -1
                 dust(at: CGPoint(x: carPosition.x + cos(heading) * 22 * direction,
                                  y: carPosition.y + sin(heading) * 22 * direction))
@@ -3229,6 +3225,11 @@ final class ParkingScene: SKScene {
             // wall and drives away instead of bouncing against it
             if !crashed && (gasDown || reverseDown) && abs(wheelInput) > 0.15 && pivotOffWall(dt, reverse: reverseDown && !gasDown) {
                 velocity = (gasDown ? 1 : -1) * min(abs(velocity), 30)
+            } else if impact <= 18 {
+                // Leaning on it at walking pace: the car just stands against it (it used to bounce
+                // back and forth every few frames, the body rocking with each bounce)
+                velocity = 0
+                longitudinalAccel *= 0.5
             } else {
                 velocity = abs(velocity) < 6 ? 0 : -velocity * (crashed ? 0.12 : 0.22)
                 longitudinalAccel = -longitudinalAccel
@@ -3238,6 +3239,7 @@ final class ParkingScene: SKScene {
             heading = newHeading
         }
 
+        knockCones()
         applyCrashMotion(dt)
         updateSuspension(dt)
         updateJump(dt)
@@ -4110,6 +4112,15 @@ final class ParkingScene: SKScene {
         return true
     }
 
+    /// Parked cars the car runs into rock on their springs.
+    private func rockHitCars(_ box: OBB, speed: CGFloat) {
+        let travel = velocity >= 0 ? heading : heading + .pi
+        for contact in contacts(box) {
+            guard case .obstacle(let index) = contact, index < level.obstacles.count, level.obstacles[index].kind == .car else { continue }
+            world?.rockParkedCar(near: obstacleBoxes[index].center, direction: travel, strength: speed / 90)
+        }
+    }
+
     /// Slides and spins the car after a crash; both fade out within about a second.
     private func applyCrashMotion(_ dt: CGFloat) {
         guard abs(crashSpin) > 0.02 || hypot(crashShove.dx, crashShove.dy) > 2 else {
@@ -4150,6 +4161,52 @@ final class ParkingScene: SKScene {
 
     private var remoteBox: OBB { OBB(center: remotePosition, size: Levels.carSize, angle: remoteHeading) }
 
+    /// Cones are knocked over, not driven against: they never block the car.
+    private var coneIndices = Set<Int>()
+    private var knockedCones = Set<Int>()
+    /// Where the last hit was counted: pressing on against the same wall or car is not a new hit.
+    private var lastHitPosition = CGPoint(x: -9999, y: -9999)
+
+    /// A hit counts once per contact: not again while the car is still pressed against the same
+    /// thing (it used to count again every 0.6 s with the throttle held against a wall).
+    private func freshHit() -> Bool {
+        carPosition.distance(to: lastHitPosition) > 30 || lastUpdate - lastHitAt > 2.5
+    }
+
+    private func countHit() {
+        lastHitAt = lastUpdate
+        lastHitPosition = carPosition
+        hits += 1
+        if benchmark { FrameMonitor.shared.mark("hit") }
+        hitsLabel.text = "\(hits)"
+    }
+
+    /// Cones the car runs into fly off and fall over; each counts as a hit (as on a driving test).
+    private func knockCones() {
+        guard !coneIndices.isEmpty, coneIndices.count > knockedCones.count else { return }
+        let box = OBB(center: carPosition, size: Levels.carSize, angle: heading)
+        for index in coneIndices where !knockedCones.contains(index) && index < obstacleBoxes.count {
+            let cone = obstacleBoxes[index]
+            guard abs(cone.center.x - carPosition.x) < 45, abs(cone.center.y - carPosition.y) < 45, box.intersects(cone) else { continue }
+            knockedCones.insert(index)
+            let speed = abs(velocity)
+            let travel = velocity >= 0 ? heading : heading + .pi
+            // Thrown along the car's way, a little off to the side it was hit on
+            let away = atan2(cone.center.y - carPosition.y, cone.center.x - carPosition.x)
+            let direction = travel + CGFloat.angleDelta(travel, away) * 0.4
+            world?.knockCone(index, direction: direction, speed: max(speed, 20))
+            audio.play("bump", volume: Float(min(0.6, 0.25 + speed / 300)))
+            bumpHaptic.impactOccurred(intensity: min(1, 0.45 + speed / 200))
+            world?.shake(strength: min(3, 1 + speed / 60))
+            dust(at: cone.center)
+            velocity *= 0.9
+            if speed > 4 && lastUpdate - lastHitAt > 0.25 {
+                countHit()
+                dispatchPolice(Strings.crimeReckless)
+            }
+        }
+    }
+
     private func contacts(_ box: OBB, includeRemote: Bool = true) -> Set<Contact> {
         var result = Set<Contact>()
         let world = level.world
@@ -4160,7 +4217,7 @@ final class ParkingScene: SKScene {
                 break
             }
         }
-        for (index, obstacle) in obstacleBoxes.enumerated() {
+        for (index, obstacle) in obstacleBoxes.enumerated() where !coneIndices.contains(index) {
             let dx = obstacle.center.x - box.center.x
             let dy = obstacle.center.y - box.center.y
             let limit = 60 + max(obstacle.halfSize.width, obstacle.halfSize.height)
