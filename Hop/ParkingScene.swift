@@ -5293,9 +5293,12 @@ final class ParkingScene: SKScene {
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine, reward: reward,
                                      outcome: outcome, roundLine: roundLine)
-        // The results own the screen: the pedals and the HUD step aside (back on the next load)
-        controlsLayer.run(.fadeAlpha(to: 0, duration: 0.25))
-        hud.run(.fadeAlpha(to: 0, duration: 0.25))
+        // The results own the screen: the pedals and the HUD step aside (back on the next load).
+        // At once, not faded: the frame freezes just below and would keep a half-faded HUD
+        controlsLayer.removeAllActions()
+        hud.removeAllActions()
+        controlsLayer.alpha = 0
+        hud.alpha = 0
         // The card covers the world: stop drawing it (a frozen frame) until the next level loads
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self, self.model?.results != nil else { return }
