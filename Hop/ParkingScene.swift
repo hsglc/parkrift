@@ -5505,6 +5505,12 @@ final class ParkingScene: SKScene {
 
     /// Short text pop above the car (prebuilt label, so the first bonus does not stall).
     private func flashBonus(_ text: String) {
+        // The count's GO stands where bonus lines show: a bonus (the radar right after the start)
+        // clears it at once instead of printing over it
+        if !countdownNode.isHidden && countdownNode.alpha > 0.01 {
+            countdownNode.removeAllActions()
+            countdownNode.run(.sequence([.fadeOut(withDuration: 0.08), .hide()]), withKey: "leave")
+        }
         bonusLabel.removeAllActions()
         bonusLabel.text = text
         bonusLabel.position = policeWarningShown ? CGPoint(x: size.width / 2 + 40, y: hudTop - 126)
