@@ -132,6 +132,13 @@ final class ParkingScene: SKScene {
     private var giveUp: CGFloat = 20
     private var myWins = 0
     private var friendWins = 0
+    /// This series started with the friend: a best-of-three match.
+    private var onlineMatch = false
+    /// Two rounds won, or all three played.
+    private var matchOver: Bool {
+        myWins >= Levels.onlineWinsNeeded || friendWins >= Levels.onlineWinsNeeded
+            || Levels.isLast(levelIndex, online: true)
+    }
     private var friendMarker = SKShapeNode()
     private var northMarker = SKLabelNode()
     private var policeMarker = SKShapeNode()
@@ -1071,9 +1078,14 @@ final class ParkingScene: SKScene {
         route = []
         routeClock = 0
         giveUp = 20
-        if levelIndex == Levels.cityBase || !Levels.isCity(levelIndex) {
+        // A new series (the first round of a city or race match; a car race used to carry the
+        // score over from the last match)
+        if Levels.roundIndex(levelIndex) == 0 || !Levels.isCity(levelIndex) {
             myWins = 0
             friendWins = 0
+            onlineMatch = online
+        } else if online {
+            onlineMatch = true
         }
 
         let start = level.starts[slot]
@@ -1451,9 +1463,9 @@ final class ParkingScene: SKScene {
 
     private func refreshLevelLabel() {
         if isCity && online && friendPresent {
-            levelLabel.text = Levels.title(levelIndex) + " · " + Strings.score(myWins, friendWins)
+            levelLabel.text = Levels.title(levelIndex, online: true) + " · " + Strings.score(myWins, friendWins)
         } else {
-            levelLabel.text = Levels.title(levelIndex) + " · " + level.name
+            levelLabel.text = Levels.title(levelIndex, online: onlineMatch) + " · " + level.name
         }
     }
 
@@ -1774,7 +1786,8 @@ final class ParkingScene: SKScene {
             // and turned a win into a draw); one that was waiting to move on with the friend gets
             // buttons of its own
             if !advanceScheduled, let results = model?.results, case .autoNext = results.footer {
-                model?.results = results.with(footer: Levels.isLast(levelIndex) ? .final : .solo(hasNext: true))
+                let last = onlineMatch ? matchOver : Levels.isLast(levelIndex)
+                model?.results = results.with(footer: last ? .final : .solo(hasNext: true))
             }
             return
         }
@@ -2182,7 +2195,7 @@ final class ParkingScene: SKScene {
             policeTestDone = true
             phase = .finished
             resultsShown = true
-            model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex) + " · " + level.name,
+            model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex, online: onlineMatch) + " · " + level.name,
                                          entries: [ResultEntry(name: Strings.you, slot: 0, time: nil, hits: 15, isMe: true, isWinner: false, score: -1),
                                                    ResultEntry(name: Strings.friend, slot: 1, time: 31.9, hits: 10, isMe: false, isWinner: true, score: 61.9)],
                                          footer: .final, newBest: false, bestTime: nil, headline: Strings.youWon,
@@ -4556,8 +4569,10 @@ final class ParkingScene: SKScene {
         resultsShown = true
         statusLabel.text = ""
 
+        // The round goes to whoever finished first; the match ends once someone has two
+        if together { countRound() }
         let footer: ResultFooter
-        if Levels.isLast(levelIndex) {
+        if onlineMatch ? matchOver : Levels.isLast(levelIndex) {
             footer = .final
         } else if together {
             footer = .autoNext(seconds: advanceDelay)
@@ -4566,6 +4581,27 @@ final class ParkingScene: SKScene {
             footer = .solo(hasNext: true)
         }
         showResults(footer: footer)
+    }
+
+    /// Who took this round: the first to finish (the lower time); someone who did not finish
+    /// loses to someone who did; neither finishing, or the very same time, gives no point.
+    private func roundWinners() -> (me: Bool, friend: Bool) {
+        let mine: Double? = localTime >= 0 ? localTime : nil
+        let theirs: Double? = remoteParked && remoteTime >= 0 ? remoteTime : nil
+        switch (mine, theirs) {
+        case let (m?, f?): return (m < f, f < m)
+        case (.some, nil): return (true, false)
+        case (nil, .some): return (false, true)
+        default: return (false, false)
+        }
+    }
+
+    private func countRound() {
+        guard !roundCounted else { return }
+        roundCounted = true
+        let result = roundWinners()
+        if result.me { myWins += 1 }
+        if result.friend { friendWins += 1 }
     }
 
     private func scheduleAdvance() {
@@ -4592,35 +4628,19 @@ final class ParkingScene: SKScene {
             let friendTime: Double? = remoteParked && remoteTime >= 0 ? remoteTime : nil
             entries.append(ResultEntry(name: Strings.friend, slot: otherSlot, time: friendTime,
                                        hits: remoteHits, isMe: false, isWinner: false))
-            if level.race {
-                for index in entries.indices {
-                    let crashes = entries[index].hits
-                    let score = entries[index].time.map { Levels.raceScore(time: $0, crashes: crashes) } ?? -1
-                    entries[index].score = score
-                }
-                let scores = entries.compactMap { $0.score }.filter { $0 >= 0 }
-                if let best = scores.min() {
-                    for index in entries.indices where entries[index].score == best {
-                        entries[index].isWinner = true
-                    }
-                }
-            } else if let best = entries.compactMap({ $0.time }).min() {
-                for index in entries.indices where entries[index].time == best {
-                    entries[index].isWinner = true
-                }
-            }
-            let iWon = entries[0].isWinner && !entries[1].isWinner
-            let friendWon = entries[1].isWinner && !entries[0].isWinner
-            if !roundCounted {
-                roundCounted = true
-                if iWon { myWins += 1 }
-                if friendWon { friendWins += 1 }
-            }
+            // Head to head: the first to finish takes the round (a crash costs time on the road, no
+            // penalty on top)
+            let result = roundWinners()
+            entries[0].isWinner = result.me
+            entries[1].isWinner = result.friend
+            let iWon = result.me
+            let friendWon = result.friend
+            countRound()
             headline = iWon ? Strings.youWon : (friendWon ? Strings.friendWon : Strings.draw)
             outcome = iWon ? .won : (friendWon ? .lost : .draw)
             if isCity {
                 scoreLine = Strings.score(myWins, friendWins)
-                if case .final = footer {
+                if case .final = footer, onlineMatch {
                     // The match decides the card; the last round is a line of its own (winning the
                     // match after failing the last round used to show a red "you won")
                     headline = myWins > friendWins ? Strings.youWon : (friendWins > myWins ? Strings.friendWon : Strings.draw)
@@ -4648,7 +4668,7 @@ final class ParkingScene: SKScene {
                              race: level.race, solo: !isCity, hits: hits, driftPoints: runDriftPoints,
                              nearMisses: runNearMisses, escapes: runEscapes, topSpeed: runTopSpeed)
         let reward = model?.finishRun(stats)
-        model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex) + " · " + level.name,
+        model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex, online: onlineMatch) + " · " + level.name,
                                      entries: entries, footer: footer, newBest: newBest,
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine, reward: reward,

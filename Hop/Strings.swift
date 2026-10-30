@@ -162,6 +162,9 @@ enum Strings {
     static var carRace: String { t("Araba Yarışı", "Car Race", "Carrera") }
     static var parkRace: String { t("Park Yarışı", "Park Race", "Carrera de aparcar") }
     static var carRaceInfo: String { t("3 tur · yoğun trafik · en hızlı ve en az kazayla varan kazanır", "3 rounds · heavy traffic · fastest with fewest crashes wins", "3 rondas · tráfico denso · gana el más rápido con menos choques") }
+    /// Online match rules, shown in the lobby.
+    static var onlineRaceInfo: String { t("3 tur · turu ilk varan alır · 2 turu alan maçı kazanır", "Best of 3 · first to finish takes the round · 2 rounds win", "Al mejor de 3 · gana la ronda quien llega primero · 2 rondas ganan") }
+    static var onlineParkInfo: String { t("3 tur · turu ilk park eden alır · 2 turu alan maçı kazanır", "Best of 3 · first to park takes the round · 2 rounds win", "Al mejor de 3 · gana la ronda quien aparca primero · 2 rondas ganan") }
     static var finished: String { t("BİTİRDİN!", "FINISHED!", "¡TERMINADO!") }
     static var finishLine: String { t("Bitiş", "Finish", "Meta") }
     static var scoreLabel: String { t("PUAN", "SCORE", "PUNTOS") }

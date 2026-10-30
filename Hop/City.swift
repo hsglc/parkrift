@@ -192,6 +192,10 @@ extension Levels {
     static let cityRounds = 5
     static let raceBase = 200
     static let raceRounds = 3
+    /// An online match (city park race or car race): best of three, the first to finish takes
+    /// each round and two rounds win it.
+    static let onlineRounds = 3
+    static let onlineWinsNeeded = 2
     /// Seconds added to the race time for every crash.
     static let crashPenalty: Double = 3
 
@@ -205,7 +209,13 @@ extension Levels {
         return all[max(0, min(index, all.count - 1))]
     }
 
-    static func isLast(_ index: Int) -> Bool {
+    /// The round within its city or race series (0 based).
+    static func roundIndex(_ index: Int) -> Int {
+        isRace(index) ? index - raceBase : (isCity(index) ? index - cityBase : index)
+    }
+
+    static func isLast(_ index: Int, online: Bool = false) -> Bool {
+        if online && isCity(index) { return roundIndex(index) >= onlineRounds - 1 }
         if isRace(index) { return index >= raceBase + raceRounds - 1 }
         if isCity(index) { return index >= cityBase + cityRounds - 1 }
         return index >= all.count - 1
@@ -217,9 +227,9 @@ extension Levels {
         return max(0, min(index, all.count - 1))
     }
 
-    static func title(_ index: Int) -> String {
-        if isRace(index) { return Strings.raceRound(index - raceBase + 1, of: raceRounds) }
-        if isCity(index) { return Strings.round(index - cityBase + 1, of: cityRounds) }
+    static func title(_ index: Int, online: Bool = false) -> String {
+        if isRace(index) { return Strings.raceRound(index - raceBase + 1, of: online ? onlineRounds : raceRounds) }
+        if isCity(index) { return Strings.round(index - cityBase + 1, of: online ? onlineRounds : cityRounds) }
         return Strings.level(index + 1, of: all.count)
     }
 
