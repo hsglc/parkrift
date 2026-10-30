@@ -182,6 +182,22 @@ enum Strings {
     static var parkedBig: String { t("PARK EDİLDİ!", "PARKED!", "¡APARCADO!") }
     static var levelComplete: String { t("BÖLÜM TAMAMLANDI", "LEVEL COMPLETE", "NIVEL COMPLETADO") }
     static var parkTicket: String { t("Otopark fişi", "Parking ticket", "Ticket de aparcamiento") }
+    // Santim Ölçer (parking precision)
+    static var precision: String { t("Hassasiyet", "Precision", "Precisión") }
+    static var precisionCheck: String { t("SANTİM ÖLÇER", "PRECISION CHECK", "MEDIDOR DE PRECISIÓN") }
+    static var gapLeft: String { t("SOL", "LEFT", "IZQ") }
+    static var gapRight: String { t("SAĞ", "RIGHT", "DER") }
+    static var angleShort: String { t("AÇI", "ANGLE", "ÁNGULO") }
+    static func rewardPrecision(_ grade: String) -> String { t("Hassas park \(grade)", "Precision \(grade)", "Precisión \(grade)") }
+    static func gradeTitle(_ grade: String) -> String {
+        switch grade {
+        case "S": return t("KUSURSUZ PARK", "FLAWLESS PARK", "APARCAMIENTO PERFECTO")
+        case "A": return t("ÇOK İYİ", "GREAT", "MUY BIEN")
+        case "B": return t("İYİ", "GOOD", "BIEN")
+        default: return t("GEÇER", "OK", "VALE")
+        }
+    }
+    static var newPrecisionBest: String { t("Yeni en iyi ölçüm", "New best precision", "Nueva mejor precisión") }
     static var newBestShort: String { t("Yeni rekor", "New best", "Nuevo récord") }
     static func place(_ n: Int) -> String { t("\(n). sırada", "Place \(n)", "Puesto \(n)") }
     // Parking challenge
@@ -411,6 +427,7 @@ enum Strings {
         case .raceNearMiss: return t("Yarışlarda \(n) kıl payı geçiş", "\(n) near misses in races", "\(n) adelantamientos por los pelos en carreras")
         case .onlineRounds: return t("Arkadaşınla \(n) tur oyna", "Play \(n) rounds with a friend", "Juega \(n) rondas con un amigo")
         case .onlineWin: return t("Arkadaşına karşı kazan", "Beat your friend", "Gana a tu amigo")
+        case .perfectPark: return t("Bir bölümü kusursuz (S) park et", "Make a flawless (S) park", "Aparca a la perfección (S)")
         }
     }
 }

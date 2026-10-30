@@ -16,6 +16,8 @@ struct RunStats {
     var nearMisses: Int
     var escapes: Int
     var topSpeed: Int
+    /// Parking precision 0...100 (solo parking levels).
+    var precision: Int? = nil
 }
 
 /// Coins earned in a round, line by line, and the daily tasks it completed.
@@ -130,6 +132,11 @@ enum Progression {
         if run.driftPoints > 0 { lines.append((Strings.rewardDrift, min(150, run.driftPoints / 25))) }
         if run.nearMisses > 0 { lines.append((Strings.rewardNearMiss, run.nearMisses * 10)) }
         if run.escapes > 0 { lines.append((Strings.rewardEscape, run.escapes * 75)) }
+        if let precision = run.precision {
+            let grade = ParkPrecision.grade(for: precision)
+            let coins = grade == .s ? 60 : (grade == .a ? 30 : (grade == .b ? 10 : 0))
+            if coins > 0 { lines.append((Strings.rewardPrecision(grade.rawValue), coins)) }
+        }
         lines = lines.filter { $0.coins > 0 }
         // Weekend event: every round pays double
         if isWeekendEvent {
@@ -198,10 +205,12 @@ enum Progression {
         case raceRounds, raceClean, topSpeed, raceDrift, raceNearMiss
         // Online
         case onlineRounds, onlineWin
+        // Parking (added later: kept last so the others keep their numbers)
+        case perfectPark
 
         var mode: TaskMode {
             switch self {
-            case .parkRounds, .threeStars, .parkClean, .parkFlawless, .parkStars: return .park
+            case .parkRounds, .threeStars, .parkClean, .parkFlawless, .parkStars, .perfectPark: return .park
             case .cityRounds, .nearMiss, .escape, .drift, .cityClean: return .city
             case .raceRounds, .raceClean, .topSpeed, .raceDrift, .raceNearMiss: return .race
             case .onlineRounds, .onlineWin: return .online
@@ -227,6 +236,7 @@ enum Progression {
             case .raceNearMiss: return 4
             case .onlineRounds: return 2
             case .onlineWin: return 1
+            case .perfectPark: return 1
             }
         }
 
@@ -237,6 +247,7 @@ enum Progression {
             case .parkStars, .cityClean, .raceClean: return 160
             case .parkFlawless, .escape, .onlineRounds: return 200
             case .onlineWin: return 250
+            case .perfectPark: return 180
             }
         }
 
@@ -256,6 +267,7 @@ enum Progression {
             case .topSpeed: return "speedometer"
             case .onlineRounds: return "person.2.fill"
             case .onlineWin: return "trophy.fill"
+            case .perfectPark: return "scope"
             }
         }
     }
@@ -370,6 +382,7 @@ enum Progression {
             case .raceNearMiss: if race { value += run.nearMisses }
             case .onlineRounds: if run.mode == .online && run.finished { value += 1 }
             case .onlineWin: if run.mode == .online && run.won == true { value += 1 }
+            case .perfectPark: if park && run.finished && (run.precision ?? 0) >= 95 { value += 1 }
             }
             progress[index] = min(kind.target, value)
             if progress[index] >= kind.target { completed.append((kind.title, kind.reward)) }

@@ -162,6 +162,9 @@ final class ParkingScene: SKScene {
     private var isBoosting: Bool { boostTime > 0 }
     private var lastHorn: TimeInterval = -10
     private var newBest = false
+    /// How precisely the car stood in its bay (solo parking levels), measured as it parked.
+    private var lastPrecision: ParkPrecision?
+    private var precisionBest = false
     private let advanceDelay: TimeInterval = 4.5
     private var reversePedal = SKSpriteNode()
     private var activeTouches: [UITouch: Control] = [:]
@@ -544,7 +547,7 @@ final class ParkingScene: SKScene {
         world?.fit(size: size, insets: insets, topReserved: 50)
         dotTexture = CarArt.dot()
         // The parked ticket and its stamp are drawn now, not on the frame the car parks
-        _ = CarArt.parkTicket(size: CGSize(width: 300, height: 176), perforationY: 120)
+        _ = CarArt.parkTicket(size: CGSize(width: 300, height: 196), perforationY: 140)
         _ = CarArt.stamp(Strings.upper(Strings.parkedBig.replacingOccurrences(of: "!", with: "")),
                          color: UIColor(red: 0.08, green: 0.6, blue: 0.32, alpha: 1))
 
@@ -1145,6 +1148,8 @@ final class ParkingScene: SKScene {
         roundCounted = false
         advanceScheduled = false
         newBest = false
+        lastPrecision = nil
+        precisionBest = false
         nitro = 0.5
         boostTime = 0
         remoteBoost = false
@@ -2235,8 +2240,15 @@ final class ParkingScene: SKScene {
             localTime = 23.7
             hits = 1
             newBest = true
+            // Into the bay, a few centimetres off and a touch crooked
+            let spot = level.spots[slot]
+            carPosition = CGPoint(x: spot.center.x - sin(spot.angle) * 0.4, y: spot.center.y + cos(spot.angle) * 0.4)
+            heading = spot.angle + 0.008
+            velocity = 0
+            localCar?.update(position: carPosition, heading: heading, steer: 0)
+            lastPrecision = ParkPrecision(spot: spot, car: carPosition, heading: heading, carSize: Levels.carSize)
             playParkedSequence()
-            for at in [0.3, 0.7, 1.2, 1.9] {
+            for at in [0.5, 1.0, 1.8, 2.7, 3.4, 4.3] {
                 run(.wait(forDuration: at)) { Task { @MainActor in saveWindowSnapshot(named: "shot-parked-\(Int(at * 10))") } }
             }
         }
@@ -4480,6 +4492,11 @@ final class ParkingScene: SKScene {
             newBest = model?.record(level: levelIndex, time: localTime, hits: hits) ?? false
             if newBest { saveGhost() }
         }
+        if !isCity && !level.race {
+            let precision = ParkPrecision(spot: level.spots[slot], car: carPosition, heading: heading, carSize: Levels.carSize)
+            lastPrecision = precision
+            precisionBest = ParkPrecision.record(level: levelIndex, score: precision.score)
+        }
         if level.race {
             playFinishSequence()
         } else {
@@ -4697,7 +4714,237 @@ final class ParkingScene: SKScene {
         let layer = SKNode()
         layer.zPosition = 300
         addChild(layer)
+        if let precision = lastPrecision {
+            // Santim Ölçer first: the bay is measured, then the ticket
+            playInspection(precision, in: layer)
+            run(.wait(forDuration: 2.15)) { [weak self] in self?.showParkTicket(in: layer) }
+        } else {
+            showParkTicket(in: layer)
+        }
+    }
 
+    /// Santim Ölçer: the bay lights up, a laser sweeps it end to end, measuring lines run from
+    /// the car's sides to the bay lines with the gaps in centimetres, the angle comes up at the
+    /// nose, and a dial counts up to the precision score and lands its grade (S = flawless).
+    private func playInspection(_ precision: ParkPrecision, in layer: SKNode) {
+        guard let world = world else { return }
+        let spot = level.spots[slot]
+        let u = CGVector(dx: cos(spot.angle), dy: sin(spot.angle))
+        let v = CGVector(dx: -sin(spot.angle), dy: cos(spot.angle))
+        func bay(_ a: CGFloat, _ b: CGFloat) -> CGPoint {           // along, across from the bay centre
+            CGPoint(x: spot.center.x + u.dx * a + v.dx * b, y: spot.center.y + u.dy * a + v.dy * b)
+        }
+        let halfLength = spot.size.width / 2, halfWidth = spot.size.height / 2
+        let screen = { (p: CGPoint) in world.project(p, height: 0.05) }
+        let node = SKNode()
+        node.zPosition = 5
+        layer.addChild(node)
+        let cyan = UIColor(red: 0.3, green: 0.9, blue: 1, alpha: 1)
+        let laser = UIColor(red: 1, green: 0.22, blue: 0.3, alpha: 1)
+
+        // Kicker
+        let kicker = SKLabelNode()
+        kicker.attributedText = NSAttributedString(string: Strings.precisionCheck, attributes: [
+            .font: UIFont.systemFont(ofSize: 11, weight: .heavy, width: .expanded), .foregroundColor: cyan, .kern: 3])
+        kicker.position = CGPoint(x: size.width / 2, y: size.height - max(insets.top, 12) - 28)
+        kicker.alpha = 0
+        node.addChild(kicker)
+        kicker.run(.fadeIn(withDuration: 0.2))
+
+        // The bay outline lights up
+        let corners = [bay(-halfLength, -halfWidth), bay(halfLength, -halfWidth), bay(halfLength, halfWidth), bay(-halfLength, halfWidth)].map(screen)
+        let outline = CGMutablePath()
+        outline.addLines(between: corners + [corners[0]])
+        let bayNode = SKShapeNode(path: outline)
+        bayNode.strokeColor = cyan
+        bayNode.lineWidth = 2.5
+        bayNode.blendMode = .add
+        bayNode.alpha = 0
+        node.addChild(bayNode)
+        bayNode.run(.sequence([.fadeAlpha(to: 1, duration: 0.15), .fadeAlpha(to: 0.6, duration: 0.3)]))
+
+        // The laser sweeps the bay, end to end
+        let scan = SKShapeNode()
+        scan.strokeColor = laser
+        scan.lineWidth = 3
+        scan.blendMode = .add
+        node.addChild(scan)
+        scan.run(.sequence([
+            .customAction(withDuration: 0.6) { node, t in
+                let a = -halfLength + 2 * halfLength * min(1, t / 0.6)
+                let path = CGMutablePath()
+                path.move(to: screen(bay(a, -halfWidth - 3)))
+                path.addLine(to: screen(bay(a, halfWidth + 3)))
+                (node as? SKShapeNode)?.path = path
+            },
+            .fadeOut(withDuration: 0.15), .removeFromParent(),
+        ]))
+        audio.play("whoosh", volume: 0.4)
+
+        // Measuring lines: from each side of the car to its bay line, with the gap
+        let carU = CGVector(dx: cos(heading), dy: sin(heading))
+        let carV = CGVector(dx: -sin(heading), dy: cos(heading))
+        let carHalfWidth = Levels.carSize.height / 2
+        let carAlong = (carPosition.x - spot.center.x) * u.dx + (carPosition.y - spot.center.y) * u.dy
+        let sides: [(CGFloat, Int, String)] = [(1, precision.leftGap, Strings.gapLeft), (-1, precision.rightGap, Strings.gapRight)]
+        for (index, side) in sides.enumerated() {
+            let from = CGPoint(x: carPosition.x + carV.dx * carHalfWidth * side.0, y: carPosition.y + carV.dy * carHalfWidth * side.0)
+            let to = bay(carAlong, halfWidth * side.0)
+            let a = screen(from), b = screen(to)
+            let line = SKShapeNode()
+            line.strokeColor = cyan
+            line.lineWidth = 2
+            line.blendMode = .add
+            node.addChild(line)
+            let at = 0.7 + Double(index) * 0.22
+            line.run(.sequence([.wait(forDuration: at), .customAction(withDuration: 0.18) { node, t in
+                let k = min(1, t / 0.18)
+                let path = CGMutablePath()
+                path.move(to: a)
+                path.addLine(to: CGPoint(x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k))
+                (node as? SKShapeNode)?.path = path
+            }]))
+            let tag = measureTag(side.2, "\(max(0, side.1)) cm", color: cyan)
+            // Pushed out past the line's end so it never covers the car
+            let out = CGVector(dx: b.x - a.x, dy: b.y - a.y)
+            let length = max(1, hypot(out.dx, out.dy))
+            tag.position = CGPoint(x: b.x + out.dx / length * 34, y: b.y + out.dy / length * 18 + 4)
+            tag.alpha = 0
+            tag.setScale(0.6)
+            node.addChild(tag)
+            tag.run(.sequence([.wait(forDuration: at + 0.15), .group([.fadeIn(withDuration: 0.12), .scale(to: 1, duration: 0.15)])]))
+            run(.wait(forDuration: at + 0.15)) { [weak self] in
+                self?.audio.play("click", volume: 0.6)
+                self?.tickHaptic.impactOccurred()
+            }
+        }
+        // The angle at the nose
+        let nose = screen(CGPoint(x: carPosition.x + carU.dx * Levels.carSize.width * 0.75, y: carPosition.y + carU.dy * Levels.carSize.width * 0.75))
+        let angleTag = measureTag(Strings.angleShort, String(format: "%.1f°", precision.angle), color: cyan)
+        angleTag.position = CGPoint(x: nose.x, y: nose.y + 26)
+        angleTag.alpha = 0
+        angleTag.setScale(0.6)
+        node.addChild(angleTag)
+        angleTag.run(.sequence([.wait(forDuration: 1.12), .group([.fadeIn(withDuration: 0.12), .scale(to: 1, duration: 0.15)])]))
+        run(.wait(forDuration: 1.12)) { [weak self] in
+            self?.audio.play("click", volume: 0.6)
+            self?.tickHaptic.impactOccurred()
+        }
+
+        // The dial counts up to the score, then the grade lands
+        let dial = SKNode()
+        dial.position = CGPoint(x: size.width - max(insets.right, 12) - 92, y: size.height * 0.6)
+        dial.alpha = 0
+        node.addChild(dial)
+        let back = SKShapeNode(circleOfRadius: 46)
+        back.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 0.85)
+        back.strokeColor = UIColor(white: 1, alpha: 0.12)
+        back.lineWidth = 6
+        dial.addChild(back)
+        let grade = precision.grade
+        let gold = UIColor(red: 1, green: 0.74, blue: 0.1, alpha: 1)
+        let ringColor = grade == .s ? gold : (grade == .a ? UIColor(red: 0.35, green: 0.95, blue: 0.6, alpha: 1) : cyan)
+        let ring = SKShapeNode()
+        ring.strokeColor = ringColor
+        ring.lineWidth = 6
+        ring.lineCap = .round
+        dial.addChild(ring)
+        let percent = SKLabelNode()
+        percent.verticalAlignmentMode = .center
+        percent.position = CGPoint(x: 0, y: 4)
+        dial.addChild(percent)
+        let caption = SKLabelNode()
+        caption.attributedText = NSAttributedString(string: Strings.upper(Strings.precision), attributes: [
+            .font: UIFont.systemFont(ofSize: 8, weight: .heavy, width: .expanded), .foregroundColor: UIColor(white: 1, alpha: 0.6), .kern: 1.4])
+        caption.verticalAlignmentMode = .center
+        caption.position = CGPoint(x: 0, y: -17)
+        dial.addChild(caption)
+        func setScore(_ value: Int) {
+            percent.attributedText = NSAttributedString(string: "\(value)", attributes: [
+                .font: UIFont.monospacedDigitSystemFont(ofSize: 26, weight: .heavy), .foregroundColor: UIColor.white])
+            let path = CGMutablePath()
+            path.addArc(center: .zero, radius: 46, startAngle: .pi / 2, endAngle: .pi / 2 - CGFloat(value) / 100 * .pi * 2, clockwise: true)
+            ring.path = path
+        }
+        setScore(0)
+        dial.run(.sequence([.wait(forDuration: 0.2), .fadeIn(withDuration: 0.2)]))
+        var shown = -1
+        dial.run(.sequence([.wait(forDuration: 0.4), .customAction(withDuration: 1.0) { _, t in
+            let k = min(1, t / 1.0)
+            let eased = 1 - pow(1 - k, 3)
+            let value = Int((Double(precision.score) * Double(eased)).rounded())
+            if value != shown { shown = value; setScore(value) }
+        }]))
+        // The grade slams onto the dial
+        let letter = SKLabelNode()
+        letter.attributedText = NSAttributedString(string: grade.rawValue, attributes: [
+            .font: CarArt.raceFont(40), .foregroundColor: grade == .s ? gold : UIColor.white])
+        letter.verticalAlignmentMode = .center
+        letter.position = CGPoint(x: -64, y: 34)
+        letter.alpha = 0
+        letter.setScale(2.4)
+        dial.addChild(letter)
+        let title = SKLabelNode()
+        title.attributedText = NSAttributedString(string: Strings.gradeTitle(grade.rawValue), attributes: [
+            .font: CarArt.raceFont(17), .foregroundColor: grade == .s ? gold : UIColor.white, .kern: 0.6])
+        title.horizontalAlignmentMode = .right
+        title.verticalAlignmentMode = .center
+        title.position = CGPoint(x: 46, y: -64)
+        title.alpha = 0
+        dial.addChild(title)
+        let land = SKAction.group([.scale(to: 1, duration: 0.12), .fadeIn(withDuration: 0.08)])
+        land.timingMode = .easeIn
+        letter.run(.sequence([.wait(forDuration: 1.45), land]))
+        title.run(.sequence([.wait(forDuration: 1.55), .fadeIn(withDuration: 0.2)]))
+        run(.wait(forDuration: 1.55)) { [weak self] in
+            guard let self = self else { return }
+            self.audio.play(grade == .s ? "nitro" : "bump", volume: 0.8)
+            if grade == .s {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                // A burst of gold round the dial
+                for _ in 0..<18 {
+                    let spark = SKSpriteNode(texture: self.dotTexture)
+                    let r = CGFloat.random(in: 3...6)
+                    spark.size = CGSize(width: r, height: r)
+                    spark.color = gold
+                    spark.colorBlendFactor = 1
+                    spark.blendMode = .add
+                    dial.addChild(spark)
+                    let angle = CGFloat.random(in: 0 ... .pi * 2)
+                    let fly = SKAction.moveBy(x: cos(angle) * 90, y: sin(angle) * 90, duration: 0.5)
+                    fly.timingMode = .easeOut
+                    spark.run(.sequence([.group([fly, .fadeOut(withDuration: 0.5)]), .removeFromParent()]))
+                }
+            } else {
+                self.bumpHaptic.impactOccurred(intensity: 0.7)
+            }
+        }
+        // Out together as the ticket comes
+        node.run(.sequence([.wait(forDuration: 2.05), .fadeOut(withDuration: 0.25), .removeFromParent()]))
+    }
+
+    /// A small measurement tag: a label and its value on a dark capsule with a coloured edge.
+    private func measureTag(_ label: String, _ value: String, color: UIColor) -> SKNode {
+        let tag = SKNode()
+        let text = SKLabelNode()
+        let string = NSMutableAttributedString(string: label + "  ", attributes: [
+            .font: UIFont.systemFont(ofSize: 9, weight: .heavy, width: .expanded), .foregroundColor: color, .kern: 1.2])
+        string.append(NSAttributedString(string: value, attributes: [
+            .font: UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .heavy), .foregroundColor: UIColor.white]))
+        text.attributedText = string
+        text.verticalAlignmentMode = .center
+        let width = text.frame.width + 20
+        let pill = SKShapeNode(rect: CGRect(x: -width / 2, y: -12, width: width, height: 24), cornerRadius: 12)
+        pill.fillColor = UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 0.85)
+        pill.strokeColor = color.withAlphaComponent(0.8)
+        pill.lineWidth = 1.2
+        tag.addChild(pill)
+        tag.addChild(text)
+        return tag
+    }
+
+    /// The parking ticket, stamped (see `playParkedSequence`).
+    private func showParkTicket(in layer: SKNode) {
         // Soft shade on the left so the ticket stands off the scene
         let shade = SKSpriteNode(texture: CarArt.glowParticle().cgImage.map { SKTexture(cgImage: $0) })
         shade.color = .black
@@ -4708,13 +4955,13 @@ final class ParkingScene: SKScene {
         layer.addChild(shade)
         shade.run(.fadeAlpha(to: 0.55, duration: 0.3))
 
-        let paper = CGSize(width: 300, height: 176)
+        let paper = CGSize(width: 300, height: 196)
         let ticket = SKNode()
         let target = CGPoint(x: max(insets.left + 24, 20) + paper.width / 2 + 24, y: size.height * 0.48)
         ticket.position = CGPoint(x: target.x - 60, y: -paper.height)
         ticket.zRotation = -0.42
         layer.addChild(ticket)
-        let base = SKSpriteNode(texture: CarArt.parkTicket(size: paper, perforationY: 120))
+        let base = SKSpriteNode(texture: CarArt.parkTicket(size: paper, perforationY: 140))
         base.size = CGSize(width: paper.width + 32, height: paper.height + 32)
         ticket.addChild(base)
         let top = paper.height / 2, left = -paper.width / 2, right = paper.width / 2
@@ -4736,7 +4983,8 @@ final class ParkingScene: SKScene {
         text(Levels.title(levelIndex, online: onlineMatch), .systemFont(ofSize: 11, weight: .semibold), grey,
              at: CGPoint(x: left + 74, y: top - 61))
         // Receipt rows with dotted leaders
-        let rows: [(String, String)] = [(Strings.statTime, String(format: "%.1f s", localTime)), (Strings.statCrashes, "\(hits)")]
+        var rows: [(String, String)] = [(Strings.statTime, String(format: "%.1f s", localTime)), (Strings.statCrashes, "\(hits)")]
+        if let precision = lastPrecision { rows.append((Strings.precision, "%\(precision.score)")) }
         for (index, row) in rows.enumerated() {
             let y = top - 86 - CGFloat(index) * 19
             text(Strings.upper(row.0), .systemFont(ofSize: 10, weight: .heavy, width: .expanded), grey, kern: 1.2,
@@ -4752,13 +5000,29 @@ final class ParkingScene: SKScene {
             dots.lineWidth = 1.2
             ticket.addChild(dots)
         }
+        // The precision grade, top right (gold for an S)
+        if let precision = lastPrecision {
+            let grade = precision.grade
+            let gold = UIColor(red: 1, green: 0.74, blue: 0.1, alpha: 1)
+            let disc = SKShapeNode(circleOfRadius: 17)
+            disc.fillColor = grade == .s ? gold : UIColor(red: 0.1, green: 0.11, blue: 0.14, alpha: 1)
+            disc.strokeColor = .clear
+            disc.position = CGPoint(x: right - 30, y: top - 32)
+            ticket.addChild(disc)
+            let letter = SKLabelNode()
+            letter.attributedText = NSAttributedString(string: grade.rawValue, attributes: [
+                .font: CarArt.raceFont(22), .foregroundColor: grade == .s ? UIColor(red: 0.1, green: 0.11, blue: 0.14, alpha: 1) : UIColor.white])
+            letter.verticalAlignmentMode = .center
+            letter.position = disc.position
+            ticket.addChild(letter)
+        }
         // Stars, punched in after the stamp (solo levels only)
         var stars: [SKSpriteNode] = []
         let earned = isCity ? 0 : AppModel.stars(forHits: hits)
         if !isCity {
             for index in 0..<3 {
                 let slot = makeIcon("star.fill", size: 20, color: UIColor(white: 0.82, alpha: 1))
-                slot.position = CGPoint(x: left + 30 + CGFloat(index) * 28, y: top - 148)
+                slot.position = CGPoint(x: left + 30 + CGFloat(index) * 28, y: top - 168)
                 ticket.addChild(slot)
                 if index < earned {
                     let star = makeIcon("star.fill", size: 22, color: UIColor(red: 1, green: 0.74, blue: 0.1, alpha: 1))
@@ -4824,7 +5088,7 @@ final class ParkingScene: SKScene {
         if newBest {
             let best = SKSpriteNode(texture: CarArt.stamp(Strings.upper(Strings.newBestShort), color: UIColor(red: 0.85, green: 0.12, blue: 0.16, alpha: 1),
                                                           check: false, fontSize: 18))
-            best.position = CGPoint(x: right - 70, y: top - 146)
+            best.position = CGPoint(x: right - 70, y: top - 166)
             best.zRotation = 0.14
             best.alpha = 0
             best.setScale(2.2)
@@ -4996,7 +5260,8 @@ final class ParkingScene: SKScene {
         let stats = RunStats(mode: mode, finished: me.time != nil, stars: me.stars,
                              won: headToHead ? (me.isWinner && !entries[1].isWinner) : nil,
                              race: level.race, solo: !isCity, hits: hits, driftPoints: runDriftPoints,
-                             nearMisses: runNearMisses, escapes: runEscapes, topSpeed: runTopSpeed)
+                             nearMisses: runNearMisses, escapes: runEscapes, topSpeed: runTopSpeed,
+                             precision: me.time != nil ? lastPrecision?.score : nil)
         let reward = model?.finishRun(stats)
         model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex, online: onlineMatch) + " · " + level.name,
                                      entries: entries, footer: footer, newBest: newBest,

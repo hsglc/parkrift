@@ -552,7 +552,8 @@ struct LevelPicker: View {
                             LevelTile(index: index,
                                       unlocked: index < model.unlockedLevels,
                                       selected: model.selectedLevel == index,
-                                      stars: model.stars(for: index)) {
+                                      stars: model.stars(for: index),
+                                      precision: ParkPrecision.best(level: index)) {
                                 model.selectedLevel = index
                                 AudioManager.shared.play("click", volume: 0.6)
                             }
@@ -579,6 +580,8 @@ private struct LevelTile: View {
     let unlocked: Bool
     let selected: Bool
     let stars: Int
+    /// Best parking precision (0...100), shown as its grade in the corner.
+    var precision: Int? = nil
     let action: () -> Void
 
     var body: some View {
@@ -611,6 +614,17 @@ private struct LevelTile: View {
                 SlantedShape(skew: 2).fill(TierColor.of(level: index).opacity(unlocked ? 0.9 : 0.3))
                     .frame(width: 22, height: 3)
                     .offset(x: 6, y: -1)
+            }
+            .overlay(alignment: .topTrailing) {
+                if unlocked, let precision = precision {
+                    let grade = ParkPrecision.grade(for: precision)
+                    Text(grade.rawValue)
+                        .font(.race(10))
+                        .foregroundStyle(grade == .s ? Palette.ink : .white)
+                        .frame(width: 15, height: 15)
+                        .background(Circle().fill(grade == .s ? Palette.gold : Color.white.opacity(0.18)))
+                        .offset(x: 3, y: -4)
+                }
             }
             .shadow(color: selected ? Palette.gold.opacity(0.6) : .clear, radius: 8)
             .scaleEffect(selected ? 1.06 : 1)
