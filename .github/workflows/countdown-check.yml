@@ -68,7 +68,8 @@ jobs:
                           best = d["udid"]
           print(best)
           ')
-          xcrun simctl boot "$UDID"
+          # (may already be up: the online check boots its phones early)
+          xcrun simctl boot "$UDID" 2>/dev/null || true
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Hop.app
           mkdir -p shots
