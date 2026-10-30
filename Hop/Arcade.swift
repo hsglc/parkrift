@@ -219,6 +219,9 @@ final class PoliceChase {
     enum Mode { case chasing, pullingOver, leaving }
     private(set) var mode = Mode.chasing
     private var stopPose: (position: CGPoint, heading: CGFloat) = (.zero, 0)
+    /// Beside the caught car: passed on the way to the stop when the stop is on its far side
+    /// (straight there would cut through it).
+    private var pullOverVia: CGPoint?
     private var leaveClock: CGFloat = 0
 
     let node: SCNNode
@@ -301,6 +304,12 @@ final class PoliceChase {
                             y: player.y + sin(playerHeading) * 50 + cos(playerHeading) * 16 * side)
         stopPose = (ahead, playerHeading + CGFloat.pi + side * 0.85)
         waypoints = []
+        // Coming from behind, it goes round the car (beside it, on its side) instead of through it
+        let forward = cos(playerHeading) * (position.x - player.x) + sin(playerHeading) * (position.y - player.y)
+        pullOverVia = forward < 30
+            ? CGPoint(x: player.x + cos(playerHeading) * 10 - sin(playerHeading) * 46 * side,
+                      y: player.y + sin(playerHeading) * 10 + cos(playerHeading) * 46 * side)
+            : nil
     }
 
     /// Let go: the cruiser backs off and drives away down the streets, then is gone.
@@ -322,6 +331,18 @@ final class PoliceChase {
         let before = position
         switch mode {
         case .pullingOver:
+            if let via = pullOverVia {
+                if position.distance(to: via) < 18 {
+                    pullOverVia = nil
+                } else {
+                    let toward = atan2(via.y - position.y, via.x - position.x)
+                    speed += (min(200, 80 + position.distance(to: via) * 2) - speed) * min(1, dt * 6)
+                    let move = min(position.distance(to: via), speed * dt)
+                    position = CGPoint(x: position.x + cos(toward) * move, y: position.y + sin(toward) * move)
+                    heading += CGFloat.angleDelta(heading, toward) * min(1, dt * 7)
+                    break
+                }
+            }
             let d = position.distance(to: stopPose.position)
             let wanted = min(220, d * 3)
             speed += (wanted - speed) * min(1, dt * 6)
@@ -370,6 +391,18 @@ final class PoliceChase {
             from = next
         }
         return waypoints.last
+    }
+
+    /// Never inside the player's car: pushed out the shortest way, and slowed hard when it was
+    /// driving into it.
+    func keepClear(of player: CGPoint, heading playerHeading: CGFloat) {
+        let size = CGSize(width: Levels.carSize.width + 4, height: Levels.carSize.height + 3)
+        let theirs = OBB(center: player, size: size, angle: playerHeading)
+        let mine = OBB(center: position, size: size, angle: heading)
+        guard let push = Traffic.penetration(theirs, mine) else { return }
+        position = CGPoint(x: position.x + push.dx, y: position.y + push.dy)
+        if cos(heading) * push.dx + sin(heading) * push.dy < 0 { speed *= 0.3 }
+        node.position = World3D.vec(position)
     }
 
     /// `trail`: the player's recent positions, oldest first; `playerVelocity` lets the cruiser
@@ -439,7 +472,8 @@ final class PoliceChase {
         node.eulerAngles.y = Float(heading)
         spin += travelled / 10 / 0.32
         for wheel in wheels { wheel.eulerAngles.x = Float(spin) }
-        if distance < 34 && clock > 1.5 {
+        // Caught as it comes up against the car (it used to need its centre within the car)
+        if distance < 52 && clock > 1.5 {
             finished = true
             return .caught
         }

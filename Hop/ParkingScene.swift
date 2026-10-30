@@ -3550,6 +3550,7 @@ final class ParkingScene: SKScene {
             let moving = drifting ? travelHeading : heading
             let outcome = chase.step(dt, player: carPosition, playerSpeed: abs(velocity),
                                      playerVelocity: CGVector(dx: cos(moving) * velocity, dy: sin(moving) * velocity), trail: trail)
+            chase.keepClear(of: carPosition, heading: heading)
             // The siren gets louder as the police closes in
             siren = max(siren, max(0.12, min(0.8, 0.85 - chase.distance / 1600)))
             if chase.mode == .chasing { updatePoliceWarning(chase) }

@@ -290,12 +290,19 @@ extension Levels {
             return CGPoint(x: (map.position(of: s.a).x + map.position(of: s.b).x) / 2,
                            y: (map.position(of: s.a).y + map.position(of: s.b).y) / 2)
         }
+        /// How far it is to drive from a street corner to `target` along the streets.
+        func driveLength(from node: Int, to target: CGPoint) -> CGFloat {
+            let path = map.route(from: map.position(of: node), to: target)
+            return zip(path, path.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }
+        }
         func sideBySideStarts(on segmentIndex: Int, towards target: CGPoint?) -> [StartDef] {
             let seg = segments[segmentIndex]
             var fromNode = seg.a
             var toNode = seg.b
             if let target = target {
-                if map.position(of: seg.a).distance(to: target) < map.position(of: seg.b).distance(to: target) {
+                // Facing the way the route goes (the corner nearer to the target by road, not as
+                // the crow flies: the car used to start facing away from the blue line)
+                if driveLength(from: seg.a, to: target) < driveLength(from: seg.b, to: target) {
                     fromNode = seg.b
                     toNode = seg.a
                 }
@@ -388,7 +395,10 @@ extension Levels {
             if mid.distance(to: targetCenter) > 2100 { break }
         }
         let startSeg = segments[startSegment]
-        let flip = rng.unit() < 0.5
+        // Facing the way the route to the target goes (it used to be a coin toss, and half the
+        // rounds started facing away from the blue line)
+        _ = rng.unit()       // (the old coin toss, still drawn so the rest of the round stays the same)
+        let flip = driveLength(from: startSeg.a, to: targetCenter) < driveLength(from: startSeg.b, to: targetCenter)
         let fromNode = flip ? startSeg.b : startSeg.a
         let toNode = flip ? startSeg.a : startSeg.b
         let lane = map.lane(from: fromNode, to: toNode)
