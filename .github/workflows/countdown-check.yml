@@ -76,7 +76,7 @@ jobs:
           rm -f ~/Library/Logs/DiagnosticReports/Hop* 2>/dev/null || true
           DATA=""
           RUNS=("daily" "venues" "fail" "card" "-parklevel 2" "streets" "city")
-          if [ -n "${{ inputs.only }}" ]; then RUNS=("${{ inputs.only }}"); fi
+          if [ -n "${{ inputs.only }}" ]; then IFS=',' read -r -a RUNS <<< "${{ inputs.only }}"; fi
           for RUN in "${RUNS[@]}"; do
             xcrun simctl terminate "$UDID" com.huseyingulcu.hop 2>/dev/null || true
             sleep 2
