@@ -152,12 +152,15 @@ struct MenuView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Pages take what is left and never push the top bar off the screen
+                .layoutPriority(-1)
                 statusLine
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
             .padding(.bottom, 10)
         }
+        .ignoresSafeArea(.keyboard)
         .sheet(isPresented: $showAbout) { AboutView() }
         // Full screen, not a sheet: in landscape a sheet is taller than the screen, which cut
         // off the title and the bottom of the cards
@@ -170,11 +173,12 @@ struct MenuView: View {
             if PerfSettings.benchmark, let at = ProcessInfo.processInfo.arguments.firstIndex(of: "-menupage"),
                at + 1 < ProcessInfo.processInfo.arguments.count {
                 // Design screenshots of the menu pages, saved by the app itself
-                let target: Page = ["levels": .levels, "city": .city, "online": .online][ProcessInfo.processInfo.arguments[at + 1]] ?? .home
+                let name = ProcessInfo.processInfo.arguments[at + 1]
+                let target: Page = ["levels": .levels, "city": .city, "online": .online, "join": .online][name] ?? .home
                 // Animations started at launch can stall on the test simulator, so the page (the
                 // home too) is opened again once the app runs
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { page = target == .home ? .city : .home }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { page = target }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { page = target; showJoin = name == "join" }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 6) { saveWindowSnapshot(named: "menu-shot") }
             }
             if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch && !PerfSettings.benchmark {
@@ -286,31 +290,25 @@ struct MenuView: View {
                               buttonTitle: Strings.play) { model.playCity() }
             }
         case .online:
-            HStack(spacing: 12) {
-                ArtActionTile(image: "menu_duo.jpg", kicker: Strings.homeOnlineKicker, title: Strings.quickMatch,
-                              detail: Strings.quickMatchSub, accent: Neo.magenta, icon: "bolt.fill",
-                              buttonTitle: Strings.playNow) { model.quickMatch() }
-                ArtActionTile(image: "menu_room.jpg", kicker: Strings.homePrivateKicker, title: Strings.createRoom,
-                              detail: Strings.createRoomSub, accent: Neo.cyan, icon: "plus",
-                              buttonTitle: Strings.createRoom) { model.createRoom() }
-                ZStack {
-                    if showJoin {
-                        ZStack {
-                            ArtBackground(image: "menu_join.jpg", accent: Palette.gold)
-                            JoinPanel(showJoin: $showJoin)
-                                .padding(.horizontal, 20)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
-                        .transition(.scale(scale: 0.92).combined(with: .opacity))
-                    } else {
+            ZStack {
+                if showJoin {
+                    JoinRoomView(showJoin: $showJoin)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                } else {
+                    HStack(spacing: 12) {
+                        ArtActionTile(image: "menu_duo.jpg", kicker: Strings.homeOnlineKicker, title: Strings.quickMatch,
+                                      detail: Strings.quickMatchSub, accent: Neo.magenta, icon: "bolt.fill",
+                                      buttonTitle: Strings.playNow) { model.quickMatch() }
+                        ArtActionTile(image: "menu_room.jpg", kicker: Strings.homePrivateKicker, title: Strings.createRoom,
+                                      detail: Strings.createRoomSub, accent: Neo.cyan, icon: "plus",
+                                      buttonTitle: Strings.createRoom) { model.createRoom() }
                         ArtActionTile(image: "menu_join.jpg", kicker: Strings.homePrivateKicker, title: Strings.joinRoom,
                                       detail: Strings.joinRoomSub, accent: Palette.gold, icon: "keyboard",
                                       buttonTitle: Strings.enterCode) {
                             withAnimation(pageAnimation) { showJoin = true }
                         }
-                        .transition(.scale(scale: 0.92).combined(with: .opacity))
                     }
+                    .transition(.opacity)
                 }
             }
         }
@@ -481,64 +479,133 @@ private struct PressableCardStyle: ButtonStyle {
 }
 
 /// Four letter boxes over a hidden text field.
-private struct JoinPanel: View {
+/// Joining a room: the code in four big tiles on the left with the join pill, and the game's own
+/// letter pad on the right (no system keyboard, which covered half of the landscape screen). Room
+/// codes use 24 letters (no I or O), so the pad is a neat 8 × 3 grid.
+private struct JoinRoomView: View {
     @EnvironmentObject var model: AppModel
     @Binding var showJoin: Bool
     @State private var code = ""
-    @FocusState private var focused: Bool
+
+    private static let letters = Array("ABCDEFGHJKLMNPQRSTUVWXYZ").map(String.init)
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text(Strings.joinRoom)
-                .font(.race(24))
-                .foregroundStyle(.white)
-            ZStack {
-                TextField("", text: $code)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                    .keyboardType(.asciiCapable)
-                    .focused($focused)
-                    .opacity(0.02)
-                    .onChange(of: code) { _, newValue in
-                        let filtered = String(newValue.uppercased().filter { $0.isLetter && $0.isASCII }.prefix(4))
-                        if filtered != newValue { code = filtered }
-                    }
-                HStack(spacing: 8) {
-                    ForEach(0..<4, id: \.self) { index in
-                        let letters = Array(code)
-                        let active = focused && index == min(letters.count, 3)
-                        Text(index < letters.count ? String(letters[index]) : "")
-                            .font(.ui(26, .black))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 52)
-                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black.opacity(0.5)))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(active ? Palette.gold : Color.white.opacity(0.18), lineWidth: active ? 2 : 1))
-                    }
-                }
-                .allowsHitTesting(false)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { focused = true }
+        HStack(spacing: 14) {
+            codeSide
+            pad
+        }
+    }
 
+    private var codeSide: some View {
+        VStack(spacing: 0) {
+            Text(Strings.joinRoom)
+                .font(.race(28))
+                .foregroundStyle(.white)
+            Text(Strings.joinRoomSub)
+                .font(.ui(12, .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .padding(.top, 2)
+            HStack(spacing: 8) {
+                ForEach(0..<4, id: \.self) { index in
+                    let letters = Array(code)
+                    let active = index == min(letters.count, 3) && letters.count < 4
+                    Text(index < letters.count ? String(letters[index]) : "")
+                        .font(.race(38))
+                        .foregroundStyle(.white)
+                        .frame(width: 52, height: 62)
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.08)))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(active ? Palette.gold : Color.white.opacity(0.16), lineWidth: active ? 2 : 1))
+                        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: code)
+                }
+            }
+            .padding(.top, 14)
+            Spacer(minLength: 10)
             Button {
-                focused = false
+                AudioManager.shared.play("click", volume: 0.7)
                 model.joinRoom(code: code)
             } label: {
                 Text(Strings.join.localUpper)
             }
-            .buttonStyle(GaragePillStyle(fill: code.count == 4 ? Palette.gold : Color(white: 0.35), fontSize: 19))
-            .frame(maxWidth: 240)
+            .buttonStyle(GaragePillStyle(fill: code.count == 4 ? Palette.gold : Color(white: 0.35), fontSize: 20))
             .disabled(code.count != 4 || model.connecting)
-
-            Button(Strings.back) {
-                focused = false
+            Button {
+                AudioManager.shared.play("click", volume: 0.5)
                 withAnimation(.spring(response: 0.3)) { showJoin = false }
+            } label: {
+                Text(Strings.back)
+                    .font(.ui(14, .semibold))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .frame(height: 34)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
             }
-            .font(.ui(14, .bold))
-            .foregroundStyle(.white.opacity(0.65))
+            .buttonStyle(.plain)
+            .padding(.top, 4)
         }
-        .onAppear { focused = true }
+        .padding(18)
+        .frame(width: 290)
+        .frame(maxHeight: .infinity)
+        .background(NeoPanel(radius: 24))
+    }
+
+    private var pad: some View {
+        VStack(spacing: 8) {
+            ForEach(0..<3, id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(0..<8, id: \.self) { column in
+                        let letter = Self.letters[row * 8 + column]
+                        Button { type(letter) } label: {
+                            Text(letter)
+                                .font(.race(24))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+                        }
+                        .buttonStyle(PressScaleStyle())
+                        .disabled(code.count >= 4)
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                // Paste a code the friend sent (no permission prompt with the system paste button)
+                PasteButton(payloadType: String.self) { strings in
+                    let cleaned = String((strings.first ?? "").uppercased().filter { Self.letters.contains(String($0)) }.prefix(4))
+                    Task { @MainActor in code = cleaned }
+                }
+                .labelStyle(.titleAndIcon)
+                .buttonBorderShape(.capsule)
+                .tint(Color.white.opacity(0.18))
+                Spacer(minLength: 0)
+                Button {
+                    AudioManager.shared.play("click", volume: 0.4)
+                    if !code.isEmpty { code.removeLast() }
+                } label: {
+                    Image(systemName: "delete.left.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 96)
+                        .frame(maxHeight: .infinity)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+                }
+                .buttonStyle(PressScaleStyle())
+                .disabled(code.isEmpty)
+            }
+            .frame(height: 44)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(NeoPanel(radius: 24))
+    }
+
+    private func type(_ letter: String) {
+        guard code.count < 4 else { return }
+        AudioManager.shared.play("click", volume: 0.4)
+        code += letter
     }
 }
 
@@ -767,18 +834,21 @@ struct LobbyView: View {
     var body: some View {
         ZStack {
             MenuBackdrop()
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 topBar
                 HStack(spacing: 14) {
                     codeCard
                     playersCard
                 }
+                // The cards take what is left and never push the title bar off the top
                 .frame(maxHeight: .infinity)
+                .layoutPriority(-1)
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            .padding(.bottom, 12)
+            .padding(.bottom, 10)
         }
+        .ignoresSafeArea(.keyboard)
     }
 
     // MARK: Top: close, title, sound
@@ -816,16 +886,16 @@ struct LobbyView: View {
             HStack(spacing: 10) {
                 ForEach(Array(model.roomCode.enumerated()), id: \.offset) { _, letter in
                     Text(String(letter))
-                        .font(.race(46))
+                        .font(.race(42))
                         .foregroundStyle(.white)
-                        .frame(width: 60, height: 74)
+                        .frame(width: 56, height: 66)
                         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.08)))
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
                 }
             }
-            .padding(.top, 12)
-            Spacer(minLength: 14)
+            .padding(.top, 10)
+            Spacer(minLength: 8)
             if model.matchmaking {
                 HStack(spacing: 8) {
                     ProgressView().tint(.white)
@@ -839,7 +909,9 @@ struct LobbyView: View {
                     .font(.ui(13, .semibold))
                     .foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
-                    .padding(.bottom, 10)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.bottom, 8)
                 ShareLink(item: "Parkrift – \(Strings.roomCode): \(model.roomCode)") {
                     HStack(spacing: 8) {
                         Image(systemName: "square.and.arrow.up")
@@ -849,7 +921,7 @@ struct LobbyView: View {
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: 240)
-                    .frame(height: 52)
+                    .frame(height: 48)
                     .background(Capsule().fill(Color.white.opacity(0.1)))
                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
                 }
@@ -862,7 +934,7 @@ struct LobbyView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(20)
+        .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(NeoPanel(radius: 24))
     }
@@ -870,10 +942,7 @@ struct LobbyView: View {
     // MARK: Right: players, the mode, start
 
     private var playersCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(Strings.players)
-                .font(.ui(13, .semibold))
-                .foregroundStyle(.white.opacity(0.6))
+        VStack(alignment: .leading, spacing: 8) {
             PlayerChip(name: Strings.playerYou, slot: model.mySlot, present: true, car: model.carChoice.spec.name)
             PlayerChip(name: Strings.playerFriend, slot: 1 - model.mySlot, present: model.friendHere,
                        car: model.friendHere ? model.friendCar?.spec.name : nil)
@@ -887,12 +956,14 @@ struct LobbyView: View {
             .padding(4)
             .background(Capsule().fill(Color.black.opacity(0.35)))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
-            .padding(.top, 4)
+            .padding(.top, 2)
             Text(model.onlineMode == .race ? Strings.onlineRaceInfo : Strings.onlineParkInfo)
                 .font(.ui(12, .semibold))
                 .foregroundStyle(.white.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 6)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .padding(.horizontal, 4)
+            Spacer(minLength: 4)
             if model.isHost {
                 Button {
                     AudioManager.shared.play("click", volume: 0.7)
@@ -913,10 +984,10 @@ struct LobbyView: View {
                 }
                 .font(.ui(13, .semibold))
                 .foregroundStyle(.white.opacity(0.75))
-                .frame(minHeight: 52)
+                .frame(minHeight: 48)
             }
         }
-        .padding(18)
+        .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NeoPanel(radius: 24))
     }
@@ -934,11 +1005,11 @@ private struct PlayerChip: View {
             Image(systemName: "car.side.fill")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(present ? Palette.ink : .white.opacity(0.4))
-                .frame(width: 40, height: 40)
+                .frame(width: 36, height: 36)
                 .background(Circle().fill(present ? Palette.player(slot) : Color.white.opacity(0.08)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                    .font(.race(19))
+                    .font(.race(18))
                     .foregroundStyle(.white.opacity(present ? 1 : 0.5))
                 Text(car ?? Strings.waitingShort)
                     .font(.ui(12, .semibold))
@@ -954,8 +1025,8 @@ private struct PlayerChip: View {
                 ProgressView().tint(.white.opacity(0.7))
             }
         }
-        .padding(.vertical, 8)
-        .padding(.leading, 8)
+        .padding(.vertical, 5)
+        .padding(.leading, 6)
         .padding(.trailing, 14)
         .background(Capsule().fill(Color.white.opacity(present ? 0.07 : 0.03)))
         .overlay(Capsule().strokeBorder(present ? Palette.player(slot).opacity(0.5) : Color.white.opacity(0.1),
@@ -986,7 +1057,7 @@ private struct ModeChip: View {
             }
             .foregroundStyle(selected ? Palette.ink : .white.opacity(enabled ? 0.8 : 0.5))
             .frame(maxWidth: .infinity)
-            .frame(height: 38)
+            .frame(height: 34)
             .background(Capsule().fill(selected ? Palette.gold : Color.clear))
         }
         .buttonStyle(.plain)
