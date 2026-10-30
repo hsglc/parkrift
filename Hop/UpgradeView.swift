@@ -14,10 +14,9 @@ struct UpgradeView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(Strings.upgrade.localUpper)
-                            .font(.kicker(11))
-                            .tracking(1.5)
-                            .foregroundStyle(Palette.neon)
+                        Text(Strings.upgrade)
+                            .font(.ui(13, .semibold))
+                            .foregroundStyle(.white.opacity(0.6))
                         Text(choice.spec.name.localUpper)
                             .font(.race(28))
                             .foregroundStyle(.white)
@@ -32,9 +31,8 @@ struct UpgradeView: View {
                     upgradeCard(.nitro, icon: "flame.fill", title: Strings.upgradeNitro, info: Strings.upgradeNitroInfo)
                 }
                 HStack(spacing: 10) {
-                    Text(Strings.rims.localUpper)
-                        .font(.kicker(10))
-                        .tracking(1.5)
+                    Text(Strings.rims)
+                        .font(.ui(13, .semibold))
                         .foregroundStyle(.white.opacity(0.6))
                     ForEach(CarSpec.rims.indices, id: \.self) { index in
                         let selected = index == choice.rim

@@ -172,7 +172,7 @@ struct MenuView: View {
                 // Design screenshots of the menu pages, saved by the app itself
                 let target: Page = ["levels": .levels, "city": .city, "online": .online][ProcessInfo.processInfo.arguments[at + 1]] ?? .home
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { page = target }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { saveWindowSnapshot(named: "menu-shot") }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { saveWindowSnapshot(named: "menu-shot") }
             }
             if Progression.pendingGiftDay != nil && !MenuView.giftShownThisLaunch && !PerfSettings.benchmark {
                 MenuView.giftShownThisLaunch = true
@@ -764,130 +764,162 @@ struct LobbyView: View {
     var body: some View {
         ZStack {
             MenuBackdrop()
-            HStack(spacing: 18) {
-                // Room code
-                VStack(spacing: 12) {
-                    Text(Strings.roomCode.localUpper)
-                        .font(.ui(13, .black))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .tracking(1.5)
-                    HStack(spacing: 8) {
-                        ForEach(Array(model.roomCode.enumerated()), id: \.offset) { _, letter in
-                            Text(String(letter))
-                                .font(.ui(40, .black))
-                                .foregroundStyle(.white)
-                                .frame(width: 58, height: 70)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.06)],
-                                                             startPoint: .top, endPoint: .bottom))
-                                )
-                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .strokeBorder(Color.white.opacity(0.22), lineWidth: 1))
-                        }
-                    }
-                    if model.matchmaking {
-                        HStack(spacing: 8) {
-                            ProgressView().tint(.white)
-                            Text(Strings.searching)
-                        }
-                        .font(.ui(13, .bold))
-                        .foregroundStyle(.white.opacity(0.8))
-                    } else if model.isHost {
-                        Text(Strings.shareCode)
-                            .font(.ui(13, .bold))
-                            .foregroundStyle(.white.opacity(0.65))
-                        ShareLink(item: "Parkrift – \(Strings.roomCode): \(model.roomCode)") {
-                            Label(Strings.shareCode, systemImage: "square.and.arrow.up")
-                                .labelStyle(.iconOnly)
-                                .font(.ui(15, .black))
-                                .foregroundStyle(.white)
-                                .frame(width: 40, height: 40)
-                                .background(Circle().fill(Color.white.opacity(0.12)))
-                        }
-                    }
+            VStack(spacing: 12) {
+                topBar
+                HStack(spacing: 14) {
+                    codeCard
+                    playersCard
                 }
-                .frame(width: 270)
-                .racePlate(skew: 16, padding: 16)
-
-                // Players and start
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(Strings.players.localUpper)
-                        .font(.ui(13, .black))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .tracking(1.5)
-                    PlayerChip(name: Strings.you, slot: model.mySlot, present: true, car: model.carChoice.spec.name)
-                    PlayerChip(name: Strings.friend, slot: 1 - model.mySlot, present: model.friendHere,
-                               car: model.friendHere ? model.friendCar?.spec.name : nil)
-                    Button {
-                        AudioManager.shared.play("click", volume: 0.6)
-                        model.openGarage(.lobby)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "wrench.and.screwdriver.fill")
-                            Text(Strings.changeCar.localUpper)
-                        }
-                        .font(.race(14, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(SlantedShape(skew: 8).fill(Color.white.opacity(0.1)))
-                        .overlay(SlantedShape(skew: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                    }
-                    .buttonStyle(PressScaleStyle())
-
-                    HStack(spacing: 8) {
-                        ModeChip(title: Strings.carRace, icon: "flag.checkered", selected: model.onlineMode == .race,
-                                 enabled: model.isHost) { model.setOnlineMode(.race) }
-                        ModeChip(title: Strings.parkRace, icon: "parkingsign", selected: model.onlineMode == .park,
-                                 enabled: model.isHost) { model.setOnlineMode(.park) }
-                    }
-                    Text(model.onlineMode == .race ? Strings.onlineRaceInfo : Strings.onlineParkInfo)
-                        .font(.ui(11, .bold))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .fixedSize(horizontal: false, vertical: true)
-                    if model.isHost {
-                        Button { model.startOnlineGame() } label: {
-                            Label(Strings.start, systemImage: "flag.checkered")
-                        }
-                        .buttonStyle(ChunkyButtonStyle(colors: model.friendHere ? Palette.green : Palette.disabled, height: 50, fontSize: 19))
-                        .disabled(!model.friendHere)
-                    } else {
-                        HStack(spacing: 8) {
-                            ProgressView().tint(.white)
-                            Text(Strings.waitingHost)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .font(.ui(13, .bold))
-                        .foregroundStyle(.white.opacity(0.75))
-                    }
-                }
-                .frame(width: 270)
-                .racePlate(skew: 16, padding: 14)
+                .frame(maxHeight: .infinity)
             }
             .padding(.horizontal, 20)
-        }
-        .overlay(alignment: .topLeading) {
-            RoundIconButton(systemImage: "xmark") { model.leaveToMenu() }
-                .padding(.top, 12)
-                .padding(.leading, 16)
-        }
-        .overlay(alignment: .topTrailing) {
-            SoundToggle()
-                .padding(.top, 12)
-                .padding(.trailing, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
     }
 
-    private func stepButton(_ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
+    // MARK: Top: close, title, sound
+
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            RoundIconButton(systemImage: "xmark") {
+                AudioManager.shared.play("click", volume: 0.6)
+                model.leaveToMenu()
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(Strings.modeOnlineTitle)
+                    .font(.race(28))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(model.matchmaking ? Strings.quickMatch : (model.isHost ? Strings.createRoom : Strings.joinRoom))
+                    .font(.ui(12, .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+            Spacer()
+            NeoGarageChip()
+            SoundToggle()
         }
-        .buttonStyle(ChunkyButtonStyle(colors: Palette.slate, height: 40, corner: 12, fontSize: 16))
-        .frame(width: 52)
+        .frame(height: 48)
+    }
+
+    // MARK: Left: the room code
+
+    private var codeCard: some View {
+        VStack(spacing: 0) {
+            Text(Strings.roomCode)
+                .font(.ui(13, .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+            HStack(spacing: 10) {
+                ForEach(Array(model.roomCode.enumerated()), id: \.offset) { _, letter in
+                    Text(String(letter))
+                        .font(.race(46))
+                        .foregroundStyle(.white)
+                        .frame(width: 60, height: 74)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.08)))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
+                }
+            }
+            .padding(.top, 12)
+            Spacer(minLength: 14)
+            if model.matchmaking {
+                HStack(spacing: 8) {
+                    ProgressView().tint(.white)
+                    Text(Strings.searching)
+                }
+                .font(.ui(14, .semibold))
+                .foregroundStyle(.white.opacity(0.8))
+                .frame(height: 52)
+            } else if model.isHost {
+                Text(Strings.shareCode)
+                    .font(.ui(13, .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 10)
+                ShareLink(item: "Parkrift – \(Strings.roomCode): \(model.roomCode)") {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 16, weight: .bold))
+                        Text(Strings.shareButton)
+                            .font(.race(19))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: 240)
+                    .frame(height: 52)
+                    .background(Capsule().fill(Color.white.opacity(0.1)))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                }
+                .buttonStyle(PressScaleStyle())
+            } else {
+                Text(Strings.waitingHost)
+                    .font(.ui(13, .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(NeoPanel(radius: 24))
+    }
+
+    // MARK: Right: players, the mode, start
+
+    private var playersCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(Strings.players)
+                .font(.ui(13, .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+            PlayerChip(name: Strings.playerYou, slot: model.mySlot, present: true, car: model.carChoice.spec.name)
+            PlayerChip(name: Strings.playerFriend, slot: 1 - model.mySlot, present: model.friendHere,
+                       car: model.friendHere ? model.friendCar?.spec.name : nil)
+            // The mode, as one segmented capsule (the host picks)
+            HStack(spacing: 4) {
+                ModeChip(title: Strings.carRace, icon: "flag.checkered", selected: model.onlineMode == .race,
+                         enabled: model.isHost) { model.setOnlineMode(.race) }
+                ModeChip(title: Strings.parkRace, icon: "parkingsign", selected: model.onlineMode == .park,
+                         enabled: model.isHost) { model.setOnlineMode(.park) }
+            }
+            .padding(4)
+            .background(Capsule().fill(Color.black.opacity(0.35)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+            .padding(.top, 4)
+            Text(model.onlineMode == .race ? Strings.onlineRaceInfo : Strings.onlineParkInfo)
+                .font(.ui(12, .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            if model.isHost {
+                Button {
+                    AudioManager.shared.play("click", volume: 0.7)
+                    model.startOnlineGame()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "flag.checkered").font(.system(size: 15, weight: .bold))
+                        Text(Strings.start.localUpper)
+                    }
+                }
+                .buttonStyle(GaragePillStyle(fill: model.friendHere ? Palette.gold : Color(white: 0.4)))
+                .disabled(!model.friendHere)
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView().tint(.white)
+                    Text(Strings.waitingHost)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.ui(13, .semibold))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(minHeight: 52)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(NeoPanel(radius: 24))
     }
 }
 
+/// A player in the room: their colour, name and car, a tick once they are in.
 private struct PlayerChip: View {
     let name: String
     let slot: Int
@@ -895,40 +927,40 @@ private struct PlayerChip: View {
     var car: String? = nil
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "car.side.fill")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 38, height: 32)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(present ? Palette.player(slot) : Color.white.opacity(0.08)))
-            VStack(alignment: .leading, spacing: 0) {
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(present ? Palette.ink : .white.opacity(0.4))
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(present ? Palette.player(slot) : Color.white.opacity(0.08)))
+            VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                    .font(.race(17))
+                    .font(.race(19))
                     .foregroundStyle(.white.opacity(present ? 1 : 0.5))
-                if let car = car {
-                    Text(car.localUpper)
-                        .font(.kicker(8))
-                        .tracking(1)
-                        .foregroundStyle(.white.opacity(0.55))
-                }
+                Text(car ?? Strings.waitingShort)
+                    .font(.ui(12, .semibold))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
             }
-            Spacer()
+            Spacer(minLength: 4)
             if present {
                 Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(Color(red: 0.4, green: 0.95, blue: 0.55))
             } else {
                 ProgressView().tint(.white.opacity(0.7))
             }
         }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(present ? Palette.player(slot).opacity(0.6) : Color.white.opacity(0.08),
-                          style: StrokeStyle(lineWidth: 1, dash: present ? [] : [4, 3])))
+        .padding(.vertical, 8)
+        .padding(.leading, 8)
+        .padding(.trailing, 14)
+        .background(Capsule().fill(Color.white.opacity(present ? 0.07 : 0.03)))
+        .overlay(Capsule().strokeBorder(present ? Palette.player(slot).opacity(0.5) : Color.white.opacity(0.1),
+                                        style: StrokeStyle(lineWidth: 1, dash: present ? [] : [4, 3])))
     }
 }
 
+/// One side of the mode switch: an icon and the mode's name, gold when chosen.
 private struct ModeChip: View {
     let title: String
     let icon: String
@@ -937,29 +969,26 @@ private struct ModeChip: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
+        Button {
+            AudioManager.shared.play("click", volume: 0.5)
+            action()
+        } label: {
+            HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .black))
+                    .font(.system(size: 13, weight: .bold))
                 Text(title)
-                    .font(.ui(11, .black))
+                    .font(.ui(13, .bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .foregroundStyle(selected ? Palette.ink : .white.opacity(0.8))
+            .foregroundStyle(selected ? Palette.ink : .white.opacity(enabled ? 0.8 : 0.5))
             .frame(maxWidth: .infinity)
-            .frame(height: 48)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected
-                          ? AnyShapeStyle(LinearGradient(colors: [Palette.gold, Palette.goldDeep], startPoint: .top, endPoint: .bottom))
-                          : AnyShapeStyle(Color.white.opacity(0.08)))
-            )
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.white.opacity(selected ? 0.5 : 0.12), lineWidth: 1))
+            .frame(height: 38)
+            .background(Capsule().fill(selected ? Palette.gold : Color.clear))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: selected)
     }
 }
 
@@ -1016,8 +1045,8 @@ struct LoadingView: View {
                     Wordmark(size: 22)
                     Spacer()
                     HStack(spacing: 8) {
-                        Text(modeTitle.localUpper)
-                            .font(.kicker(10)).tracking(1.5)
+                        Text(modeTitle)
+                            .font(.ui(13, .semibold))
                             .foregroundStyle(.white.opacity(0.75))
                         if !Levels.isCity(level) {
                             TierChip(index: level)
@@ -1033,8 +1062,8 @@ struct LoadingView: View {
                     HStack(spacing: 10) {
                         LoadingBar(shownAt: shownAt, expected: expected, endsAt: endsAt, color: UIColor(accent))
                             .frame(width: 260, height: 6)
-                        Text(Strings.loadingText.localUpper)
-                            .font(.kicker(9)).tracking(1.2)
+                        Text(Strings.loadingText)
+                            .font(.ui(12, .semibold))
                             .foregroundStyle(.white.opacity(0.55))
                     }
                     .padding(.top, 12)

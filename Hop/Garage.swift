@@ -844,6 +844,9 @@ struct GarageView: View {
         .padding(.trailing, 12)
         }
         .frame(maxWidth: 420)
+        // The cards fade out at the edge instead of being cut
+        .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.86),
+                                     .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
         .onAppear { proxy.scrollTo(choice.model, anchor: .center) }
         .onChange(of: choice.model) { _, id in
             withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) }

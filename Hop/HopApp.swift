@@ -887,6 +887,16 @@ struct RootView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { model.leaveGarage(confirmed: true) }
                 return
             }
+            if PerfSettings.benchmark && args.contains("-staylobby") {
+                // Design screenshot of a hosted room with the friend in it (no network)
+                AudioManager.shared.isMuted = true
+                model.roomCode = "KXRT"
+                model.isHost = true
+                model.friendHere = true
+                model.screen = .lobby
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { saveWindowSnapshot(named: "menu-shot") }
+                return
+            }
             if PerfSettings.benchmark && args.contains("-staylevels") {
                 AudioManager.shared.isMuted = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {

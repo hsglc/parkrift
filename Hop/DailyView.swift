@@ -139,7 +139,7 @@ struct DailyView: View {
         let reward = Progression.streakRewards[max(0, min(6, shownDay - 1))]
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(Strings.dailyGift.localUpper).font(.kicker(10)).tracking(1.6).foregroundStyle(Palette.gold)
+                Text(Strings.dailyGift).font(.ui(13, .semibold)).foregroundStyle(Palette.gold)
                 Spacer()
                 HStack(spacing: 4) {
                     Image(systemName: "flame.fill").foregroundStyle(Palette.goldDeep)
@@ -168,8 +168,8 @@ struct DailyView: View {
                         .foregroundStyle(pending == nil ? green : Palette.gold)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(Strings.dayN(shownDay).localUpper)
-                        .font(.kicker(9)).tracking(1.4).foregroundStyle(.white.opacity(0.55))
+                    Text(Strings.dayN(shownDay))
+                        .font(.ui(12, .semibold)).foregroundStyle(.white.opacity(0.55))
                     Text("+\(justCollected ?? reward)")
                         .font(.race(32)).foregroundStyle(.white)
                         .contentTransition(.numericText())
@@ -273,7 +273,7 @@ struct DailyView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(Strings.dailyTasks.localUpper).font(.kicker(10)).tracking(1.6).foregroundStyle(Neo.cyan)
+                    Text(Strings.dailyTasks).font(.ui(13, .semibold)).foregroundStyle(.white.opacity(0.75))
                     Text(Strings.dailyTasksHint)
                         .font(.ui(10, .semibold))
                         .foregroundStyle(.white.opacity(0.45))

@@ -240,6 +240,10 @@ enum Strings {
     static var homeOnlineKicker: String { t("2 oyuncu", "2 players", "2 jugadores") }
     static var homeTrafficKicker: String { t("Trafikte park", "Park in traffic", "Aparca entre el tráfico") }
     static var homePrivateKicker: String { t("Özel oda", "Private room", "Sala privada") }
+    static var playerYou: String { t("Sen", "You", "Tú") }
+    static var playerFriend: String { t("Arkadaşın", "Your friend", "Tu amigo") }
+    static var waitingShort: String { t("Bekleniyor…", "Waiting…", "Esperando…") }
+    static var shareButton: String { t("Kodu paylaş", "Share code", "Compartir código") }
     static var carClassTitle: String { t("Sınıf", "Class", "Clase") }
     static var dailyKicker: String { t("HER GÜN YENİLENİR", "RESETS EVERY DAY", "SE RENUEVA CADA DÍA") }
     static func streakDays(_ days: Int) -> String { t("Seri: \(days) gün", "Streak: \(days) days", "Racha: \(days) días") }
