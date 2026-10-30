@@ -44,5 +44,9 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Parkrift never uses the camera. The online play network library (WebRTC) contains camera code, so iOS requires this description; the game never asks for camera access.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Parkrift never uses the microphone. The online play network library (WebRTC) contains audio code, so iOS requires this description; the game never asks for microphone access.</string>
 </dict>
 </plist>
