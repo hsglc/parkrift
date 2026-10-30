@@ -802,7 +802,7 @@ struct LobbyView: View {
                         ModeChip(title: Strings.parkRace, icon: "parkingsign", selected: model.onlineMode == .park,
                                  enabled: model.isHost) { model.setOnlineMode(.park) }
                     }
-                    Text(model.onlineMode == .race ? Strings.carRaceInfo : Strings.cityRaceInfo)
+                    Text(model.onlineMode == .race ? Strings.onlineRaceInfo : Strings.onlineParkInfo)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.6))
                         .fixedSize(horizontal: false, vertical: true)
