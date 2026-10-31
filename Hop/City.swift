@@ -854,6 +854,8 @@ struct Bot {
     var raceGoal = 0
     var onFinal = false
     var raceDone = false
+    /// Seconds a racer has been stuck behind a slower car.
+    var trailing: CGFloat = 0
 
     var box: OBB { OBB(center: position, size: Levels.carSize, angle: heading) }
 }
@@ -1437,6 +1439,18 @@ final class Traffic {
             }
             if bot.racer && !bot.passing && gap < 170 && leaderSpeed < v0 * 0.7 && stopLine == nil && oncomingClear(bot) {
                 bot.passing = true
+            }
+            // A racer stuck behind slow traffic with no gap to pass: out of the players' sight it
+            // slips by (in view it has to wait for a gap, like the player)
+            if bot.racer && !bot.passing && gap < 150 && leaderSpeed < v0 * 0.6 && !blockedByPlayer {
+                bot.trailing += dt
+                if bot.trailing > 1.0 && blockers.prefix(playerCars).allSatisfy({ $0.distance(to: bot.position) > 700 }) {
+                    bot.ignoreBots = 1.0
+                    bot.trailing = 0
+                    ghosts += 1
+                }
+            } else {
+                bot.trailing = max(0, bot.trailing - dt)
             }
             // Hunters don't queue behind a car standing in the lane: they go round it
             if bot.hunt >= 0 && !bot.parked && !bot.passing && !bot.approach && gap < 110 && leaderSpeed < 15

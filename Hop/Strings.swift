@@ -264,6 +264,7 @@ enum Strings {
     static var taxiInfo: String { t("3 müşteri · rakip taksilerden önce al, isteğini yerine getir, santimine park et", "3 customers · beat the rival taxis to them, give them the ride they want, park spot on", "3 clientes · gánales a los taxis rivales, dales el viaje que quieren y aparca al milímetro") }
     static var onlineTaxiInfo: String { t("3 tur · müşteriyi ilk alan götürür · 2 turu alan kazanır", "Best of 3 · first to pick up the customer takes them · 2 rounds win", "Al mejor de 3 · quien recoge primero al cliente se lo lleva · 2 rondas ganan") }
     static func customerRound(_ n: Int, of total: Int) -> String { t("Müşteri \(n)/\(total)", "Customer \(n)/\(total)", "Cliente \(n)/\(total)") }
+    static var pickUpShort: String { t("Müşteriyi al!", "Pick up!", "¡Recógelo!") }
     static var pickUpCustomer: String { t("Müşteriyi al: yanında dur", "Pick up the customer: stop by them", "Recoge al cliente: para a su lado") }
     static var customerComing: String { t("Müşteri biniyor…", "Customer getting in…", "El cliente sube…") }
     static func riderLine(_ rider: Rider) -> String {

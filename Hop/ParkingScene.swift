@@ -1583,6 +1583,7 @@ final class ParkingScene: SKScene {
                     run(.wait(forDuration: at)) { Task { @MainActor in saveWindowSnapshot(named: name) } }
                 }
             }
+            if taxiTestPlaced { return }
         }
         // Finish test: put the car just before the finish line at speed so it crosses it
         if PerfSettings.finishTest && level.race && !finishTestPlaced && benchClock > 6 {
@@ -2663,13 +2664,16 @@ final class ParkingScene: SKScene {
         let node = SCNNode()
         world.addLevelNode(node)
         customerNode = node
-        let signPlane = SCNPlane(width: 2.6, height: 1.9)
+        let signPlane = SCNPlane(width: 3.3, height: 2.4)
         let material = SCNMaterial()
         material.lightingModel = .constant
         material.diffuse.contents = ParkingScene.customerSignImage(taxi.rider)
         material.isDoubleSided = true
+        material.readsFromDepthBuffer = false
+        material.writesToDepthBuffer = false
         signPlane.materials = [material]
         let sign = SCNNode(geometry: signPlane)
+        sign.renderingOrder = 50
         sign.constraints = [SCNBillboardConstraint()]
         sign.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.3, z: 0, duration: 0.5), .moveBy(x: 0, y: -0.3, z: 0, duration: 0.5)])))
         world.addLevelNode(sign)
@@ -2722,7 +2726,7 @@ final class ParkingScene: SKScene {
         p.y = Float(level.city?.kerbHeight(at: customerPosition) ?? 0)
         node.position = p
         node.eulerAngles = SCNVector3(0, Float(customerHeading), 0)
-        customerSign?.position = SCNVector3(p.x, p.y + 3.4, p.z)
+        customerSign?.position = SCNVector3(p.x, p.y + 5.4, p.z)
     }
 
     /// The pick-up (stop by the customer before a rival taxi does), the walk to the car, the
@@ -3047,7 +3051,8 @@ final class ParkingScene: SKScene {
 
         let toTarget = carPosition.distance(to: target)
         if toTarget < 90 {
-            navLabel.text = level.race ? Strings.finishLine : Strings.parkHere
+            navLabel.text = level.race ? Strings.finishLine
+                : (level.taxi != nil && taxiState != .riding && taxiState != .delivered ? Strings.pickUpShort : Strings.parkHere)
             return
         }
         if abs(relative) > 2.0 {
