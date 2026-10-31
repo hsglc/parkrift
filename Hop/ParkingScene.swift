@@ -2580,9 +2580,14 @@ final class ParkingScene: SKScene {
         }
         let mine = left(carPosition)
         var ahead = traffic.raceFinishes.count
-        for bot in traffic.bots where bot.racer && !bot.raceDone {
-            if left(bot.position) < mine { ahead += 1 }
+        var boost: [Int: CGFloat] = [:]
+        for (index, bot) in traffic.bots.enumerated() where bot.racer && !bot.raceDone {
+            let theirs = left(bot.position)
+            if theirs < mine { ahead += 1 }
+            // Catch-up: up to a third faster when far behind, a little slower when far ahead
+            boost[index] = max(0.85, min(1.35, 1 + (theirs - mine) / 2500))
         }
+        traffic.racerBoost = boost
         updateRaceChip(place: ahead + 1)
     }
 

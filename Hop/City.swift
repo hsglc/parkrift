@@ -907,6 +907,9 @@ final class Traffic {
     /// Racers that crossed the line (bot, seconds since the start), in order.
     private(set) var raceFinishes: [(bot: Int, time: CGFloat)] = []
     private let racerTop: CGFloat = 330
+    /// Catch-up per racer (bot index → speed factor), set by the race: a racer far behind the
+    /// player drives a little faster, one far ahead a little slower, so the race stays close.
+    var racerBoost: [Int: CGFloat] = [:]
 
     init(map: CityMap, starts: [BotStart], seed: UInt64, spots: [FreeSpot] = [], hunters: [HunterStart] = [],
          racers: [RacerStart] = [], finish: (a: Int, b: Int, point: CGPoint)? = nil) {
@@ -1271,7 +1274,7 @@ final class Traffic {
             bot.heading += max(-maxTurn, min(maxTurn, error))
 
             // The speed it wants: its own pace, slower in a bend and before a turn
-            var v0 = (bot.racer ? racerTop : cruise) * bot.pace
+            var v0 = (bot.racer ? racerTop * (racerBoost[index] ?? 1) : cruise) * bot.pace
             // A hunter that sees a player closing in on the same street puts its foot down
             if bot.hunt >= 0 && !bot.parked && spots.indices.contains(bot.hunt) {
                 let bay = spots[bot.hunt].def.center
@@ -1413,6 +1416,13 @@ final class Traffic {
                     bot.backing = 1.1
                     bot.waiting = 0
                     backoffs += 1
+                }
+                // A racer stuck in traffic well away from the players slips through (nobody sees it)
+                if bot.racer && !blockedByPlayer && bot.waiting > 1.2
+                    && blockers.prefix(playerCars).allSatisfy({ $0.distance(to: bot.position) > 700 }) {
+                    bot.ignoreBots = 1.0
+                    bot.waiting = 0
+                    ghosts += 1
                 }
                 if !legacy && !blockedByPlayer && bot.waiting > 8 && outOfSight(bot.position, players: blockers.prefix(playerCars)) {
                     bot.ignoreBots = 1.6
