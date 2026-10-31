@@ -106,8 +106,10 @@ struct CityMap {
         return [start] + nodes.reversed() + [target]
     }
 
-    /// Shortest drive along the streets from every intersection to `target` (Dijkstra).
-    func distances(to target: Int) -> [CGFloat] {
+    /// Shortest drive along the streets from every intersection to `target` (Dijkstra), not
+    /// using the street `avoiding` (a bay's own street: arriving along it would be the wrong way,
+    /// and a car can't turn back at its end).
+    func distances(to target: Int, avoiding: (Int, Int)? = nil) -> [CGFloat] {
         var dist = [CGFloat](repeating: .greatestFiniteMagnitude, count: nodeCount)
         var done = [Bool](repeating: false, count: nodeCount)
         dist[target] = 0
@@ -117,6 +119,7 @@ struct CityMap {
             guard current >= 0, dist[current] < .greatestFiniteMagnitude else { break }
             done[current] = true
             for next in neighbors(current) {
+                if let street = avoiding, Set([current, next]) == Set([street.0, street.1]) { continue }
                 let candidate = dist[current] + position(of: current).distance(to: position(of: next))
                 if candidate < dist[next] { dist[next] = candidate }
             }
@@ -477,7 +480,7 @@ extension Levels {
         var taken: [CGPoint] = starts.map { $0.position }
         for (k, share) in [0.45, 0.8, 1.1, 1.6].enumerated() {
             let spot = k
-            let dist = map.distances(to: freeSpots[spot].entry)
+            let dist = map.distances(to: freeSpots[spot].entry, avoiding: (freeSpots[spot].entry, freeSpots[spot].exit))
             let wanted = max(380, (CGFloat(share) * playerTime - 2.5) * 75)
             var best: BotStart?
             var bestMiss = CGFloat.greatestFiniteMagnitude
@@ -780,7 +783,7 @@ final class Traffic {
     init(map: CityMap, starts: [BotStart], seed: UInt64, spots: [FreeSpot] = [], hunters: [HunterStart] = []) {
         self.map = map
         self.spots = spots
-        spotDistances = spots.map { map.distances(to: $0.entry) }
+        spotDistances = spots.map { map.distances(to: $0.entry, avoiding: ($0.entry, $0.exit)) }
         rng = SplitMix64(seed: seed)
         for start in starts {
             let lane = map.lane(from: start.from, to: start.to)
@@ -910,11 +913,9 @@ final class Traffic {
         guard bot.hunt >= 0, spots.indices.contains(bot.hunt) else { return false }
         if taken.contains(bot.hunt) {
             // Its bay is gone: a honk, then the next one
-            if bot.parkT < 0 || bot.parkT < 0.5 {
-                honks.append(bot.position)
-                retarget(index)
-                return false
-            }
+            honks.append(bot.position)
+            retarget(index)
+            return false
         }
         let spot = spots[bot.hunt]
         if bot.parkT >= 0 {
