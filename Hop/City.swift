@@ -1630,10 +1630,17 @@ final class Traffic {
                                   racers: level.racers, finish: (a: street.a, b: street.b, point: level.spots[0].center))
             traffic.racersReleased = true
             var t: CGFloat = 0
+            var slow: CGFloat = 0, crawl: CGFloat = 0, fast: CGFloat = 0, passing: CGFloat = 0
             while t < 120 && traffic.raceFinishes.count < level.racers.count {
                 traffic.step(1.0 / 60, blockers: [CGPoint(x: -9999, y: -9999)], playerCars: 1)
                 t += 1.0 / 60
+                for bot in traffic.bots where bot.racer {
+                    if bot.speed < 20 { slow += 1.0 / 60 } else if bot.speed < 150 { crawl += 1.0 / 60 } else { fast += 1.0 / 60 }
+                    if bot.passing { passing += 1.0 / 60 }
+                }
             }
+            lines.append(String(format: "PPRACE   r%d racer-seconds: stopped=%.0f slow=%.0f fast=%.0f passing=%.0f", round,
+                                Double(slow), Double(crawl), Double(fast), Double(passing)))
             let start = level.starts[0].position
             let route = map.route(from: start, to: level.spots[0].center)
             let length = zip(route, route.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }

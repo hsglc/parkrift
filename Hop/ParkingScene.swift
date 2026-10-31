@@ -1583,7 +1583,10 @@ final class ParkingScene: SKScene {
                     run(.wait(forDuration: at)) { Task { @MainActor in saveWindowSnapshot(named: name) } }
                 }
             }
-            if taxiTestPlaced { return }
+            if taxiTestPlaced {
+                velocity = 0
+                return
+            }
         }
         // Finish test: put the car just before the finish line at speed so it crosses it
         if PerfSettings.finishTest && level.race && !finishTestPlaced && benchClock > 6 {
@@ -2744,7 +2747,7 @@ final class ParkingScene: SKScene {
         switch taxiState {
         case .waiting:
             guard phase == .driving else { break }
-            let close = carPosition.distance(to: taxi.customer) < 95 && abs(velocity) < 12
+            let close = carPosition.distance(to: taxi.customer) < 95 && abs(velocity) < 16
             pickHold = close ? pickHold + dt : 0
             if pickHold > 0.5 {
                 startBoarding(to: carPosition)
