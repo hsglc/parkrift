@@ -56,7 +56,7 @@ struct LevelDef {
     let nameTR: String
     let nameEN: String
     let starts: [StartDef]   // index = player slot
-    let spots: [SpotDef]     // index = player slot
+    var spots: [SpotDef]     // index = player slot (city rounds: the free bay each player is heading for)
     let obstacles: [ObstacleDef]
     var world: CGSize = CGSize(width: 1000, height: 500)
     var city: CityMap? = nil
@@ -68,6 +68,10 @@ struct LevelDef {
     /// Cones, barrels and bins that fly when hit.
     var props: [PropDef] = []
     var weather: Weather = .day
+    /// City rounds (Spot Wars): the free bays on the target street, which drivers hunting for a
+    /// spot try to take first, and those drivers.
+    var freeSpots: [FreeSpot] = []
+    var hunters: [HunterStart] = []
 
     var name: String { Strings.pick(nameTR, nameEN, Levels.spanishNames[nameEN] ?? Levels.moreSpanishNames[nameEN] ?? nameEN) }
 }

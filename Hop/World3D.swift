@@ -700,6 +700,78 @@ final class Car3D {
     /// cost a draw of the whole street each): a soft warm pool on the road ahead, two glowing
     /// headlamps seen from the front and two red tail lamps seen from behind. Kept faint so the
     /// player's own beam stays the brightest thing on the road. Three quads sharing materials.
+    /// Hazard lights blinking at the four corners and a small "P?" sign over the roof: a driver
+    /// looking for a spot (Spot Wars).
+    private var hazard: SCNNode?
+
+    func setHazard(_ on: Bool) {
+        if on, hazard == nil {
+            let holder = SCNNode()
+            let amber = SCNMaterial()
+            amber.lightingModel = .constant
+            amber.diffuse.contents = UIColor(red: 1, green: 0.62, blue: 0.1, alpha: 1)
+            let lamp = SCNSphere(radius: 0.13)
+            lamp.segmentCount = 8
+            lamp.materials = [amber]
+            let glowMaterial = SCNMaterial()
+            glowMaterial.lightingModel = .constant
+            glowMaterial.diffuse.contents = Car3D.hazardGlow
+            glowMaterial.blendMode = .add
+            glowMaterial.writesToDepthBuffer = false
+            let glow = SCNPlane(width: 0.9, height: 0.9)
+            glow.materials = [glowMaterial]
+            let blink = SCNNode()
+            for (x, z) in [(Float(2.25), Float(-0.78)), (2.25, 0.78), (-2.3, -0.78), (-2.3, 0.78)] {
+                let node = SCNNode(geometry: lamp)
+                node.position = SCNVector3(x, 0.72, z)
+                blink.addChildNode(node)
+                let halo = SCNNode(geometry: glow)
+                halo.position = SCNVector3(x, 0.72, z)
+                halo.constraints = [SCNBillboardConstraint()]
+                blink.addChildNode(halo)
+            }
+            blink.runAction(.repeatForever(.sequence([.wait(duration: 0.38), .hide(), .wait(duration: 0.38), .unhide()])))
+            holder.addChildNode(blink)
+            let signMaterial = SCNMaterial()
+            signMaterial.lightingModel = .constant
+            signMaterial.diffuse.contents = Car3D.huntSign
+            signMaterial.isDoubleSided = true
+            let signPlane = SCNPlane(width: 1.9, height: 1.9)
+            signPlane.materials = [signMaterial]
+            let sign = SCNNode(geometry: signPlane)
+            sign.position = SCNVector3(0, 3.0, 0)
+            sign.constraints = [SCNBillboardConstraint()]
+            sign.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.25, z: 0, duration: 0.5),
+                                                      .moveBy(x: 0, y: -0.25, z: 0, duration: 0.5)])))
+            holder.addChildNode(sign)
+            node.addChildNode(holder)
+            hazard = holder
+        }
+        hazard?.isHidden = !on
+    }
+
+    static let hazardGlow: UIImage = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { context in
+        let colors = [UIColor(red: 1, green: 0.6, blue: 0.1, alpha: 0.9).cgColor, UIColor(red: 1, green: 0.5, blue: 0, alpha: 0).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+            context.cgContext.drawRadialGradient(gradient, startCenter: CGPoint(x: 32, y: 32), startRadius: 0,
+                                                 endCenter: CGPoint(x: 32, y: 32), endRadius: 32, options: [])
+        }
+    }
+
+    /// A round amber sign with "P?" (looking for a spot).
+    static let huntSign: UIImage = UIGraphicsImageRenderer(size: CGSize(width: 128, height: 128)).image { context in
+        let rect = CGRect(x: 8, y: 8, width: 112, height: 112)
+        context.cgContext.setFillColor(UIColor(red: 1, green: 0.66, blue: 0.12, alpha: 1).cgColor)
+        context.cgContext.fillEllipse(in: rect)
+        context.cgContext.setStrokeColor(UIColor.white.cgColor)
+        context.cgContext.setLineWidth(7)
+        context.cgContext.strokeEllipse(in: rect.insetBy(dx: 3.5, dy: 3.5))
+        let font = UIFont(name: "BarlowCondensed-BlackItalic", size: 66) ?? UIFont.systemFont(ofSize: 58, weight: .black)
+        let text = NSAttributedString(string: "P?", attributes: [.font: font, .foregroundColor: UIColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 1)])
+        let size = text.size()
+        text.draw(at: CGPoint(x: 64 - size.width / 2, y: 64 - size.height / 2))
+    }
+
     func setNightLights(_ on: Bool) {
         if on, nightLights == nil {
             let holder = SCNNode()
@@ -2208,6 +2280,7 @@ final class World3D {
         fxRoot.childNodes.forEach { $0.removeFromParentNode() }
         buildSkidPool()
         myNeon = nil
+        freeSpots.removeAll()
         stopCinematic()
         setRenderingPaused(false)
         parkedCars3D.removeAll()
@@ -3167,6 +3240,99 @@ final class World3D {
     }
     private var myNeonImages: (normal: UIImage, green: UIImage)?
     private var myNeonHolding = false
+
+    // MARK: Spot Wars
+
+    /// The free bays of a city round: each a gold bay with a neon outline and a light beam.
+    private var freeSpots: [(holder: SCNNode, neon: SCNNode, beam: SCNNode)] = []
+    static let spotGold = UIColor(red: 1.0, green: 0.8, blue: 0.22, alpha: 1)
+
+    func buildFreeSpots(_ defs: [SpotDef]) {
+        freeSpots.removeAll()
+        let color = World3D.spotGold
+        for def in defs {
+            let holder = SCNNode()
+            holder.position = World3D.vec(def.center, y: 0.02)
+            holder.eulerAngles.y = Float(def.angle)
+            let plane = SCNPlane(width: def.size.width / 10, height: def.size.height / 10)
+            let material = Mat.lambert(CarArt.spotImage(size: def.size, color: color))
+            material.isDoubleSided = true
+            plane.materials = [material]
+            holder.addChildNode(flat(plane, y: 0))
+            let outline = SCNPlane(width: def.size.width / 10 + 0.3, height: def.size.height / 10 + 0.3)
+            let outlineMaterial = SCNMaterial()
+            outlineMaterial.lightingModel = .constant
+            outlineMaterial.diffuse.contents = CarArt.spotOutlineImage(size: CGSize(width: def.size.width + 3, height: def.size.height + 3), color: color)
+            outlineMaterial.blendMode = .add
+            outlineMaterial.writesToDepthBuffer = false
+            outlineMaterial.isDoubleSided = true
+            outline.materials = [outlineMaterial]
+            let neon = flat(outline, y: 0.02)
+            neon.opacity = 0.6
+            holder.addChildNode(neon)
+            levelRoot.addChildNode(holder)
+
+            let beam = SCNCylinder(radius: 1.2, height: 40)
+            beam.radialSegmentCount = 12
+            let beamMaterial = SCNMaterial()
+            beamMaterial.lightingModel = .constant
+            beamMaterial.diffuse.contents = color.withAlphaComponent(0.22)
+            beamMaterial.blendMode = .add
+            beamMaterial.writesToDepthBuffer = false
+            beamMaterial.isDoubleSided = true
+            beam.materials = [beamMaterial]
+            let beamNode = SCNNode(geometry: beam)
+            beamNode.position = World3D.vec(def.center, y: 20)
+            levelRoot.addChildNode(beamNode)
+            freeSpots.append((holder, neon, beamNode))
+        }
+        let outlineSize = CGSize(width: (defs.first?.size.width ?? 64) + 3, height: (defs.first?.size.height ?? 30) + 3)
+        myNeonImages = (CarArt.spotOutlineImage(size: outlineSize, color: color),
+                        CarArt.spotOutlineImage(size: outlineSize, color: UIColor(red: 0.3, green: 1.0, blue: 0.5, alpha: 1)))
+        if arrowNode == nil {
+            let pyramid = SCNPyramid(width: 1.3, height: 1.5, length: 1.3)
+            pyramid.materials = [Mat.glow(color.lighter(by: 0.2))]
+            let arrow = SCNNode(geometry: pyramid)
+            arrow.eulerAngles.x = Float.pi
+            let arrowHolder = SCNNode()
+            arrowHolder.scale = SCNVector3(1.8, 1.8, 1.8)
+            arrowHolder.addChildNode(arrow)
+            arrow.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.45, z: 0, duration: 0.45),
+                                                       .moveBy(x: 0, y: -0.45, z: 0, duration: 0.45)])))
+            arrowHolder.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 2.5)))
+            levelRoot.addChildNode(arrowHolder)
+            arrowNode = arrowHolder
+        }
+    }
+
+    /// The bay the player is heading for: the arrow over it and its outline pulsing.
+    func setSpotTarget(_ index: Int, center: CGPoint) {
+        guard freeSpots.indices.contains(index) else { return }
+        if let old = myNeon, old !== freeSpots[index].neon {
+            old.removeAllActions()
+            old.opacity = 0.6
+            old.scale = SCNVector3(1, 1, 1)
+            if let images = myNeonImages { old.geometry?.firstMaterial?.diffuse.contents = images.normal }
+        }
+        let neon = freeSpots[index].neon
+        if myNeon !== neon {
+            myNeon = neon
+            myNeonHolding = false
+            neon.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.35, duration: 0.7), .fadeOpacity(to: 1.0, duration: 0.7)])))
+        }
+        arrowNode?.position = World3D.vec(center, y: 6.5)
+    }
+
+    /// A bay someone else took: its light goes out.
+    func markSpotTaken(_ index: Int) {
+        guard freeSpots.indices.contains(index) else { return }
+        let entry = freeSpots[index]
+        if myNeon === entry.neon { myNeon = nil }
+        entry.neon.removeAllActions()
+        for node in [entry.holder, entry.beam] {
+            node.runAction(.sequence([.fadeOut(duration: 0.5), .hide()]))
+        }
+    }
 
     func markParked() {
         arrowNode?.isHidden = true

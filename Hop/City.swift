@@ -106,6 +106,24 @@ struct CityMap {
         return [start] + nodes.reversed() + [target]
     }
 
+    /// Shortest drive along the streets from every intersection to `target` (Dijkstra).
+    func distances(to target: Int) -> [CGFloat] {
+        var dist = [CGFloat](repeating: .greatestFiniteMagnitude, count: nodeCount)
+        var done = [Bool](repeating: false, count: nodeCount)
+        dist[target] = 0
+        for _ in 0..<nodeCount {
+            var current = -1
+            for n in 0..<nodeCount where !done[n] && (current < 0 || dist[n] < dist[current]) { current = n }
+            guard current >= 0, dist[current] < .greatestFiniteMagnitude else { break }
+            done[current] = true
+            for next in neighbors(current) {
+                let candidate = dist[current] + position(of: current).distance(to: position(of: next))
+                if candidate < dist[next] { dist[next] = candidate }
+            }
+        }
+        return dist
+    }
+
     /// Right-hand lane from intersection `a` to intersection `b`: entry and exit points.
     func lane(from a: Int, to b: Int) -> (start: CGPoint, end: CGPoint, heading: CGFloat) {
         let pa = position(of: a)
@@ -183,6 +201,22 @@ struct BotStart {
     let to: Int
     let progress: CGFloat
     let tint: Int
+}
+
+// MARK: - Spot Wars
+
+/// A free bay on the target street of a city round, with the lane a car drives along to pull
+/// into it (the bay is on that lane's right-hand curb).
+struct FreeSpot {
+    let def: SpotDef
+    let entry: Int
+    let exit: Int
+}
+
+/// A driver hunting for a parking spot: where it starts and the bay it goes for first.
+struct HunterStart {
+    let start: BotStart
+    let spot: Int
 }
 
 // MARK: - City rounds
@@ -371,18 +405,33 @@ extension Levels {
             return level
         }
 
-        // Target: two facing slots on an interior street
+        // Spot Wars: four free bays on one interior street, two on each curb; the rest of the
+        // street is parked up. Drivers hunting for a spot come for the same bays.
         let interior = segments.indices.filter { segments[$0].interior }
         let targetSegment = interior[rng.int(interior.count)]
-        let targetIndex = 2 + rng.int(4)
-        guard let spotA = slots.first(where: { $0.segment == targetSegment && $0.side == -1 && $0.index == targetIndex }),
-              let spotB = slots.first(where: { $0.segment == targetSegment && $0.side == 1 && $0.index == targetIndex }) else {
-            return all[0]
+        let targetSeg = segments[targetSegment]
+        let perSide = slots.filter { $0.segment == targetSegment && $0.side == -1 }.count
+        guard perSide >= 6 else { return all[0] }
+        var chosen: [Slot] = []
+        for side in [-1, 1] {
+            let first = 1 + rng.int(perSide / 2 - 1)
+            let second = min(perSide - 2, first + 2 + rng.int(perSide / 2))
+            for index in [first, second] {
+                if let slot = slots.first(where: { $0.segment == targetSegment && $0.side == side && $0.index == index }) {
+                    chosen.append(slot)
+                }
+            }
         }
+        guard chosen.count == 4 else { return all[0] }
         let spotSize = CGSize(width: CityMap.slotLength, height: CityMap.slotWidth)
-        let spots = [SpotDef(center: spotA.center, size: spotSize, angle: spotA.angle),
-                     SpotDef(center: spotB.center, size: spotSize, angle: spotB.angle)]
-        let targetCenter = CGPoint(x: (spotA.center.x + spotB.center.x) / 2, y: (spotA.center.y + spotB.center.y) / 2)
+        let freeSpots: [FreeSpot] = chosen.map { slot in
+            // The right-hand curb: east and north lanes have it on the -y and +x side
+            let forward = targetSeg.horizontal ? slot.side < 0 : slot.side > 0
+            return FreeSpot(def: SpotDef(center: slot.center, size: spotSize, angle: slot.angle),
+                            entry: forward ? targetSeg.a : targetSeg.b, exit: forward ? targetSeg.b : targetSeg.a)
+        }
+        let spots = [freeSpots[0].def, freeSpots[2].def]
+        let targetCenter = midpoint(targetSegment)
 
         // Start: a street far away from the target
         var startSegment = 0
@@ -395,9 +444,7 @@ extension Levels {
             if mid.distance(to: targetCenter) > 2100 { break }
         }
         let startSeg = segments[startSegment]
-        // Facing the way the route to the target goes (it used to be a coin toss, and half the
-        // rounds started facing away from the blue line)
-        _ = rng.unit()       // (the old coin toss, still drawn so the rest of the round stays the same)
+        // Facing the way the route to the target goes
         let flip = driveLength(from: startSeg.a, to: targetCenter) < driveLength(from: startSeg.b, to: targetCenter)
         let fromNode = flip ? startSeg.b : startSeg.a
         let toNode = flip ? startSeg.a : startSeg.b
@@ -409,18 +456,62 @@ extension Levels {
                       StartDef(position: CGPoint(x: mid.x - normal.x * CityMap.laneOffset * 2, y: mid.y - normal.y * CityMap.laneOffset * 2),
                                heading: lane.heading)]
 
-        // Parked cars
+        // Parked cars: the target street is nearly full (only the free bays are open)
         var obstacles: [ObstacleDef] = []
         for slot in slots {
-            if slot.segment == targetSegment && slot.index == targetIndex { continue }
-            let nearTarget = slot.segment == targetSegment && abs(slot.index - targetIndex) == 1
-            let chance: CGFloat = nearTarget ? 0.75 : 0.2
+            if chosen.contains(where: { $0.segment == slot.segment && $0.side == slot.side && $0.index == slot.index }) { continue }
+            let chance: CGFloat = slot.segment == targetSegment ? 0.9 : 0.2
             guard rng.unit() < chance else { continue }
             let jitter = rng.range(-6, 6)
             let center = slot.angle == 0 ? CGPoint(x: slot.center.x + jitter, y: slot.center.y)
                                          : CGPoint(x: slot.center.x, y: slot.center.y + jitter)
             obstacles.append(ObstacleDef(kind: .car, center: center, size: carSize,
                                          angle: slot.angle + (rng.unit() < 0.5 ? 0 : CGFloat.pi), tint: rng.int(6)))
+        }
+
+        // The hunters: placed so that, at a hunter's pace, they reach the street before, around
+        // and after the time a player needs (the drive there at city speed plus parking)
+        let playerDrive = driveLength(from: toNode, to: targetCenter) + lane.end.distance(to: mid)
+        let playerTime = playerDrive / 200 + 7
+        var hunters: [HunterStart] = []
+        var taken: [CGPoint] = starts.map { $0.position }
+        for (k, share) in [0.45, 0.8, 1.1, 1.6].enumerated() {
+            let spot = k
+            let dist = map.distances(to: freeSpots[spot].entry)
+            let wanted = max(380, (CGFloat(share) * playerTime - 2.5) * 75)
+            var best: BotStart?
+            var bestMiss = CGFloat.greatestFiniteMagnitude
+            for u in 0..<map.nodeCount {
+                for v in map.neighbors(u) {
+                    // Not on the target street itself, nor on the players' start street
+                    if Set([u, v]) == Set([targetSeg.a, targetSeg.b]) || Set([u, v]) == Set([startSeg.a, startSeg.b]) { continue }
+                    // From v it must go on without turning back to u (cars never make U-turns)
+                    if v != freeSpots[spot].entry {
+                        let onward = map.neighbors(v).filter { $0 != u }
+                        guard let next = onward.min(by: { map.position(of: v).distance(to: map.position(of: $0)) + dist[$0]
+                                                         < map.position(of: v).distance(to: map.position(of: $1)) + dist[$1] }),
+                              map.position(of: v).distance(to: map.position(of: next)) + dist[next] <= dist[v] + 1 else { continue }
+                    }
+                    let l = map.lane(from: u, to: v)
+                    let laneLength = l.start.distance(to: l.end)
+                    let remaining = wanted - dist[v]
+                    let progress = 1 - remaining / laneLength
+                    let clamped = max(0.15, min(0.85, progress))
+                    let p = CGPoint(x: l.start.x + (l.end.x - l.start.x) * clamped, y: l.start.y + (l.end.y - l.start.y) * clamped)
+                    if taken.contains(where: { $0.distance(to: p) < 300 }) { continue }
+                    let miss = abs(progress - clamped) * laneLength + rng.unit() * 40
+                    if miss < bestMiss {
+                        bestMiss = miss
+                        best = BotStart(from: u, to: v, progress: clamped, tint: rng.int(6))
+                    }
+                }
+            }
+            if let start = best {
+                hunters.append(HunterStart(start: start, spot: spot))
+                let l = map.lane(from: start.from, to: start.to)
+                taken.append(CGPoint(x: l.start.x + (l.end.x - l.start.x) * start.progress,
+                                     y: l.start.y + (l.end.y - l.start.y) * start.progress))
+            }
         }
 
         var arcade = Levels.arcadeLayout(map: map, round: round, race: race)
@@ -447,8 +538,16 @@ extension Levels {
             bots.append(candidate)
         }
 
+        // Ordinary traffic keeps away from where the hunters start
+        bots.removeAll { bot in
+            let l = map.lane(from: bot.from, to: bot.to)
+            let p = CGPoint(x: l.start.x + (l.end.x - l.start.x) * bot.progress, y: l.start.y + (l.end.y - l.start.y) * bot.progress)
+            return taken.contains { $0.distance(to: p) < 90 }
+        }
         var level = LevelDef(nameTR: "Şehir", nameEN: "City", starts: starts, spots: spots, obstacles: obstacles,
                              world: worldSize, city: map, bots: bots)
+        level.freeSpots = freeSpots
+        level.hunters = hunters
         Levels.finishArcade(&level, arcade)
         return level
     }
@@ -482,7 +581,7 @@ extension Levels {
         level.alleys = layout.alleys
         level.weather = layout.weather
         level.ramps = layout.alleys.map { RampDef(center: CGPoint(x: $0.midX, y: $0.midY), alongX: true) }
-        let keepClear = level.starts.map { $0.position } + level.spots.map { $0.center }
+        let keepClear = level.starts.map { $0.position } + level.spots.map { $0.center } + level.freeSpots.map { $0.def.center }
         let parked = level.obstacles.filter { $0.kind == .car }.map { $0.center }
         func free(_ p: CGPoint, _ radius: CGFloat) -> Bool {
             !keepClear.contains { $0.distance(to: p) < 220 } && !parked.contains { $0.distance(to: p) < radius }
@@ -625,6 +724,16 @@ struct Bot {
     var blocker = -1
     /// Rolling back a little to untangle from cars that wait for each other.
     var backing: CGFloat = 0
+    /// Spot Wars: the free bay this driver is hunting for (-1: an ordinary driver), whether it is
+    /// on the bay's street heading for it, pulling in (0...1) and parked.
+    var hunt = -1
+    var approach = false
+    var parkT: CGFloat = -1
+    var parkFrom = CGPoint.zero
+    var parkFromHeading: CGFloat = 0
+    var parked = false
+    /// Hazard lights on (looking for a spot).
+    var hazard: Bool { hunt >= 0 && !parked }
 
     var box: OBB { OBB(center: position, size: Levels.carSize, angle: heading) }
 }
@@ -656,8 +765,22 @@ final class Traffic {
     /// overlaps counted but left as they are), to compare with.
     var legacy = false
 
-    init(map: CityMap, starts: [BotStart], seed: UInt64) {
+    // MARK: Spot Wars
+
+    /// The free bays on the target street, the drive to each bay's lane, and the bays gone
+    /// (to a hunter or a player).
+    private(set) var spots: [FreeSpot] = []
+    private var spotDistances: [[CGFloat]] = []
+    private(set) var taken = Set<Int>()
+    /// Bays hunters took this step (bay, bot), for the scene to show and send.
+    private(set) var takes: [(spot: Int, bot: Int)] = []
+    /// Only the host decides when a hunter has taken a bay (the guest is told).
+    var authority = true
+
+    init(map: CityMap, starts: [BotStart], seed: UInt64, spots: [FreeSpot] = [], hunters: [HunterStart] = []) {
         self.map = map
+        self.spots = spots
+        spotDistances = spots.map { map.distances(to: $0.entry) }
         rng = SplitMix64(seed: seed)
         for start in starts {
             let lane = map.lane(from: start.from, to: start.to)
@@ -670,6 +793,70 @@ final class Traffic {
             bot.speed = cruise * bot.pace
             bots.append(bot)
         }
+        for hunter in hunters where spots.indices.contains(hunter.spot) {
+            let start = hunter.start
+            let lane = map.lane(from: start.from, to: start.to)
+            let p = CGPoint(x: lane.start.x + (lane.end.x - lane.start.x) * start.progress,
+                            y: lane.start.y + (lane.end.y - lane.start.y) * start.progress)
+            var bot = Bot(position: p, heading: lane.heading, speed: cruise, from: start.from, to: start.to,
+                          waypoints: [lane.end], tint: start.tint)
+            // In a hurry, and close behind the car ahead
+            bot.pace = 1.15
+            bot.headway = 1.0
+            bot.speed = cruise * bot.pace
+            bot.hunt = hunter.spot
+            bots.append(bot)
+        }
+    }
+
+    /// A player took bay `spot` (or the host says a hunter did): hunters going for it look for another.
+    func claim(_ spot: Int) {
+        guard spots.indices.contains(spot) else { return }
+        taken.insert(spot)
+    }
+
+    /// The host's word that hunter `bot` took bay `spot`: it is put in the bay at once.
+    func applyTake(spot: Int, bot index: Int) {
+        guard spots.indices.contains(spot), bots.indices.contains(index) else { return }
+        taken.insert(spot)
+        var bot = bots[index]
+        bot.hunt = spot
+        bot.parked = true
+        bot.parkT = -1
+        bot.approach = false
+        bot.speed = 0
+        bot.braking = false
+        bot.position = spots[spot].def.center
+        bot.heading = parkHeading(spot, from: bot.heading)
+        bots[index] = bot
+    }
+
+    var freeSpotCount: Int { spots.count - taken.count }
+
+    /// The bay's own angle, turned to match the lane the car came along.
+    private func parkHeading(_ spot: Int, from heading: CGFloat) -> CGFloat {
+        let angle = spots[spot].def.angle
+        return abs(CGFloat.angleDelta(heading, angle)) < CGFloat.pi / 2 ? angle : angle + CGFloat.pi
+    }
+
+    /// The nearest bay still free that no other hunter is going for (else any free one).
+    private func retarget(_ index: Int) {
+        var bot = bots[index]
+        let others = Set(bots.indices.filter { $0 != index && bots[$0].hunt >= 0 && !bots[$0].parked }.map { bots[$0].hunt })
+        let free = spots.indices.filter { !taken.contains($0) }
+        let preferred = free.filter { !others.contains($0) }
+        let pool = preferred.isEmpty ? free : preferred
+        let here = bot.to
+        bot.hunt = pool.min { spotDistances[$0][here] < spotDistances[$1][here] } ?? -1
+        bot.approach = false
+        bot.parkT = -1
+        bot.next = -1
+        bots[index] = bot
+    }
+
+    /// Whether a player's car is in or right by bay `spot` (a hunter will not pull in on them).
+    private func playerAt(_ spot: Int, players: ArraySlice<CGPoint>) -> Bool {
+        players.contains { $0.distance(to: spots[spot].def.center) < 58 }
     }
 
     /// A player crashed into bot `index`: it is shoved and spun, then drives on.
@@ -677,6 +864,10 @@ final class Traffic {
         guard bots.indices.contains(index) else { return }
         // It keeps its own momentum plus the blow, then the tyres scrub the slide off
         let bot = bots[index]
+        if bot.parkT >= 0 && !bot.parked {
+            bots[index].parkT = -1
+            bots[index].approach = false
+        }
         bots[index].stunned = 1.1
         bots[index].shove = CGVector(dx: cos(bot.heading) * bot.speed + shove.dx, dy: sin(bot.heading) * bot.speed + shove.dy)
         bots[index].spin = spin
@@ -688,7 +879,101 @@ final class Traffic {
         guard bot.next < 0 else { return }
         var options = map.neighbors(bot.to).filter { $0 != bot.from }
         if options.isEmpty { options = map.neighbors(bot.to) }
+        if bot.hunt >= 0 && !bot.parked && spots.indices.contains(bot.hunt) {
+            // A hunter takes the shortest way to its bay's lane
+            let spot = spots[bot.hunt]
+            if bot.to == spot.entry && options.contains(spot.exit) {
+                bot.next = spot.exit
+                return
+            }
+            let dist = spotDistances[bot.hunt]
+            let here = map.position(of: bot.to)
+            if let best = options.min(by: { here.distance(to: map.position(of: $0)) + dist[$0]
+                                             < here.distance(to: map.position(of: $1)) + dist[$1] }) {
+                bot.next = best
+                return
+            }
+        }
         bot.next = options[rng.int(options.count)]
+    }
+
+    /// Spot Wars: a hunter pulling into its bay along an S-curve from its lane (2 s), then
+    /// parked with the engine off. Returns true when it handled the bot this step.
+    private func stepHunter(_ index: Int, _ dt: CGFloat, players: ArraySlice<CGPoint>) -> Bool {
+        var bot = bots[index]
+        if bot.parked {
+            bot.speed = 0
+            bot.braking = false
+            bots[index] = bot
+            return true
+        }
+        guard bot.hunt >= 0, spots.indices.contains(bot.hunt) else { return false }
+        if taken.contains(bot.hunt) {
+            // Its bay is gone: a honk, then the next one
+            if bot.parkT < 0 || bot.parkT < 0.5 {
+                honks.append(bot.position)
+                retarget(index)
+                return false
+            }
+        }
+        let spot = spots[bot.hunt]
+        if bot.parkT >= 0 {
+            if bot.parkT < 0.35 && playerAt(bot.hunt, players: players) {
+                // A player is in the bay: give up on it
+                honks.append(bot.position)
+                bots[index].parkT = -1
+                bots[index].approach = false
+                bots[index].waypoints = []
+                bots[index].from = spot.entry
+                bots[index].to = spot.exit
+                retarget(index)
+                return false
+            }
+            bot.parkT = min(1, bot.parkT + dt / 2.0)
+            let t = bot.parkT * bot.parkT * (3 - 2 * bot.parkT)
+            let f = CGPoint(x: cos(bot.parkFromHeading), y: sin(bot.parkFromHeading))
+            let p0 = bot.parkFrom, p3 = spot.def.center
+            let p1 = CGPoint(x: p0.x + f.x * 28, y: p0.y + f.y * 28)
+            let p2 = CGPoint(x: p3.x - f.x * 28, y: p3.y - f.y * 28)
+            let u = 1 - t
+            let a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t
+            let next = CGPoint(x: a * p0.x + b * p1.x + c * p2.x + d * p3.x, y: a * p0.y + b * p1.y + c * p2.y + d * p3.y)
+            let dx = 3 * u * u * (p1.x - p0.x) + 6 * u * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x)
+            let dy = 3 * u * u * (p1.y - p0.y) + 6 * u * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y)
+            bot.speed = next.distance(to: bot.position) / max(dt, 0.001)
+            bot.position = next
+            if hypot(dx, dy) > 0.01 { bot.heading = atan2(dy, dx) }
+            bot.braking = true
+            if bot.parkT >= 1 {
+                bot.heading = parkHeading(bot.hunt, from: bot.parkFromHeading)
+                if authority {
+                    bot.parked = true
+                    bot.speed = 0
+                    bot.braking = false
+                    taken.insert(bot.hunt)
+                    takes.append((bot.hunt, index))
+                } else {
+                    // The guest waits for the host to say so, standing in the bay
+                    bot.speed = 0
+                }
+            }
+            bots[index] = bot
+            return true
+        }
+        if bot.approach && bot.waypoints.isEmpty {
+            if playerAt(bot.hunt, players: players) {
+                honks.append(bot.position)
+                bots[index].approach = false
+                retarget(index)
+                return false
+            }
+            bot.parkT = 0
+            bot.parkFrom = bot.position
+            bot.parkFromHeading = bot.heading
+            bots[index] = bot
+            return true
+        }
+        return false
     }
 
     /// Whether the turn into `next` is a real turn (not straight on).
@@ -704,6 +989,7 @@ final class Traffic {
     func step(_ dt: CGFloat, blockers: [CGPoint], playerCars: Int = 1) {
         clock += dt
         honks.removeAll()
+        takes.removeAll()
         for index in bots.indices {
             var bot = bots[index]
             if bot.stunned > 0 {
@@ -719,6 +1005,10 @@ final class Traffic {
                 bot.braking = true
                 bots[index] = bot
                 continue
+            }
+            if bot.hunt >= 0 || bot.parked {
+                if stepHunter(index, dt, players: blockers.prefix(playerCars)) { continue }
+                bot = bots[index]
             }
             if bot.backing > 0 {
                 // Rolls back slowly to make room, unless a car is right behind it
@@ -748,6 +1038,15 @@ final class Traffic {
                 bot.next = -1
                 let lane = map.lane(from: bot.from, to: bot.to)
                 bot.waypoints = [lane.start, lane.end]
+                if bot.hunt >= 0, spots.indices.contains(bot.hunt), !taken.contains(bot.hunt),
+                   bot.from == spots[bot.hunt].entry, bot.to == spots[bot.hunt].exit {
+                    // On the bay's street: drive to just short of the bay, then pull in
+                    let center = spots[bot.hunt].def.center
+                    let along = (center.x - lane.start.x) * cos(lane.heading) + (center.y - lane.start.y) * sin(lane.heading) - 56
+                    let stop = CGPoint(x: lane.start.x + cos(lane.heading) * along, y: lane.start.y + sin(lane.heading) * along)
+                    bot.waypoints = along > 20 ? [lane.start, stop] : [stop]
+                    bot.approach = true
+                }
             }
             let goal = bot.waypoints[0]
             let lastLeg = bot.waypoints.count == 1
@@ -762,7 +1061,7 @@ final class Traffic {
             let ahead = dx * cos(bot.heading) + dy * sin(bot.heading)
             // Approaching the stop line (end of the lane) on a red or late yellow light?
             var stopLine: CGFloat?
-            if lastLeg && distance < 110 {
+            if lastLeg && distance < 110 && !bot.approach {
                 let horizontal = bot.from / map.cols == bot.to / map.cols
                 switch map.signal(at: bot.to, horizontal: horizontal, time: clock) {
                 case .green: break
@@ -787,6 +1086,8 @@ final class Traffic {
                 v0 = min(v0, cornerSpeed + (distance / 140) * (v0 - cornerSpeed))
             }
             if bot.passing { v0 = min(v0, 55) }
+            // A hunter on its bay's street slows down to pull in
+            if bot.approach && lastLeg { v0 = min(v0, max(28, distance * 0.8)) }
 
             // The nearest thing ahead in its path: a car, a player, a person or the stop line
             var gap = CGFloat.greatestFiniteMagnitude
@@ -1051,6 +1352,25 @@ final class Traffic {
                                     race ? "race" : "city", round, legacy ? "old" : "new", traffic.bots.count, traffic.overlaps,
                                     overlapFrames, traffic.ghosts, traffic.backoffs, Double(stopped / CGFloat(steps) * 100), ms))
             }
+        }
+        // Spot Wars: when each city round's hunters take their bays (player standing at the start)
+        for round in 0..<Levels.cityRounds {
+            let level = Levels.city(round: round, race: false)
+            guard let map = level.city else { continue }
+            let traffic = Traffic(map: map, starts: level.bots, seed: UInt64((Levels.cityBase + round) * 31 + 7),
+                                  spots: level.freeSpots, hunters: level.hunters)
+            let player = level.starts.first?.position ?? .zero
+            var times: [String] = []
+            var t: CGFloat = 0
+            while t < 120 && traffic.taken.count < level.freeSpots.count {
+                traffic.step(1.0 / 60, blockers: [player], playerCars: 1)
+                t += 1.0 / 60
+                for take in traffic.takes { times.append(String(format: "s%d@%.1f", take.spot, Double(t))) }
+            }
+            let route = map.route(from: player, to: level.spots[0].center)
+            let length = zip(route, route.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }
+            lines.append(String(format: "PPSPOT city r%d hunters=%d spots=%d route=%.0f taken=%@",
+                                round, level.hunters.count, level.freeSpots.count, Double(length), times.joined(separator: " ")))
         }
         return lines
     }

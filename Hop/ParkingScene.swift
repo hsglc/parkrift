@@ -125,6 +125,14 @@ final class ParkingScene: SKScene {
 
     // City traffic and race
     private var traffic: Traffic?
+    // Spot Wars: the free bay we are heading for, its pins on the map, the bays-left chip, and
+    // which traffic cars show hazard lights
+    private var spotWars: Bool { isCity && !level.race && !level.freeSpots.isEmpty }
+    private var spotTarget = -1
+    private var freeSpotPins: [SKNode] = []
+    private var spotsChip = SKNode()
+    private var hunterHazard: [Bool] = []
+    private var spotsGoneFailed = false
     private var botCars: [Car3D] = []
     private var botSendClock: TimeInterval = 0
     private var routeClock: CGFloat = 0
@@ -935,7 +943,9 @@ final class ParkingScene: SKScene {
         coneIndices = Set(level.obstacles.indices.filter { level.obstacles[$0].kind == .cone })
         knockedCones.removeAll()
         lastHitPosition = CGPoint(x: -9999, y: -9999)
-        let spotSlots = friendPresent ? [slot, otherSlot] : [slot]
+        let spotSlots = level.freeSpots.isEmpty || level.race ? (friendPresent ? [slot, otherSlot] : [slot]) : []
+        spotTarget = -1
+        spotsGoneFailed = false
         var lapClock = CACurrentMediaTime()
         func lap(_ what: String) {
             guard PerfSettings.benchmark else { return }
@@ -945,6 +955,9 @@ final class ParkingScene: SKScene {
         }
         world.levelVenue = Venue.of(level: levelIndex)
         world.load(level: level, spotSlots: spotSlots, mySlot: slot)
+        if !level.freeSpots.isEmpty && !level.race {
+            world.buildFreeSpots(level.freeSpots.map { $0.def })
+        }
         lap("world.load")
         setupPatrols(world)
         setupBonuses()
@@ -992,9 +1005,13 @@ final class ParkingScene: SKScene {
         botCars.removeAll()
         traffic = nil
         if let city = level.city {
-            let newTraffic = Traffic(map: city, starts: level.bots, seed: UInt64(levelIndex * 31 + 7))
+            let newTraffic = Traffic(map: city, starts: level.bots, seed: UInt64(levelIndex * 31 + 7),
+                                     spots: level.race ? [] : level.freeSpots, hunters: level.race ? [] : level.hunters)
+            newTraffic.authority = !online || isHost
             LeakWatch.track(newTraffic, "Traffic")
             traffic = newTraffic
+            hunterHazard = Array(repeating: false, count: newTraffic.bots.count)
+            setupSpotsChip()
             for (index, bot) in newTraffic.bots.enumerated() {
                 botCars.append(world.makeCar(color: CarArt.parkedColors[bot.tint % CarArt.parkedColors.count],
                                              style: CarStyle(rawValue: index % 3) ?? .sedan, variety: index &* 7 &+ bot.tint))
@@ -1328,8 +1345,16 @@ final class ParkingScene: SKScene {
             } else {
                 remotePoliceTarget = nil
             }
+        case "take":
+            guard messageLevel == levelIndex, !isHost, let spot = message["s"] as? Int, let bot = message["b"] as? Int else { return }
+            traffic?.applyTake(spot: spot, bot: bot)
+            spotGone(spot, byHunter: true)
         case "p":
             guard messageLevel == levelIndex else { return }
+            if spotWars, let x = message["x"] as? Double, let y = message["y"] as? Double,
+               let spot = level.freeSpots.indices.first(where: { level.freeSpots[$0].def.box.contains(CGPoint(x: x, y: y)) }) {
+                spotGone(spot, byHunter: false)
+            }
             remoteParked = true
             remotePoliceTarget = nil
             remoteTime = message["time"] as? Double ?? -1
@@ -2094,7 +2119,12 @@ final class ParkingScene: SKScene {
                     || (abs(bot.position.x - carPosition.x) < reach && abs(bot.position.y - carPosition.y) < reach)
                 if botCars[index].setDetail(near) { botDetailChanges += 1 }
                 botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)
+                if index < hunterHazard.count && hunterHazard[index] != bot.hazard {
+                    hunterHazard[index] = bot.hazard
+                    botCars[index].setHazard(bot.hazard)
+                }
             }
+            if spotWars { updateSpotWars(traffic) }
             if benchmark && botDetailChanges > 0 { FrameMonitor.shared.mark("botDetail\(botDetailChanges)") }
             if online && friendPresent && isHost {
                 botSendClock += TimeInterval(dt)
@@ -2444,6 +2474,113 @@ final class ParkingScene: SKScene {
         checkLevelDone()
     }
 
+    // MARK: Spot Wars
+
+    /// Bays hunters took this frame (the host tells the guest), the bay we head for (the nearest
+    /// one still free), and the round lost once every bay is gone.
+    private func updateSpotWars(_ traffic: Traffic) {
+        for take in traffic.takes {
+            spotGone(take.spot, byHunter: true)
+            if online && friendPresent && isHost {
+                model?.send(["t": "take", "l": levelIndex, "s": take.spot, "b": take.bot])
+            }
+        }
+        guard !localParked, phase == .driving || phase == .countdown else { return }
+        let free = level.freeSpots.indices.filter { !traffic.taken.contains($0) }
+        if free.isEmpty {
+            if !spotsGoneFailed && phase == .driving {
+                spotsGoneFailed = true
+                fail(Strings.noSpotsLeft)
+            }
+            return
+        }
+        let nearest = free.min { level.freeSpots[$0].def.center.distance(to: carPosition) < level.freeSpots[$1].def.center.distance(to: carPosition) }!
+        if nearest != spotTarget { aim(at: nearest) }
+    }
+
+    private func aim(at index: Int) {
+        spotTarget = index
+        let def = level.freeSpots[index].def
+        level.spots[slot] = def
+        world?.setSpotTarget(index, center: def.center)
+        routeClock = 0
+        for (k, pin) in freeSpotPins.enumerated() where k < level.freeSpots.count {
+            pin.setScale(k == index ? 1.35 : 1)
+        }
+    }
+
+    /// A bay is gone (to a hunter, or to the friend): its light goes out, its pin goes, the chip
+    /// counts down, and we head for another one if it was ours.
+    private func spotGone(_ index: Int, byHunter: Bool) {
+        guard level.freeSpots.indices.contains(index) else { return }
+        traffic?.claim(index)
+        world?.markSpotTaken(index)
+        if index < freeSpotPins.count {
+            freeSpotPins[index].run(.sequence([.scale(to: 0.1, duration: 0.25), .hide()]))
+        }
+        updateSpotsChip()
+        guard !localParked, phase == .driving else { return }
+        let left = traffic?.freeSpotCount ?? 0
+        if index == spotTarget {
+            spotTarget = -1
+            if left > 0 {
+                flashBonus(byHunter ? Strings.yourSpotTaken : Strings.friendTookSpot)
+                notifyHaptic.notificationOccurred(.warning)
+            }
+        } else if left == 1 {
+            flashBonus(Strings.lastSpot)
+        } else if byHunter {
+            flashBonus(Strings.spotTaken)
+        }
+    }
+
+    /// "P  3 free bays" under the top bar (red with one left).
+    private func setupSpotsChip() {
+        spotsChip.removeAllChildren()
+        spotsChip.removeFromParent()
+        guard spotWars else { return }
+        spotsChip.position = CGPoint(x: size.width / 2, y: hudTop - 62)
+        spotsChip.zPosition = 30
+        hud.addChild(spotsChip)
+        updateSpotsChip()
+        // The rule, once, under the chip: drivers with hazard lights are after the same bays
+        let hint = makeLabel(Strings.spotWarsHint, size: 13, color: UIColor(red: 1, green: 0.8, blue: 0.4, alpha: 1), font: "Barlow-SemiBold")
+        hint.name = "spotHint"
+        hint.position = CGPoint(x: size.width / 2, y: hudTop - 90)
+        hint.zPosition = 30
+        hud.childNode(withName: "spotHint")?.removeFromParent()
+        hud.addChild(hint)
+        hint.run(.sequence([.wait(forDuration: 9), .fadeOut(withDuration: 0.6), .removeFromParent()]))
+    }
+
+    private func updateSpotsChip() {
+        guard spotWars else { return }
+        spotsChip.removeAllChildren()
+        let left = traffic?.freeSpotCount ?? level.freeSpots.count
+        let urgent = left <= 1
+        let text = makeLabel(Strings.spotsLeft(left), size: 14, color: .white, font: "Barlow-ExtraBold")
+        text.horizontalAlignmentMode = .left
+        let badgeSize: CGFloat = 20
+        let width = badgeSize + 8 + text.frame.width + 26
+        let glass = makeGlass(width: width, height: 30)
+        spotsChip.addChild(glass)
+        let badge = SKShapeNode(circleOfRadius: badgeSize / 2)
+        badge.fillColor = urgent ? UIColor(red: 1, green: 0.32, blue: 0.3, alpha: 1) : UIColor(red: 1, green: 0.8, blue: 0.22, alpha: 1)
+        badge.strokeColor = .clear
+        badge.position = CGPoint(x: -width / 2 + 13 + badgeSize / 2, y: 0)
+        spotsChip.addChild(badge)
+        let p = makeLabel("P", size: 13, color: UIColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 1), font: "Barlow-Black")
+        p.position = badge.position
+        spotsChip.addChild(p)
+        text.position = CGPoint(x: badge.position.x + badgeSize / 2 + 8, y: 0)
+        spotsChip.addChild(text)
+        spotsChip.removeAction(forKey: "pulse")
+        spotsChip.setScale(1)
+        if urgent {
+            spotsChip.run(.repeatForever(.sequence([.scale(to: 1.08, duration: 0.35), .scale(to: 1, duration: 0.35)])), withKey: "pulse")
+        }
+    }
+
     private func updateNavigation(_ dt: CGFloat) {
         guard let city = level.city else { return }
         let target = level.spots[slot].center
@@ -2695,18 +2832,34 @@ final class ParkingScene: SKScene {
                 node.isAntialiased = true
                 mapContent.addChild(node)
             }
-            for _ in traffic?.bots ?? [] {
+            for bot in traffic?.bots ?? [] {
                 let dot = SKSpriteNode(texture: dotTexture)
-                dot.size = CGSize(width: 4.5, height: 4.5)
-                dot.color = UIColor(white: 0.92, alpha: 1)
+                // Drivers hunting for a spot show amber and bigger
+                let hunter = bot.hunt >= 0
+                dot.size = hunter ? CGSize(width: 6.5, height: 6.5) : CGSize(width: 4.5, height: 4.5)
+                dot.color = hunter ? UIColor(red: 1, green: 0.66, blue: 0.12, alpha: 1) : UIColor(white: 0.92, alpha: 1)
                 dot.colorBlendFactor = 1
-                dot.alpha = 0.55
+                dot.alpha = hunter ? 1 : 0.55
                 mapContent.addChild(dot)
                 botDots.append(dot)
             }
         }
 
-        let spotSlots = friendPresent ? [otherSlot, slot] : [slot]
+        freeSpotPins.removeAll()
+        if spotWars {
+            for (k, free) in level.freeSpots.enumerated() {
+                let pin = SKShapeNode(circleOfRadius: 4.5)
+                pin.fillColor = UIColor(red: 1, green: 0.8, blue: 0.22, alpha: 1)
+                pin.strokeColor = .white
+                pin.lineWidth = 1.4
+                pin.position = CGPoint(x: free.def.center.x * mapScale, y: free.def.center.y * mapScale)
+                pin.zPosition = 3
+                if traffic?.taken.contains(k) == true { pin.isHidden = true }
+                mapContent.addChild(pin)
+                freeSpotPins.append(pin)
+            }
+        }
+        let spotSlots = spotWars ? [] : (friendPresent ? [otherSlot, slot] : [slot])
         for spotSlot in spotSlots {
             let def = level.spots[spotSlot]
             let color = CarArt.playerColors[spotSlot]
@@ -2893,6 +3046,15 @@ final class ParkingScene: SKScene {
         if let bots = traffic?.bots {
             for (index, dot) in botDots.enumerated() where index < bots.count {
                 dot.position = CGPoint(x: bots[index].position.x * mapScale, y: bots[index].position.y * mapScale)
+                // A hunter that parked (or gave up) is ordinary traffic again on the map
+                if bots[index].hunt >= 0 || dot.alpha > 0.9 {
+                    let hunting = bots[index].hazard
+                    if (dot.alpha > 0.9) != hunting {
+                        dot.alpha = hunting ? 1 : 0.55
+                        dot.color = hunting ? UIColor(red: 1, green: 0.66, blue: 0.12, alpha: 1) : UIColor(white: 0.92, alpha: 1)
+                        dot.size = hunting ? CGSize(width: 6.5, height: 6.5) : CGSize(width: 4.5, height: 4.5)
+                    }
+                }
             }
         }
         // The route starts at the car: the piece to the first turn follows it every frame
@@ -4506,6 +4668,8 @@ final class ParkingScene: SKScene {
     private func parked() {
         localParked = true
         localTime = elapsed
+        // Spot Wars: this bay is ours now (hunters still on their way to it look elsewhere)
+        if spotWars && spotTarget >= 0 { traffic?.claim(spotTarget) }
         // Drifting into the spot (or the finish) takes 2 s off
         if (drifting || lastUpdate - lastDriftEnd < 2.5) && max(driftScore, lastDriftScore) > 40 {
             localTime = max(0, localTime - 2)

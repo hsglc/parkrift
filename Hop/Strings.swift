@@ -245,6 +245,19 @@ enum Strings {
     static var waitingShort: String { t("Bekleniyor…", "Waiting…", "Esperando…") }
     static var shareButton: String { t("Kodu paylaş", "Share code", "Compartir código") }
     static var garageRotateHint: String { t("Döndürmek için kaydır", "Swipe to turn", "Desliza para girar") }
+    // Spot Wars (city rounds)
+    static func spotsLeft(_ n: Int) -> String {
+        n == 1 ? t("Son boş yer!", "Last free spot!", "¡Última plaza libre!")
+               : t("\(n) boş yer", "\(n) free spots", "\(n) plazas libres")
+    }
+    static var spotWarsHint: String { t("Dörtlü yakan sürücüler de yer arıyor, onlardan önce park et!",
+                                        "Drivers with hazard lights want the same spots: park first!",
+                                        "Los conductores con las luces de emergencia buscan las mismas plazas: ¡aparca antes!") }
+    static var spotTaken: String { t("Bir sürücü yer kaptı!", "A driver took a spot!", "¡Un conductor cogió una plaza!") }
+    static var yourSpotTaken: String { t("Yerini kaptılar! Sıradakine", "Your spot's gone! Next one", "¡Te quitaron la plaza! A la siguiente") }
+    static var friendTookSpot: String { t("Rakibin yerini kaptı!", "Your rival took it!", "¡Tu rival te la quitó!") }
+    static var lastSpot: String { t("Son boş yer!", "Last free spot!", "¡Última plaza libre!") }
+    static var noSpotsLeft: String { t("Yer kalmadı!", "No spots left!", "¡No quedan plazas!") }
     static var carClassTitle: String { t("Sınıf", "Class", "Clase") }
     static var dailyKicker: String { t("HER GÜN YENİLENİR", "RESETS EVERY DAY", "SE RENUEVA CADA DÍA") }
     static func streakDays(_ days: Int) -> String { t("Seri: \(days) gün", "Streak: \(days) days", "Racha: \(days) días") }
