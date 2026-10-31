@@ -21,6 +21,8 @@ struct RunStats {
     /// Taxi rounds: the fare and the tip.
     var fare = 0
     var tip = 0
+    /// Car races with rivals: our place (1 = won).
+    var place: Int? = nil
 }
 
 /// Coins earned in a round, line by line, and the daily tasks it completed.
@@ -133,6 +135,7 @@ enum Progression {
             if run.hits == 0 { lines.append((Strings.rewardClean, 25)) }
         }
         if run.finished && run.fare > 0 { lines.append((Strings.rewardFare, run.fare)) }
+        if let place = run.place { lines.append((Strings.racePlaceReward(place), [60, 30, 15, 0][min(3, max(0, place - 1))])) }
         if run.finished && run.tip > 0 { lines.append((Strings.rewardTip, run.tip)) }
         if run.driftPoints > 0 { lines.append((Strings.rewardDrift, min(150, run.driftPoints / 25))) }
         if run.nearMisses > 0 { lines.append((Strings.rewardNearMiss, run.nearMisses * 10)) }

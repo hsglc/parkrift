@@ -1006,17 +1006,21 @@ final class ParkingScene: SKScene {
         traffic = nil
         if let city = level.city {
             let newTraffic = Traffic(map: city, starts: level.bots, seed: UInt64(levelIndex * 31 + 7),
-                                     spots: level.race ? [] : level.freeSpots, hunters: level.race ? [] : level.hunters)
+                                     spots: level.race ? [] : level.freeSpots, hunters: level.race ? [] : level.hunters,
+                                     racers: level.racers,
+                                     finish: level.finishStreet.map { (a: $0.a, b: $0.b, point: level.spots[0].center) })
             newTraffic.authority = !online || isHost
             LeakWatch.track(newTraffic, "Traffic")
             traffic = newTraffic
             hunterHazard = Array(repeating: false, count: newTraffic.bots.count)
             setupSpotsChip()
             setupTaxi(world)
+            setupRacers(newTraffic)
             for (index, bot) in newTraffic.bots.enumerated() {
                 let rivalTaxi = level.taxi != nil && bot.hunt >= 0
-                botCars.append(world.makeCar(color: rivalTaxi ? UIColor(red: 1, green: 0.78, blue: 0.08, alpha: 1)
-                                                              : CarArt.parkedColors[bot.tint % CarArt.parkedColors.count],
+                let racerColor: UIColor? = bot.racer ? ParkingScene.racerColors[bot.tint % ParkingScene.racerColors.count] : nil
+                botCars.append(world.makeCar(color: racerColor ?? (rivalTaxi ? UIColor(red: 1, green: 0.78, blue: 0.08, alpha: 1)
+                                                              : CarArt.parkedColors[bot.tint % CarArt.parkedColors.count]),
                                              style: CarStyle(rawValue: index % 3) ?? .sedan, variety: index &* 7 &+ bot.tint))
             }
             // At night the traffic drives with its lights on (faint, so it reads without glare)
@@ -2036,6 +2040,7 @@ final class ParkingScene: SKScene {
             let after = Int(ceil(countdown))
             if countdown <= 0 {
                 phase = .driving
+                traffic?.racersReleased = true
                 challengeCard.run(.sequence([.wait(forDuration: 2.2), .fadeAlpha(to: 0, duration: 0.4)]))
                 setCountdown(Strings.go)
                 popCountdown(go: true)
@@ -2158,6 +2163,7 @@ final class ParkingScene: SKScene {
             }
             if spotWars { updateSpotWars(traffic) }
             if level.taxi != nil { updateTaxi(traffic, dt) }
+            if level.race && !level.racers.isEmpty { updateRace(traffic, dt) }
             if benchmark && botDetailChanges > 0 { FrameMonitor.shared.mark("botDetail\(botDetailChanges)") }
             if online && friendPresent && isHost {
                 botSendClock += TimeInterval(dt)
@@ -2505,6 +2511,104 @@ final class ParkingScene: SKScene {
         model?.send(["t": "p", "l": levelIndex, "time": -1.0, "hits": hits,
                      "x": Double(carPosition.x), "y": Double(carPosition.y), "h": Double(heading)])
         checkLevelDone()
+    }
+
+    // MARK: Rival racers
+
+    static let racerColors: [UIColor] = [UIColor(red: 1, green: 0.25, blue: 0.6, alpha: 1),
+                                         UIColor(red: 0.2, green: 0.85, blue: 1, alpha: 1),
+                                         UIColor(red: 1, green: 0.55, blue: 0.1, alpha: 1)]
+    private var racePlace: Int?
+    private var raceRanks: [Int: CGFloat] = [:]
+    private var raceRankClock: CGFloat = 0
+    private var raceFinishSeen = 0
+
+    /// Name tags over the rivals; the place chip under the top bar.
+    private func setupRacers(_ traffic: Traffic) {
+        racePlace = nil
+        raceRanks.removeAll()
+        raceRankClock = 0
+        raceFinishSeen = 0
+        guard level.race, !level.racers.isEmpty else { return }
+        var k = 0
+        for (index, bot) in traffic.bots.enumerated() where bot.racer && index < botCars.count {
+            let racer = level.racers[min(k, level.racers.count - 1)]
+            botCars[index].setTag(ParkingScene.racerTag(racer.name, color: ParkingScene.racerColors[racer.color % ParkingScene.racerColors.count]))
+            k += 1
+        }
+        updateRaceChip(place: level.racers.count + 1)
+    }
+
+    /// A rounded name tag in the racer's colour.
+    static func racerTag(_ name: String, color: UIColor) -> UIImage {
+        let font = UIFont(name: "BarlowCondensed-BlackItalic", size: 46) ?? UIFont.systemFont(ofSize: 42, weight: .black)
+        let text = NSAttributedString(string: name.localUpper, attributes: [.font: font, .foregroundColor: UIColor.white])
+        let size = text.size()
+        let width = size.width + 56
+        return UIGraphicsImageRenderer(size: CGSize(width: width, height: 76)).image { _ in
+            let path = UIBezierPath(roundedRect: CGRect(x: 4, y: 6, width: width - 8, height: 64), cornerRadius: 32)
+            UIColor(red: 0.06, green: 0.06, blue: 0.09, alpha: 0.85).setFill()
+            path.fill()
+            color.setStroke()
+            path.lineWidth = 6
+            path.stroke()
+            text.draw(at: CGPoint(x: (width - size.width) / 2, y: 38 - size.height / 2))
+        }
+    }
+
+    /// Who crossed the line, and our place (by the drive left to the finish) four times a second.
+    private func updateRace(_ traffic: Traffic, _ dt: CGFloat) {
+        while raceFinishSeen < traffic.raceFinishes.count {
+            let finish = traffic.raceFinishes[raceFinishSeen]
+            raceFinishSeen += 1
+            if !localParked, let racer = racerFor(bot: finish.bot, traffic) {
+                flashBonus(Strings.racerFinished(racer.name))
+            }
+        }
+        guard let city = level.city else { return }
+        if localParked {
+            if racePlace == nil { racePlace = 1 + traffic.raceFinishes.count }
+            return
+        }
+        raceRankClock -= dt
+        guard raceRankClock <= 0 else { return }
+        raceRankClock = 0.25
+        let goal = level.spots[0].center
+        func left(_ p: CGPoint) -> CGFloat {
+            let path = city.route(from: p, to: goal)
+            return zip(path, path.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }
+        }
+        let mine = left(carPosition)
+        var ahead = traffic.raceFinishes.count
+        for bot in traffic.bots where bot.racer && !bot.raceDone {
+            if left(bot.position) < mine { ahead += 1 }
+        }
+        updateRaceChip(place: ahead + 1)
+    }
+
+    private func racerFor(bot index: Int, _ traffic: Traffic) -> RacerStart? {
+        var k = 0
+        for (i, bot) in traffic.bots.enumerated() where bot.racer || bot.raceDone {
+            if i == index { return level.racers.indices.contains(k) ? level.racers[k] : nil }
+            k += 1
+        }
+        return nil
+    }
+
+    private func updateRaceChip(place: Int) {
+        let text = "🏁 " + Strings.racePlace(place, of: level.racers.count + 1)
+        if spotsChip.parent == nil {
+            spotsChip.position = CGPoint(x: size.width / 2, y: hudTop - 62)
+            spotsChip.zPosition = 30
+            hud.addChild(spotsChip)
+        }
+        if spotsChip.name == text { return }
+        spotsChip.name = text
+        spotsChip.removeAllChildren()
+        let label = makeLabel(text, size: 15, color: place == 1 ? UIColor(red: 1, green: 0.84, blue: 0.3, alpha: 1) : .white, font: "Barlow-ExtraBold")
+        let glass = makeGlass(width: label.frame.width + 32, height: 30)
+        spotsChip.addChild(glass)
+        spotsChip.addChild(label)
     }
 
     // MARK: Taxi
@@ -3164,10 +3268,11 @@ final class ParkingScene: SKScene {
                 let dot = SKSpriteNode(texture: dotTexture)
                 // Drivers hunting for a spot show amber and bigger
                 let hunter = bot.hunt >= 0
-                dot.size = hunter ? CGSize(width: 6.5, height: 6.5) : CGSize(width: 4.5, height: 4.5)
-                dot.color = hunter ? UIColor(red: 1, green: 0.66, blue: 0.12, alpha: 1) : UIColor(white: 0.92, alpha: 1)
+                dot.size = hunter || bot.racer ? CGSize(width: 7, height: 7) : CGSize(width: 4.5, height: 4.5)
+                dot.color = bot.racer ? ParkingScene.racerColors[bot.tint % ParkingScene.racerColors.count]
+                    : (hunter ? UIColor(red: 1, green: 0.66, blue: 0.12, alpha: 1) : UIColor(white: 0.92, alpha: 1))
                 dot.colorBlendFactor = 1
-                dot.alpha = hunter ? 1 : 0.55
+                dot.alpha = hunter || bot.racer ? 1 : 0.55
                 mapContent.addChild(dot)
                 botDots.append(dot)
             }
@@ -3375,7 +3480,7 @@ final class ParkingScene: SKScene {
             for (index, dot) in botDots.enumerated() where index < bots.count {
                 dot.position = CGPoint(x: bots[index].position.x * mapScale, y: bots[index].position.y * mapScale)
                 // A hunter that parked (or gave up) is ordinary traffic again on the map
-                if bots[index].hunt >= 0 || dot.alpha > 0.9 {
+                if (bots[index].hunt >= 0 || dot.alpha > 0.9) && !bots[index].racer && !bots[index].raceDone {
                     let hunting = bots[index].hazard
                     if (dot.alpha > 0.9) != hunting {
                         dot.alpha = hunting ? 1 : 0.55
@@ -5800,6 +5905,11 @@ final class ParkingScene: SKScene {
         if let reason = failReason, headline == nil { headline = reason }
         if level.race && entries.count == 1 {
             entries[0].score = myTime.map { Levels.raceScore(time: $0, crashes: hits) } ?? -1
+            if !level.racers.isEmpty, myTime != nil, let place = racePlace {
+                if headline == nil { headline = Strings.racePlaceHeadline(place) }
+                scoreLine = Strings.racePlace(place, of: level.racers.count + 1)
+                if place == 1 { outcome = .won }
+            }
             if headline == nil { headline = Strings.finished }
         }
         // Taxi: the fare and the tip
@@ -5816,7 +5926,8 @@ final class ParkingScene: SKScene {
                              race: level.race, solo: !isCity, hits: hits, driftPoints: runDriftPoints,
                              nearMisses: runNearMisses, escapes: runEscapes, topSpeed: runTopSpeed,
                              precision: me.time != nil ? lastPrecision?.score : nil,
-                             fare: taxiFare, tip: taxiTip)
+                             fare: taxiFare, tip: taxiTip,
+                             place: level.race && !level.racers.isEmpty && myTime != nil ? racePlace : nil)
         let reward = model?.finishRun(stats)
         model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex, online: onlineMatch) + " · " + level.name,
                                      entries: entries, footer: footer, newBest: newBest,

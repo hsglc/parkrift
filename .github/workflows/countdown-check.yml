@@ -183,14 +183,16 @@ jobs:
               continue
             elif [ "$RUN" = "taxi" ]; then
               # A taxi round: the car is put by the customer; the app saves the pick-up and the ride
-              xcrun simctl launch "$UDID" com.huseyingulcu.hop -benchmark -playtaxi -taxitest -dayweather -AppleLanguages "(tr)" > /dev/null 2>&1
+              xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playtaxi -taxitest -dayweather -AppleLanguages "(tr)" > shots/taxi-console.log 2>&1 &
+              sleep 3
               DATA=$(xcrun simctl get_app_container "$UDID" com.huseyingulcu.hop data)
-              for i in $(seq 1 60); do
+              for i in $(seq 1 90); do
                 [ -f "$DATA/Documents/shot-taxi-2.png" ] && break
                 sleep 2
               done
               sleep 1
               cp "$DATA"/Documents/shot-taxi-*.png shots/ 2>/dev/null || echo "no taxi pictures"
+              grep -a "PPTAXI\|stage\|error\|Fatal" shots/taxi-console.log | tail -15 | while read -r line; do echo "::notice::$line"; done || true
               continue
             elif [ "$RUN" = "streets" ]; then
               xcrun simctl launch --console-pty "$UDID" com.huseyingulcu.hop -benchmark -playcity -pedtest -policetest -nightweather -AppleLanguages "(tr)" > shots/streets-console.log 2>&1 &

@@ -787,6 +787,25 @@ final class Car3D {
         text.draw(at: CGPoint(x: 64 - size.width / 2, y: 64 - size.height / 2))
     }
 
+    /// A floating tag over the roof (a rival racer's name).
+    private var tag: SCNNode?
+
+    func setTag(_ image: UIImage) {
+        tag?.removeFromParentNode()
+        let aspect = image.size.width / max(image.size.height, 1)
+        let plane = SCNPlane(width: 1.1 * aspect, height: 1.1)
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = image
+        material.isDoubleSided = true
+        plane.materials = [material]
+        let node = SCNNode(geometry: plane)
+        node.position = SCNVector3(0, 2.7, 0)
+        node.constraints = [SCNBillboardConstraint()]
+        self.node.addChildNode(node)
+        tag = node
+    }
+
     func setNightLights(_ on: Bool) {
         if on, nightLights == nil {
             let holder = SCNNode()

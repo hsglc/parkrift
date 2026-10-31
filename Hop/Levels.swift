@@ -74,6 +74,9 @@ struct LevelDef {
     var hunters: [HunterStart] = []
     /// Taxi rounds: the customer, the destination and the ride.
     var taxi: TaxiDef? = nil
+    /// Car races: the rival racers on the grid and the finish street (its two intersections).
+    var racers: [RacerStart] = []
+    var finishStreet: (a: Int, b: Int)? = nil
 
     var name: String { Strings.pick(nameTR, nameEN, Levels.spanishNames[nameEN] ?? Levels.moreSpanishNames[nameEN] ?? nameEN) }
 }

@@ -288,6 +288,13 @@ enum Strings {
     static var customerDelivered: String { t("Müşteri teslim", "Customer dropped off", "Cliente entregado") }
     static var rewardFare: String { t("Taksi ücreti", "Fare", "Tarifa") }
     static var rewardTip: String { t("Bahşiş", "Tip", "Propina") }
+    // Rival racers
+    static func racePlace(_ n: Int, of total: Int) -> String { t("Sıra \(n)/\(total)", "Place \(n)/\(total)", "Puesto \(n)/\(total)") }
+    static func racePlaceHeadline(_ n: Int) -> String {
+        n == 1 ? t("Birinci!", "First place!", "¡Primero!") : t("\(n). oldun", "\(n)\(n == 2 ? "nd" : (n == 3 ? "rd" : "th")) place", "Puesto \(n)")
+    }
+    static func racePlaceReward(_ n: Int) -> String { t("\(n). sıra", "Place \(n)", "Puesto \(n)") }
+    static func racerFinished(_ name: String) -> String { t("\(name) bitirdi!", "\(name) finished!", "¡\(name) llegó!") }
     static var carClassTitle: String { t("Sınıf", "Class", "Clase") }
     static var dailyKicker: String { t("HER GÜN YENİLENİR", "RESETS EVERY DAY", "SE RENUEVA CADA DÍA") }
     static func streakDays(_ days: Int) -> String { t("Seri: \(days) gün", "Streak: \(days) days", "Racha: \(days) días") }

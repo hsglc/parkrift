@@ -222,6 +222,19 @@ struct HunterStart {
     let spot: Int
 }
 
+// MARK: - Rival racers
+
+/// A rival in a car race: its place on the grid, its lane, how fast it drives and its name.
+struct RacerStart {
+    let position: CGPoint
+    let heading: CGFloat
+    let from: Int
+    let to: Int
+    let pace: CGFloat
+    let name: String
+    let color: Int
+}
+
 // MARK: - Taxi
 
 /// What a taxi customer wants on the ride (the tip depends on it).
@@ -438,8 +451,31 @@ extension Levels {
                 }) { continue }
                 bots.append(start)
             }
+            // Three rivals on the grid behind the players, in both lanes
+            let startSeg = segments[startSegment]
+            let forwardLane = map.lane(from: startSeg.a, to: startSeg.b)
+            let alongAB = abs(CGFloat.angleDelta(forwardLane.heading, starts[0].heading)) < 0.5
+            let fromNode = alongAB ? startSeg.a : startSeg.b
+            let toNode = alongAB ? startSeg.b : startSeg.a
+            let back = CGPoint(x: -cos(starts[0].heading), y: -sin(starts[0].heading))
+            let names = ["Kaan", "Derya", "Volkan", "Ece", "Mert", "Selin"]
+            var racers: [RacerStart] = []
+            for (k, (grid, gap)) in [(0, 78), (1, 78), (0, 156)].enumerated() {
+                let p = starts[grid].position
+                racers.append(RacerStart(position: CGPoint(x: p.x + back.x * CGFloat(gap), y: p.y + back.y * CGFloat(gap)),
+                                         heading: starts[0].heading, from: fromNode, to: toNode,
+                                         pace: [1.04, 0.97, 0.91][k], name: names[(round * 3 + k) % names.count], color: k))
+            }
+            // No traffic on the grid behind the players either
+            bots.removeAll { bot in
+                let l = map.lane(from: bot.from, to: bot.to)
+                let q = CGPoint(x: l.start.x + (l.end.x - l.start.x) * bot.progress, y: l.start.y + (l.end.y - l.start.y) * bot.progress)
+                return racers.contains { $0.position.distance(to: q) < 120 }
+            }
             var level = LevelDef(nameTR: "Yoğun Trafik", nameEN: "Rush Hour", starts: starts, spots: [finish, finish], obstacles: obstacles,
                                  world: worldSize, city: map, bots: bots, race: true)
+            level.racers = racers
+            level.finishStreet = (finishSeg.a, finishSeg.b)
             Levels.finishArcade(&level, arcade)
             return level
         }
@@ -810,6 +846,14 @@ struct Bot {
     var parked = false
     /// Hazard lights on (looking for a spot).
     var hazard: Bool { hunt >= 0 && !parked }
+    /// A rival racer: how fast it drives, the finish street's end it heads for (and the other
+    /// end), and whether it crossed the line.
+    var racer = false
+    var raceEntry = -1
+    var raceExit = -1
+    var raceGoal = 0
+    var onFinal = false
+    var raceDone = false
 
     var box: OBB { OBB(center: position, size: Levels.carSize, angle: heading) }
 }
@@ -853,7 +897,19 @@ final class Traffic {
     /// Only the host decides when a hunter has taken a bay (the guest is told).
     var authority = true
 
-    init(map: CityMap, starts: [BotStart], seed: UInt64, spots: [FreeSpot] = [], hunters: [HunterStart] = []) {
+    // MARK: Rival racers
+
+    /// The finish street and the drive to each of its ends; racers wait on the grid until released.
+    private var finishStreet: (a: Int, b: Int, point: CGPoint)?
+    private var finishDistances: [[CGFloat]] = []
+    var racersReleased = false
+    private(set) var raceClock: CGFloat = 0
+    /// Racers that crossed the line (bot, seconds since the start), in order.
+    private(set) var raceFinishes: [(bot: Int, time: CGFloat)] = []
+    private let racerTop: CGFloat = 330
+
+    init(map: CityMap, starts: [BotStart], seed: UInt64, spots: [FreeSpot] = [], hunters: [HunterStart] = [],
+         racers: [RacerStart] = [], finish: (a: Int, b: Int, point: CGPoint)? = nil) {
         self.map = map
         self.spots = spots
         spotDistances = spots.map { map.distances(to: $0.entry, avoiding: ($0.entry, $0.exit)) }
@@ -882,6 +938,30 @@ final class Traffic {
             bot.speed = cruise * bot.pace
             bot.hunt = hunter.spot
             bots.append(bot)
+        }
+        if let finish = finish, !racers.isEmpty {
+            finishStreet = finish
+            finishDistances = [map.distances(to: finish.a, avoiding: (finish.a, finish.b)),
+                               map.distances(to: finish.b, avoiding: (finish.a, finish.b))]
+            for racer in racers {
+                let lane = map.lane(from: racer.from, to: racer.to)
+                var bot = Bot(position: racer.position, heading: racer.heading, speed: 0, from: racer.from, to: racer.to,
+                              waypoints: [lane.end], tint: racer.color)
+                bot.racer = true
+                bot.pace = racer.pace
+                bot.headway = 0.45
+                // The finish street's nearer end (by road) is where it drives onto it
+                let viaA = finishDistances[0][racer.to], viaB = finishDistances[1][racer.to]
+                bot.raceGoal = viaA <= viaB ? 0 : 1
+                bot.raceEntry = viaA <= viaB ? finish.a : finish.b
+                bot.raceExit = viaA <= viaB ? finish.b : finish.a
+                if racer.to == bot.raceEntry && racer.from == bot.raceExit {
+                    // Already on the finish street the wrong way: the other end is the way in
+                    swap(&bot.raceEntry, &bot.raceExit)
+                    bot.raceGoal = 1 - bot.raceGoal
+                }
+                bots.append(bot)
+            }
         }
     }
 
@@ -955,6 +1035,20 @@ final class Traffic {
         guard bot.next < 0 else { return }
         var options = map.neighbors(bot.to).filter { $0 != bot.from }
         if options.isEmpty { options = map.neighbors(bot.to) }
+        if bot.racer && !bot.raceDone && finishDistances.indices.contains(bot.raceGoal) {
+            // A racer takes the shortest way to the finish street
+            if bot.to == bot.raceEntry && options.contains(bot.raceExit) {
+                bot.next = bot.raceExit
+                return
+            }
+            let dist = finishDistances[bot.raceGoal]
+            let here = map.position(of: bot.to)
+            if let best = options.min(by: { here.distance(to: map.position(of: $0)) + dist[$0]
+                                             < here.distance(to: map.position(of: $1)) + dist[$1] }) {
+                bot.next = best
+                return
+            }
+        }
         if bot.hunt >= 0 && !bot.parked && spots.indices.contains(bot.hunt) {
             // A hunter takes the shortest way to its bay's lane
             let spot = spots[bot.hunt]
@@ -1064,6 +1158,7 @@ final class Traffic {
         clock += dt
         honks.removeAll()
         takes.removeAll()
+        if racersReleased { raceClock += dt }
         for index in bots.indices {
             var bot = bots[index]
             if bot.stunned > 0 {
@@ -1083,6 +1178,21 @@ final class Traffic {
             if bot.hunt >= 0 || bot.parked {
                 if stepHunter(index, dt, players: blockers.prefix(playerCars)) { continue }
                 bot = bots[index]
+            }
+            if bot.racer && !racersReleased {
+                bot.speed = 0
+                bot.braking = true
+                bots[index] = bot
+                continue
+            }
+            if bot.racer && bot.onFinal && bot.waypoints.isEmpty {
+                // Across the line: the race is over for it, it cruises on as traffic
+                bot.onFinal = false
+                bot.raceDone = true
+                bot.racer = false
+                bot.pace = 1.1
+                bot.headway = 1.2
+                raceFinishes.append((index, raceClock))
             }
             if bot.backing > 0 {
                 // Rolls back slowly to make room, unless a car is right behind it
@@ -1112,6 +1222,13 @@ final class Traffic {
                 bot.next = -1
                 let lane = map.lane(from: bot.from, to: bot.to)
                 bot.waypoints = [lane.start, lane.end]
+                if bot.racer, let finish = finishStreet, bot.from == bot.raceEntry, bot.to == bot.raceExit {
+                    // On the finish street: across the line (and a little past it)
+                    let along = (finish.point.x - lane.start.x) * cos(lane.heading) + (finish.point.y - lane.start.y) * sin(lane.heading) + 40
+                    let past = CGPoint(x: lane.start.x + cos(lane.heading) * along, y: lane.start.y + sin(lane.heading) * along)
+                    bot.waypoints = [lane.start, past]
+                    bot.onFinal = true
+                }
                 if bot.hunt >= 0, spots.indices.contains(bot.hunt), !taken.contains(bot.hunt),
                    bot.from == spots[bot.hunt].entry, bot.to == spots[bot.hunt].exit {
                     // On the bay's street: drive to just short of the bay, then pull in
@@ -1135,7 +1252,7 @@ final class Traffic {
             let ahead = dx * cos(bot.heading) + dy * sin(bot.heading)
             // Approaching the stop line (end of the lane) on a red or late yellow light?
             var stopLine: CGFloat?
-            if lastLeg && distance < 110 && !bot.approach {
+            if lastLeg && distance < 110 && !bot.approach && !bot.racer {
                 let horizontal = bot.from / map.cols == bot.to / map.cols
                 switch map.signal(at: bot.to, horizontal: horizontal, time: clock) {
                 case .green: break
@@ -1154,12 +1271,21 @@ final class Traffic {
             bot.heading += max(-maxTurn, min(maxTurn, error))
 
             // The speed it wants: its own pace, slower in a bend and before a turn
-            var v0 = cruise * bot.pace
-            if abs(error) > 0.35 { v0 = min(v0, cornerSpeed) }
-            if lastLeg && turns(bot) && distance < 140 {
-                v0 = min(v0, cornerSpeed + (distance / 140) * (v0 - cornerSpeed))
+            var v0 = (bot.racer ? racerTop : cruise) * bot.pace
+            // A hunter that sees a player closing in on the same street puts its foot down
+            if bot.hunt >= 0 && !bot.parked && spots.indices.contains(bot.hunt) {
+                let bay = spots[bot.hunt].def.center
+                if bay.distance(to: bot.position) < 1000 && blockers.prefix(playerCars).contains(where: { $0.distance(to: bay) < 900 }) {
+                    v0 *= 1.4
+                }
             }
-            if bot.passing { v0 = min(v0, 55) }
+            let corner = bot.racer ? 125 * bot.pace : cornerSpeed
+            if abs(error) > 0.35 { v0 = min(v0, corner) }
+            let brakeZone: CGFloat = bot.racer ? 260 : 140
+            if lastLeg && turns(bot) && distance < brakeZone {
+                v0 = min(v0, corner + (distance / brakeZone) * (v0 - corner))
+            }
+            if bot.passing { v0 = min(v0, bot.racer ? v0 : 55) }
             // A hunter on its bay's street slows down to pull in
             if bot.approach && lastLeg { v0 = min(v0, max(28, distance * 0.8)) }
 
@@ -1247,7 +1373,7 @@ final class Traffic {
             bots[index].blocker = blocker
 
             // Intelligent-driver following: free road acceleration, braking to keep the gap
-            let aMax: CGFloat = 95, comfortable: CGFloat = 210
+            let aMax: CGFloat = bot.racer ? 230 : 95, comfortable: CGFloat = bot.racer ? 520 : 210
             let v = bot.speed
             var accel = aMax * (1 - pow(min(v / max(v0, 1), 1.5), 4))
             if gap < CGFloat.greatestFiniteMagnitude {
@@ -1299,14 +1425,33 @@ final class Traffic {
             } else if gap > 120 || stopLine != nil {
                 bot.waiting = 0
             }
+            if bot.racer && !bot.passing && gap < 170 && leaderSpeed < v0 * 0.7 && stopLine == nil && oncomingClear(bot) {
+                bot.passing = true
+            }
+            // Hunters don't queue behind a car standing in the lane: they go round it
+            if bot.hunt >= 0 && !bot.parked && !bot.passing && !bot.approach && gap < 110 && leaderSpeed < 15
+                && bot.waiting > 0.8 && stopLine == nil && oncomingClear(bot) {
+                bot.passing = true
+            }
             if bot.passing {
-                bot.offset = min(68, bot.offset + 40 * dt)
+                bot.offset = min(68, bot.offset + (bot.racer ? 120 : 40) * dt)
                 // Back into the lane once the way ahead in it is clear
                 var clearInLane = true
                 for point in blockers.prefix(playerCars) {
                     let vx = point.x - bot.position.x, vy = point.y - bot.position.y
                     let forward = vx * cos(laneHeading) + vy * sin(laneHeading)
                     if forward > -30 && forward < 80 && abs(-vx * sin(laneHeading) + vy * cos(laneHeading)) < 40 { clearInLane = false }
+                }
+                if bot.racer || bot.hunt >= 0 {
+                    // Back in once past what it overtook (bots too, not just players)
+                    for other in bots.indices where other != index {
+                        let vx = bots[other].position.x - bot.position.x, vy = bots[other].position.y - bot.position.y
+                        guard abs(vx) < 120 && abs(vy) < 120 else { continue }
+                        let forward = vx * cos(laneHeading) + vy * sin(laneHeading)
+                        if forward > -40 && forward < 90 && abs(-vx * sin(laneHeading) + vy * cos(laneHeading)) < 40 { clearInLane = false }
+                    }
+                    // Something coming the other way: back in at once if there is room
+                    if !oncomingClear(bot) && bot.offset > 20 && clearInLane == false { bot.offset = max(0, bot.offset - 160 * dt) }
                 }
                 if clearInLane && bot.offset >= 60 { bot.passing = false; bot.waiting = 0 }
             } else {
@@ -1452,6 +1597,26 @@ final class Traffic {
                                     round, index, bot.hunt, bot.from, bot.to, spot.entry, spot.exit, Double(bot.position.x), Double(bot.position.y),
                                     Double(bot.speed), bot.approach ? 1 : 0, Double(bot.parkT), Double(bot.waiting)))
             }
+        }
+        // Rival racers: their finish times (no player in the way)
+        for round in 0..<Levels.raceRounds {
+            let level = Levels.city(round: round, race: true)
+            guard let map = level.city, let street = level.finishStreet else { continue }
+            let traffic = Traffic(map: map, starts: level.bots, seed: UInt64((Levels.raceBase + round) * 31 + 7),
+                                  racers: level.racers, finish: (a: street.a, b: street.b, point: level.spots[0].center))
+            traffic.racersReleased = true
+            var t: CGFloat = 0
+            while t < 120 && traffic.raceFinishes.count < level.racers.count {
+                traffic.step(1.0 / 60, blockers: [CGPoint(x: -9999, y: -9999)], playerCars: 1)
+                t += 1.0 / 60
+            }
+            let start = level.starts[0].position
+            let route = map.route(from: start, to: level.spots[0].center)
+            let length = zip(route, route.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }
+            let times = traffic.raceFinishes.map { String(format: "%.1f", Double($0.time)) }.joined(separator: " ")
+            let stuck = traffic.bots.filter { $0.racer }.map { String(format: "(%.0f,%.0f v%.0f)", Double($0.position.x), Double($0.position.y), Double($0.speed)) }.joined(separator: " ")
+            lines.append(String(format: "PPRACE r%d racers=%d route=%.0f finishes=%@ out=%@ overlaps=%d", round, level.racers.count,
+                                Double(length), times, stuck, traffic.overlaps))
         }
         // Taxi: when the rival taxis reach the customer (player standing at the start)
         for round in 0..<Levels.taxiRounds {
