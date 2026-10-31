@@ -3051,8 +3051,10 @@ final class ParkingScene: SKScene {
                     let hunting = bots[index].hazard
                     if (dot.alpha > 0.9) != hunting {
                         dot.alpha = hunting ? 1 : 0.55
-                        dot.color = hunting ? UIColor(red: 1, green: 0.66, blue: 0.12, alpha: 1) : UIColor(white: 0.92, alpha: 1)
-                        dot.size = hunting ? CGSize(width: 6.5, height: 6.5) : CGSize(width: 4.5, height: 4.5)
+                        if let sprite = dot as? SKSpriteNode {
+                            sprite.color = hunting ? UIColor(red: 1, green: 0.66, blue: 0.12, alpha: 1) : UIColor(white: 0.92, alpha: 1)
+                            sprite.size = hunting ? CGSize(width: 6.5, height: 6.5) : CGSize(width: 4.5, height: 4.5)
+                        }
                     }
                 }
             }
