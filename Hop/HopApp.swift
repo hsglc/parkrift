@@ -70,6 +70,7 @@ final class AppModel: ObservableObject {
     enum OnlineMode: String {
         case park
         case race
+        case taxi
     }
     /// What the room plays; chosen by the host in the lobby.
     @Published var onlineMode: OnlineMode = .race
@@ -118,6 +119,8 @@ final class AppModel: ObservableObject {
     func playCity() { openGarage(.play(level: Levels.cityBase)) }
 
     func playRace() { openGarage(.play(level: Levels.raceBase)) }
+
+    func playTaxi() { openGarage(.play(level: Levels.taxiBase)) }
 
     // MARK: Page curtain
 
@@ -301,7 +304,7 @@ final class AppModel: ObservableObject {
 
     func startOnlineGame() {
         guard isHost, friendHere else { return }
-        let start = onlineMode == .race ? Levels.raceBase : Levels.cityBase
+        let start = onlineMode == .race ? Levels.raceBase : (onlineMode == .taxi ? Levels.taxiBase : Levels.cityBase)
         net.send(["t": "lvl", "n": start])
         beginGame(level: start)
     }
@@ -884,6 +887,13 @@ struct RootView: View {
                 // City mode on the streets (traffic lights, trees, kerbs)
                 AudioManager.shared.isMuted = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.playCity() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { model.leaveGarage(confirmed: true) }
+                return
+            }
+            if PerfSettings.benchmark && args.contains("-playtaxi") {
+                // A taxi round (the taxi check)
+                AudioManager.shared.isMuted = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.playTaxi() }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { model.leaveGarage(confirmed: true) }
                 return
             }

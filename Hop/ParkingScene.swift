@@ -127,7 +127,7 @@ final class ParkingScene: SKScene {
     private var traffic: Traffic?
     // Spot Wars: the free bay we are heading for, its pins on the map, the bays-left chip, and
     // which traffic cars show hazard lights
-    private var spotWars: Bool { isCity && !level.race && !level.freeSpots.isEmpty }
+    private var spotWars: Bool { isCity && !level.race && !level.freeSpots.isEmpty && level.taxi == nil }
     private var spotTarget = -1
     private var freeSpotPins: [SKNode] = []
     private var spotsChip = SKNode()
@@ -1012,8 +1012,11 @@ final class ParkingScene: SKScene {
             traffic = newTraffic
             hunterHazard = Array(repeating: false, count: newTraffic.bots.count)
             setupSpotsChip()
+            setupTaxi(world)
             for (index, bot) in newTraffic.bots.enumerated() {
-                botCars.append(world.makeCar(color: CarArt.parkedColors[bot.tint % CarArt.parkedColors.count],
+                let rivalTaxi = level.taxi != nil && bot.hunt >= 0
+                botCars.append(world.makeCar(color: rivalTaxi ? UIColor(red: 1, green: 0.78, blue: 0.08, alpha: 1)
+                                                              : CarArt.parkedColors[bot.tint % CarArt.parkedColors.count],
                                              style: CarStyle(rawValue: index % 3) ?? .sedan, variety: index &* 7 &+ bot.tint))
             }
             // At night the traffic drives with its lights on (faint, so it reads without glare)
@@ -1348,7 +1351,24 @@ final class ParkingScene: SKScene {
         case "take":
             guard messageLevel == levelIndex, !isHost, let spot = message["s"] as? Int, let bot = message["b"] as? Int else { return }
             traffic?.applyTake(spot: spot, bot: bot)
-            spotGone(spot, byHunter: true)
+            if level.taxi != nil {
+                rivalGotCustomer(bot: bot)
+            } else {
+                spotGone(spot, byHunter: true)
+            }
+        case "pick":
+            guard messageLevel == levelIndex, level.taxi != nil else { return }
+            let theirs = message["at"] as? Double ?? 0
+            // The earlier pick-up wins (the same moment: the lower slot)
+            if pickedAt < 0 || theirs < pickedAt || (theirs == pickedAt && otherSlot < slot) {
+                traffic?.claim(0)
+                if taxiState == .riding || taxiState == .boarding {
+                    taxiState = .waiting
+                    customerNode?.isHidden = false
+                    customerSign?.isHidden = false
+                }
+                rivalGotCustomer(bot: nil)
+            }
         case "p":
             guard messageLevel == levelIndex else { return }
             if spotWars, let x = message["x"] as? Double, let y = message["y"] as? Double,
@@ -1547,6 +1567,18 @@ final class ParkingScene: SKScene {
         if benchRecording && benchClock > 22 {
             finishBenchmark()
             return
+        }
+        // Taxi test: the car stops by the customer (pick-up), pictures saved by the app
+        if benchmark && ProcessInfo.processInfo.arguments.contains("-taxitest"), let taxi = level.taxi, phase == .driving {
+            if !taxiTestPlaced && elapsed > 1.5 {
+                taxiTestPlaced = true
+                carPosition = CGPoint(x: taxi.customer.x + cos(taxi.facing) * 62, y: taxi.customer.y + sin(taxi.facing) * 62)
+                heading = taxi.facing - CGFloat.pi / 2
+                velocity = 0
+                for (at, name) in [(0.7, "shot-taxi-1"), (3.6, "shot-taxi-2")] {
+                    run(.wait(forDuration: at)) { Task { @MainActor in saveWindowSnapshot(named: name) } }
+                }
+            }
         }
         // Finish test: put the car just before the finish line at speed so it crosses it
         if PerfSettings.finishTest && level.race && !finishTestPlaced && benchClock > 6 {
@@ -2121,10 +2153,11 @@ final class ParkingScene: SKScene {
                 botCars[index].update(position: bot.position, heading: bot.heading, steer: 0, braking: bot.braking)
                 if index < hunterHazard.count && hunterHazard[index] != bot.hazard {
                     hunterHazard[index] = bot.hazard
-                    botCars[index].setHazard(bot.hazard)
+                    botCars[index].setHazard(bot.hazard, sign: level.taxi != nil ? Car3D.taxiSign : Car3D.huntSign)
                 }
             }
             if spotWars { updateSpotWars(traffic) }
+            if level.taxi != nil { updateTaxi(traffic, dt) }
             if benchmark && botDetailChanges > 0 { FrameMonitor.shared.mark("botDetail\(botDetailChanges)") }
             if online && friendPresent && isHost {
                 botSendClock += TimeInterval(dt)
@@ -2472,6 +2505,301 @@ final class ParkingScene: SKScene {
         model?.send(["t": "p", "l": levelIndex, "time": -1.0, "hits": hits,
                      "x": Double(carPosition.x), "y": Double(carPosition.y), "h": Double(heading)])
         checkLevelDone()
+    }
+
+    // MARK: Taxi
+
+    private enum TaxiState { case waiting, boarding, riding, lost, delivered }
+    private var taxiState = TaxiState.waiting
+    private var customerNode: SCNNode?
+    private var customerSign: SCNNode?
+    private var customerPosition = CGPoint.zero
+    private var customerHeading: CGFloat = 0
+    private var customerClock: CGFloat = 0
+    private var customerWalk: CGFloat = 0
+    private var pickHold: CGFloat = 0
+    private var boardTarget = CGPoint.zero
+    private var rideStartedAt: Double = 0
+    private var ridePar: CGFloat = 0
+    private var spill: CGFloat = 0
+    private var rideDriftStart = 0
+    private var tipLostReason: String?
+    private var taxiEscaped = false
+    private var lastRideVelocity: CGFloat = 0
+    private var lastRideHeading: CGFloat = 0
+    private(set) var taxiFare = 0
+    private(set) var taxiTip = 0
+    /// Online: when we picked the customer up (seconds into the round), to settle a close call.
+    private var pickedAt: Double = -1
+    private var taxiTestPlaced = false
+
+    /// The customer at the kerb: a person with a sign over their head saying what they want.
+    private func setupTaxi(_ world: World3D) {
+        customerNode?.removeFromParentNode()
+        customerSign?.removeFromParentNode()
+        customerNode = nil
+        customerSign = nil
+        taxiState = .waiting
+        pickHold = 0
+        spill = 0
+        tipLostReason = nil
+        taxiEscaped = false
+        taxiFare = 0
+        taxiTip = 0
+        pickedAt = -1
+        guard let taxi = level.taxi else { return }
+        customerPosition = taxi.customer
+        customerHeading = taxi.facing
+        customerClock = 0
+        let node = SCNNode()
+        world.addLevelNode(node)
+        customerNode = node
+        let signPlane = SCNPlane(width: 2.6, height: 1.9)
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = ParkingScene.customerSignImage(taxi.rider)
+        material.isDoubleSided = true
+        signPlane.materials = [material]
+        let sign = SCNNode(geometry: signPlane)
+        sign.constraints = [SCNBillboardConstraint()]
+        sign.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.3, z: 0, duration: 0.5), .moveBy(x: 0, y: -0.3, z: 0, duration: 0.5)])))
+        world.addLevelNode(sign)
+        customerSign = sign
+        poseCustomer()
+        spotsChip.name = nil
+        level.spots[slot] = level.freeSpots.first?.def ?? level.spots[slot]
+        world.setSpotTarget(0, center: level.spots[slot].center)
+        updateTaxiChip()
+    }
+
+    /// A speech bubble: "TAXI!" and the icon of what the customer wants.
+    static func customerSignImage(_ rider: Rider) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 208, height: 152)).image { _ in
+            let bubble = UIBezierPath(roundedRect: CGRect(x: 6, y: 6, width: 196, height: 112), cornerRadius: 26)
+            bubble.move(to: CGPoint(x: 88, y: 116))
+            bubble.addLine(to: CGPoint(x: 104, y: 146))
+            bubble.addLine(to: CGPoint(x: 120, y: 116))
+            UIColor(red: 1, green: 0.8, blue: 0.1, alpha: 1).setFill()
+            bubble.fill()
+            UIColor.white.setStroke()
+            bubble.lineWidth = 6
+            bubble.stroke()
+            let font = UIFont(name: "BarlowCondensed-BlackItalic", size: 46) ?? UIFont.systemFont(ofSize: 42, weight: .black)
+            let ink = UIColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 1)
+            let word = NSAttributedString(string: "TAXI!", attributes: [.font: font, .foregroundColor: ink])
+            let icon = NSAttributedString(string: rider.icon, attributes: [.font: UIFont.systemFont(ofSize: 50)])
+            let w = word.size(), i = icon.size()
+            let total = w.width + 10 + i.width
+            icon.draw(at: CGPoint(x: 104 - total / 2, y: 62 - i.height / 2))
+            word.draw(at: CGPoint(x: 104 - total / 2 + i.width + 10, y: 62 - w.height / 2))
+        }
+    }
+
+    private func poseCustomer() {
+        guard let node = customerNode, let taxi = level.taxi else { return }
+        let near = customerPosition.distance(to: carPosition) < 320
+        let clip: PedestrianModels.Clip
+        switch taxiState {
+        case .waiting: clip = near ? .angry : .idle          // waving once we come close
+        case .boarding, .lost: clip = .walk
+        default: clip = .idle
+        }
+        let outfit = (levelIndex + Rider.allCases.count + taxi.rider.rawValue) % PedestrianModels.outfitCount
+        let geometry = clip == .walk
+            ? PedestrianModels.geometry(character: outfit, clip: .walk, phase: customerWalk / PedestrianModels.walkCycle)
+            : PedestrianModels.geometry(character: outfit, clip: clip, time: customerClock)
+        if let geometry = geometry, node.geometry !== geometry { node.geometry = geometry }
+        var p = World3D.vec(customerPosition)
+        p.y = Float(level.city?.kerbHeight(at: customerPosition) ?? 0)
+        node.position = p
+        node.eulerAngles = SCNVector3(0, Float(customerHeading), 0)
+        customerSign?.position = SCNVector3(p.x, p.y + 3.4, p.z)
+    }
+
+    /// The pick-up (stop by the customer before a rival taxi does), the walk to the car, the
+    /// ride (what the customer wants decides the tip) and the drop-off at the destination bay.
+    private func updateTaxi(_ traffic: Traffic, _ dt: CGFloat) {
+        guard let taxi = level.taxi else { return }
+        customerClock += dt
+        // A rival taxi pulled up at the customer first
+        for take in traffic.takes where take.spot == 0 {
+            if online && friendPresent && isHost {
+                model?.send(["t": "take", "l": levelIndex, "s": 0, "b": take.bot])
+            }
+            rivalGotCustomer(bot: take.bot)
+        }
+        switch taxiState {
+        case .waiting:
+            guard phase == .driving else { break }
+            let close = carPosition.distance(to: taxi.customer) < 95 && abs(velocity) < 12
+            pickHold = close ? pickHold + dt : 0
+            if pickHold > 0.5 {
+                startBoarding(to: carPosition)
+                pickedAt = elapsed
+                traffic.claim(0)
+                if online && friendPresent {
+                    model?.send(["t": "pick", "l": levelIndex, "at": elapsed])
+                }
+            }
+        case .boarding, .lost:
+            let dx = boardTarget.x - customerPosition.x, dy = boardTarget.y - customerPosition.y
+            let d = hypot(dx, dy)
+            let step = min(d, 26 * dt)
+            if d > 1 {
+                customerPosition.x += dx / d * step
+                customerPosition.y += dy / d * step
+                customerHeading = atan2(dy, dx)
+                customerWalk += step
+            }
+            if d < 14 {
+                customerNode?.isHidden = true
+                customerSign?.isHidden = true
+                if taxiState == .boarding { startRide(taxi) }
+            }
+        case .riding:
+            updateRide(taxi, dt)
+        case .delivered:
+            break
+        }
+        if customerNode?.isHidden == false { poseCustomer() }
+    }
+
+    private func startBoarding(to point: CGPoint) {
+        taxiState = .boarding
+        boardTarget = point
+        audio.play("click", volume: 0.5)
+        flashBonus(Strings.customerComing)
+    }
+
+    private func startRide(_ taxi: TaxiDef) {
+        taxiState = .riding
+        rideStartedAt = elapsed
+        rideDriftStart = runDriftPoints
+        lastRideVelocity = velocity
+        lastRideHeading = heading
+        notifyHaptic.notificationOccurred(.success)
+        // The bay moves to the destination
+        world?.clearFreeSpots()
+        world?.buildFreeSpots([taxi.destination])
+        level.spots[slot] = taxi.destination
+        world?.setSpotTarget(0, center: taxi.destination.center)
+        routeClock = 0
+        if let city = level.city {
+            let path = city.route(from: carPosition, to: taxi.destination.center)
+            let length = zip(path, path.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }
+            ridePar = (length / 170 + 9).rounded()
+        }
+        flashBonus(Strings.riderLine(taxi.rider))
+        if taxi.rider == .getaway { dispatchPolice(Strings.crimeGetaway) }
+        updateTaxiChip()
+    }
+
+    /// The ride: the clock for a hurried customer, the cup for the coffee, the drifts for the
+    /// show-off; the chip shows how it goes.
+    private func updateRide(_ taxi: TaxiDef, _ dt: CGFloat) {
+        let accel = abs(velocity - lastRideVelocity) / max(dt, 0.001)
+        let turn = abs(CGFloat.angleDelta(lastRideHeading, heading)) / max(dt, 0.001) * abs(velocity)
+        lastRideVelocity = velocity
+        lastRideHeading = heading
+        switch taxi.rider {
+        case .hurry:
+            if tipLostReason == nil && CGFloat(elapsed - rideStartedAt) > ridePar { loseTip(Strings.riderLate) }
+        case .coffee:
+            if tipLostReason == nil {
+                spill += max(0, accel - 230) * dt * 0.09 + max(0, turn - 260) * dt * 0.05
+                spill = max(0, spill - dt * 2)
+                if spill >= 100 { loseTip(Strings.riderSpilled) }
+            }
+        case .show, .getaway:
+            break
+        }
+        updateTaxiChip()
+    }
+
+    /// The customer's tip is gone (late, coffee spilled, caught): a line, no coins for it.
+    private func loseTip(_ reason: String) {
+        guard tipLostReason == nil else { return }
+        tipLostReason = reason
+        flashBonus(reason)
+        notifyHaptic.notificationOccurred(.error)
+    }
+
+    /// A rival taxi (or, online, the friend) got the customer: they walk over and the round is lost.
+    private func rivalGotCustomer(bot: Int?) {
+        guard taxiState == .waiting || taxiState == .boarding else { return }
+        taxiState = .lost
+        if let bot = bot, let position = traffic?.bots.indices.contains(bot) == true ? traffic?.bots[bot].position : nil {
+            boardTarget = position
+        } else {
+            boardTarget = remotePosition
+        }
+        if !localParked && phase == .driving {
+            fail(bot == nil ? Strings.friendGotCustomer : Strings.rivalGotCustomer)
+        }
+    }
+
+    /// Coins for the ride: the fare by distance, the tip by what the customer wanted and by how
+    /// well we parked at the end.
+    private func settleTaxi() {
+        guard let taxi = level.taxi, taxiState == .delivered else { return }
+        let rideLength = level.city.map { city -> CGFloat in
+            let path = city.route(from: taxi.customer, to: taxi.destination.center)
+            return zip(path, path.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }
+        } ?? 2000
+        taxiFare = 20 + Int(rideLength / 100)
+        guard tipLostReason == nil else { taxiTip = 0; return }
+        var share: CGFloat
+        switch taxi.rider {
+        case .hurry: share = 0.5 + 0.8 * max(0, 1 - CGFloat(elapsed - rideStartedAt) / max(ridePar, 1))
+        case .coffee: share = 0.6 + 0.6 * max(0, 1 - spill / 100)
+        case .show: share = min(1.5, CGFloat(runDriftPoints - rideDriftStart) / 600 * 1.5)
+        case .getaway: share = taxiEscaped ? 1.5 : 0.4
+        }
+        let precision = CGFloat(lastPrecision?.score ?? 60) / 100
+        taxiTip = Int((CGFloat(taxiFare) * share * (0.4 + 0.6 * precision)).rounded())
+    }
+
+    /// Under the top bar: what to do now and how the customer's wish is going.
+    private func updateTaxiChip() {
+        guard let taxi = level.taxi else { return }
+        let text: String
+        var urgent = false
+        switch taxiState {
+        case .waiting, .boarding, .lost:
+            text = "🙋 " + Strings.pickUpCustomer
+        case .riding, .delivered:
+            if let lost = tipLostReason {
+                text = taxi.rider.icon + " " + lost
+                urgent = true
+            } else {
+                switch taxi.rider {
+                case .hurry:
+                    let left = max(0, Int((ridePar - CGFloat(elapsed - rideStartedAt)).rounded(.up)))
+                    text = "⏱ " + Strings.riderTimeLeft(left)
+                    urgent = left <= 5
+                case .coffee:
+                    text = "☕ " + Strings.riderCup(Int(spill))
+                    urgent = spill > 70
+                case .show:
+                    text = "🌀 " + Strings.riderDrift(runDriftPoints - rideDriftStart, 600)
+                case .getaway:
+                    text = "🚨 " + (taxiEscaped ? Strings.policeEscaped : Strings.riderLoseThem)
+                    urgent = !taxiEscaped && police != nil
+                }
+            }
+        }
+        if spotsChip.parent == nil {
+            spotsChip.position = CGPoint(x: size.width / 2, y: hudTop - 62)
+            spotsChip.zPosition = 30
+            hud.addChild(spotsChip)
+        }
+        if spotsChip.name == text { return }
+        spotsChip.name = text
+        spotsChip.removeAllChildren()
+        let label = makeLabel(text, size: 14, color: urgent ? UIColor(red: 1, green: 0.55, blue: 0.5, alpha: 1) : .white, font: "Barlow-ExtraBold")
+        let glass = makeGlass(width: label.frame.width + 32, height: 30)
+        spotsChip.addChild(glass)
+        spotsChip.addChild(label)
     }
 
     // MARK: Spot Wars
@@ -3728,8 +4056,10 @@ final class ParkingScene: SKScene {
             switch outcome {
             case .caught:
                 startBusted(chase)
+                if taxiState == .riding { loseTip(Strings.riderCaught) }
             case .escaped:
                 runEscapes += 1
+                if taxiState == .riding && level.taxi?.rider == .getaway { taxiEscaped = true }
                 nitro = 1
                 flashBonus(Strings.policeEscaped)
                 notifyHaptic.notificationOccurred(.success)
@@ -4600,6 +4930,7 @@ final class ParkingScene: SKScene {
     // MARK: Parking
 
     private func checkParking(_ dt: CGFloat) {
+        if level.taxi != nil && taxiState != .riding { return }
         if level.race {
             if level.spots[slot].box.contains(carPosition) { parked() }
             return
@@ -4672,6 +5003,7 @@ final class ParkingScene: SKScene {
         localTime = elapsed
         // Spot Wars: this bay is ours now (hunters still on their way to it look elsewhere)
         if spotWars && spotTarget >= 0 { traffic?.claim(spotTarget) }
+        if taxiState == .riding { taxiState = .delivered }
         // Drifting into the spot (or the finish) takes 2 s off
         if (drifting || lastUpdate - lastDriftEnd < 2.5) && max(driftScore, lastDriftScore) > 40 {
             localTime = max(0, localTime - 2)
@@ -4710,6 +5042,9 @@ final class ParkingScene: SKScene {
             let precision = ParkPrecision(spot: level.spots[slot], car: carPosition, heading: heading, carSize: Levels.carSize)
             lastPrecision = precision
             precisionBest = ParkPrecision.record(level: levelIndex, score: precision.score)
+        } else if level.taxi != nil {
+            // The drop-off is measured too: the tip grows with it
+            lastPrecision = ParkPrecision(spot: level.spots[slot], car: carPosition, heading: heading, carSize: Levels.carSize)
         }
         if level.race {
             playFinishSequence()
@@ -5467,6 +5802,11 @@ final class ParkingScene: SKScene {
             entries[0].score = myTime.map { Levels.raceScore(time: $0, crashes: hits) } ?? -1
             if headline == nil { headline = Strings.finished }
         }
+        // Taxi: the fare and the tip
+        if level.taxi != nil {
+            settleTaxi()
+            if myTime != nil && headline == nil { headline = taxiTip > 0 ? Strings.customerHappy : Strings.customerDelivered }
+        }
         // Coins for the round (and any daily task it completed)
         let me = entries[0]
         let headToHead = entries.count > 1
@@ -5475,14 +5815,15 @@ final class ParkingScene: SKScene {
                              won: headToHead ? (me.isWinner && !entries[1].isWinner) : nil,
                              race: level.race, solo: !isCity, hits: hits, driftPoints: runDriftPoints,
                              nearMisses: runNearMisses, escapes: runEscapes, topSpeed: runTopSpeed,
-                             precision: me.time != nil ? lastPrecision?.score : nil)
+                             precision: me.time != nil ? lastPrecision?.score : nil,
+                             fare: taxiFare, tip: taxiTip)
         let reward = model?.finishRun(stats)
         model?.results = ResultsInfo(levelIndex: levelIndex, levelTitle: Levels.title(levelIndex, online: onlineMatch) + " · " + level.name,
                                      entries: entries, footer: footer, newBest: newBest,
                                      bestTime: isCity ? nil : model?.bestTime(for: levelIndex),
                                      headline: headline, scoreLine: scoreLine, reward: reward,
                                      outcome: outcome, roundLine: roundLine,
-                                     precision: me.time != nil && !isCity && !level.race ? lastPrecision?.score : nil)
+                                     precision: me.time != nil && (!isCity || level.taxi != nil) && !level.race ? lastPrecision?.score : nil)
         // The results own the screen: the pedals and the HUD step aside (back on the next load).
         // At once, not faded: the frame freezes just below and would keep a half-faded HUD
         controlsLayer.removeAllActions()

@@ -642,6 +642,7 @@ struct GarageView: View {
         case .lobby: return Strings.modeOnlineTitle
         case .menu: return Strings.yourCar
         case .play(let level):
+            if Levels.isTaxi(level) { return Strings.taxiTitle }
             if Levels.isRace(level) { return Strings.carRace }
             if Levels.isCity(level) { return Strings.parkRace }
             return Levels.title(level)

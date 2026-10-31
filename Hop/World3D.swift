@@ -704,7 +704,7 @@ final class Car3D {
     /// looking for a spot (Spot Wars).
     private var hazard: SCNNode?
 
-    func setHazard(_ on: Bool) {
+    func setHazard(_ on: Bool, sign signImage: UIImage = Car3D.huntSign) {
         if on, hazard == nil {
             let holder = SCNNode()
             let amber = SCNMaterial()
@@ -734,7 +734,7 @@ final class Car3D {
             holder.addChildNode(blink)
             let signMaterial = SCNMaterial()
             signMaterial.lightingModel = .constant
-            signMaterial.diffuse.contents = Car3D.huntSign
+            signMaterial.diffuse.contents = signImage
             signMaterial.isDoubleSided = true
             let signPlane = SCNPlane(width: 1.9, height: 1.9)
             signPlane.materials = [signMaterial]
@@ -756,6 +756,21 @@ final class Car3D {
             context.cgContext.drawRadialGradient(gradient, startCenter: CGPoint(x: 32, y: 32), startRadius: 0,
                                                  endCenter: CGPoint(x: 32, y: 32), endRadius: 32, options: [])
         }
+    }
+
+    /// A yellow "TAXI" roof sign (a rival taxi after the customer).
+    static let taxiSign: UIImage = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 96)).image { context in
+        let rect = CGRect(x: 8, y: 16, width: 144, height: 64)
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: 14)
+        UIColor(red: 1, green: 0.8, blue: 0.1, alpha: 1).setFill()
+        path.fill()
+        UIColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 1).setStroke()
+        path.lineWidth = 6
+        path.stroke()
+        let font = UIFont(name: "BarlowCondensed-BlackItalic", size: 50) ?? UIFont.systemFont(ofSize: 46, weight: .black)
+        let text = NSAttributedString(string: "TAXI", attributes: [.font: font, .foregroundColor: UIColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 1)])
+        let size = text.size()
+        text.draw(at: CGPoint(x: 80 - size.width / 2, y: 48 - size.height / 2))
     }
 
     /// A round amber sign with "P?" (looking for a spot).
@@ -3321,6 +3336,21 @@ final class World3D {
             neon.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.35, duration: 0.7), .fadeOpacity(to: 1.0, duration: 0.7)])))
         }
         arrowNode?.position = World3D.vec(center, y: 6.5)
+    }
+
+    /// Takes the free bays away (a taxi ride moves the bay from the pick-up to the destination).
+    func clearFreeSpots() {
+        for entry in freeSpots {
+            entry.holder.removeFromParentNode()
+            entry.beam.removeFromParentNode()
+        }
+        freeSpots.removeAll()
+        myNeon = nil
+    }
+
+    /// A node in the level (the taxi customer and their sign).
+    func addLevelNode(_ node: SCNNode) {
+        levelRoot.addChildNode(node)
     }
 
     /// A bay someone else took: its light goes out.

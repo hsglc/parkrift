@@ -281,13 +281,16 @@ struct MenuView: View {
         case .levels:
             levelsPage
         case .city:
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 ArtActionTile(image: "menu_city.jpg", kicker: Strings.homeCityKicker, title: Strings.carRace,
                               detail: Strings.carRaceInfo, accent: Neo.magenta, icon: "flag.checkered",
                               buttonTitle: Strings.play) { model.playRace() }
                 ArtActionTile(image: "menu_parkrace.jpg", kicker: Strings.homeTrafficKicker, title: Strings.parkRace,
                               detail: Strings.cityRaceInfo, accent: Palette.gold, icon: "parkingsign",
                               buttonTitle: Strings.play) { model.playCity() }
+                ArtActionTile(image: "menu_join.jpg", kicker: Strings.taxiKicker, title: Strings.taxiTitle,
+                              detail: Strings.taxiInfo, accent: Color(red: 1, green: 0.8, blue: 0.1), icon: "car.fill",
+                              buttonTitle: Strings.play) { model.playTaxi() }
             }
         case .online:
             ZStack {
@@ -952,12 +955,14 @@ struct LobbyView: View {
                          enabled: model.isHost) { model.setOnlineMode(.race) }
                 ModeChip(title: Strings.parkRace, icon: "parkingsign", selected: model.onlineMode == .park,
                          enabled: model.isHost) { model.setOnlineMode(.park) }
+                ModeChip(title: Strings.taxiTitle, icon: "car.fill", selected: model.onlineMode == .taxi,
+                         enabled: model.isHost) { model.setOnlineMode(.taxi) }
             }
             .padding(4)
             .background(Capsule().fill(Color.black.opacity(0.35)))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
             .padding(.top, 2)
-            Text(model.onlineMode == .race ? Strings.onlineRaceInfo : Strings.onlineParkInfo)
+            Text(model.onlineMode == .race ? Strings.onlineRaceInfo : (model.onlineMode == .taxi ? Strings.onlineTaxiInfo : Strings.onlineParkInfo))
                 .font(.ui(12, .semibold))
                 .foregroundStyle(.white.opacity(0.6))
                 .lineLimit(1)
@@ -1080,23 +1085,26 @@ struct LoadingView: View {
     @State private var tip = Strings.tips.randomElement() ?? ""
     @State private var shown = false
     private var modeTitle: String {
+        if Levels.isTaxi(level) { return Strings.taxiTitle }
         if Levels.isRace(level) { return Strings.carRace }
         if Levels.isCity(level) { return Strings.parkRace }
         return Levels.title(level)
     }
 
     private var levelName: String {
-        Levels.isCity(level) ? Strings.homeCityKicker : Levels.level(level).name
+        Levels.isTaxi(level) ? Strings.taxiKicker : (Levels.isCity(level) ? Strings.homeCityKicker : Levels.level(level).name)
     }
 
     private var art: String {
+        if Levels.isTaxi(level) { return "menu_join.jpg" }
         if Levels.isRace(level) { return "menu_city.jpg" }
         if Levels.isCity(level) { return "menu_parkrace.jpg" }
         return "menu_park.jpg"
     }
 
     private var accent: Color {
-        Levels.isCity(level) ? (Levels.isRace(level) ? Neo.magenta : Palette.gold) : TierColor.of(level: level)
+        Levels.isTaxi(level) ? Color(red: 1, green: 0.8, blue: 0.1)
+            : (Levels.isCity(level) ? (Levels.isRace(level) ? Neo.magenta : Palette.gold) : TierColor.of(level: level))
     }
 
     var body: some View {

@@ -72,6 +72,8 @@ struct LevelDef {
     /// spot try to take first, and those drivers.
     var freeSpots: [FreeSpot] = []
     var hunters: [HunterStart] = []
+    /// Taxi rounds: the customer, the destination and the ride.
+    var taxi: TaxiDef? = nil
 
     var name: String { Strings.pick(nameTR, nameEN, Levels.spanishNames[nameEN] ?? Levels.moreSpanishNames[nameEN] ?? nameEN) }
 }

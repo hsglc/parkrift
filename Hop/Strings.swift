@@ -258,6 +258,36 @@ enum Strings {
     static var friendTookSpot: String { t("Rakibin yerini kaptı!", "Your rival took it!", "¡Tu rival te la quitó!") }
     static var lastSpot: String { t("Son boş yer!", "Last free spot!", "¡Última plaza libre!") }
     static var noSpotsLeft: String { t("Yer kalmadı!", "No spots left!", "¡No quedan plazas!") }
+    // Taxi
+    static var taxiTitle: String { t("Taksi", "Taxi", "Taxi") }
+    static var taxiKicker: String { t("Müşteri kap", "Grab the fare", "Consigue clientes") }
+    static var taxiInfo: String { t("3 müşteri · rakip taksilerden önce al, isteğini yerine getir, santimine park et", "3 customers · beat the rival taxis to them, give them the ride they want, park spot on", "3 clientes · gánales a los taxis rivales, dales el viaje que quieren y aparca al milímetro") }
+    static var onlineTaxiInfo: String { t("3 tur · müşteriyi ilk alan götürür · 2 turu alan kazanır", "Best of 3 · first to pick up the customer takes them · 2 rounds win", "Al mejor de 3 · quien recoge primero al cliente se lo lleva · 2 rondas ganan") }
+    static func customerRound(_ n: Int, of total: Int) -> String { t("Müşteri \(n)/\(total)", "Customer \(n)/\(total)", "Cliente \(n)/\(total)") }
+    static var pickUpCustomer: String { t("Müşteriyi al: yanında dur", "Pick up the customer: stop by them", "Recoge al cliente: para a su lado") }
+    static var customerComing: String { t("Müşteri biniyor…", "Customer getting in…", "El cliente sube…") }
+    static func riderLine(_ rider: Rider) -> String {
+        switch rider {
+        case .hurry: return t("\"Acelem var, uçur!\"", "\"I'm late, step on it!\"", "\"¡Llego tarde, písale!\"")
+        case .coffee: return t("\"Kahvem dolu, yavaş ol!\"", "\"Full coffee, go easy!\"", "\"Café lleno, ¡con calma!\"")
+        case .show: return t("\"Drift at, video çekiyorum!\"", "\"Drift for me, I'm filming!\"", "\"¡Derrapa, estoy grabando!\"")
+        case .getaway: return t("\"Polis peşimde, kaçır beni!\"", "\"Cops on my tail, lose them!\"", "\"¡La poli me sigue, despístala!\"")
+        }
+    }
+    static var riderLate: String { t("Geç kaldın, bahşiş yok", "Too late, no tip", "Tarde, sin propina") }
+    static var riderSpilled: String { t("Kahve döküldü!", "Coffee spilled!", "¡Café derramado!") }
+    static var riderCaught: String { t("Polise yakalandınız!", "The police got you!", "¡Os pilló la poli!") }
+    static var crimeGetaway: String { t("Kaçak yolcu", "Runaway passenger", "Pasajero fugitivo") }
+    static var rivalGotCustomer: String { t("Rakip taksi müşteriyi kaptı!", "A rival taxi got the customer!", "¡Un taxi rival se llevó al cliente!") }
+    static var friendGotCustomer: String { t("Rakibin müşteriyi önce aldı!", "Your rival picked them up first!", "¡Tu rival lo recogió antes!") }
+    static func riderTimeLeft(_ s: Int) -> String { t("\(s) sn", "\(s) s", "\(s) s") }
+    static func riderCup(_ p: Int) -> String { t("Dökülme %\(p)", "Spill \(p)%", "Derrame \(p)%") }
+    static func riderDrift(_ have: Int, _ want: Int) -> String { t("Drift \(max(0, have))/\(want)", "Drift \(max(0, have))/\(want)", "Derrape \(max(0, have))/\(want)") }
+    static var riderLoseThem: String { t("Polisi ekt!", "Lose the police!", "¡Despista a la poli!") }
+    static var customerHappy: String { t("Müşteri memnun!", "Happy customer!", "¡Cliente feliz!") }
+    static var customerDelivered: String { t("Müşteri teslim", "Customer dropped off", "Cliente entregado") }
+    static var rewardFare: String { t("Taksi ücreti", "Fare", "Tarifa") }
+    static var rewardTip: String { t("Bahşiş", "Tip", "Propina") }
     static var carClassTitle: String { t("Sınıf", "Class", "Clase") }
     static var dailyKicker: String { t("HER GÜN YENİLENİR", "RESETS EVERY DAY", "SE RENUEVA CADA DÍA") }
     static func streakDays(_ days: Int) -> String { t("Seri: \(days) gün", "Streak: \(days) days", "Racha: \(days) días") }

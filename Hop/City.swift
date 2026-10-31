@@ -222,6 +222,34 @@ struct HunterStart {
     let spot: Int
 }
 
+// MARK: - Taxi
+
+/// What a taxi customer wants on the ride (the tip depends on it).
+enum Rider: Int, CaseIterable {
+    case hurry       // a time to beat
+    case coffee      // a full cup: no hard braking, turning or knocks
+    case show        // wants drifts on the way
+    case getaway     // the police come after you at once: lose them
+
+    var icon: String {
+        switch self {
+        case .hurry: return "⏱"
+        case .coffee: return "☕"
+        case .show: return "🌀"
+        case .getaway: return "🚨"
+        }
+    }
+}
+
+/// A taxi round: the customer waving at the kerb by the pick-up bay (free bay 0, which the rival
+/// taxis go for), the bay at the destination, and what the customer wants.
+struct TaxiDef {
+    let customer: CGPoint
+    let facing: CGFloat
+    let destination: SpotDef
+    let rider: Rider
+}
+
 // MARK: - City rounds
 
 extension Levels {
@@ -229,6 +257,9 @@ extension Levels {
     static let cityRounds = 5
     static let raceBase = 200
     static let raceRounds = 3
+    /// Taxi shifts: three customers.
+    static let taxiBase = 300
+    static let taxiRounds = 3
     /// An online match (city park race or car race): best of three, the first to finish takes
     /// each round and two rounds win it.
     static let onlineRounds = 3
@@ -238,9 +269,11 @@ extension Levels {
 
     /// City streets (park race and car race).
     static func isCity(_ index: Int) -> Bool { index >= cityBase }
-    static func isRace(_ index: Int) -> Bool { index >= raceBase }
+    static func isRace(_ index: Int) -> Bool { index >= raceBase && index < taxiBase }
+    static func isTaxi(_ index: Int) -> Bool { index >= taxiBase }
 
     static func level(_ index: Int) -> LevelDef {
+        if isTaxi(index) { return city(round: index - taxiBase, race: false, taxi: true) }
         if isRace(index) { return city(round: index - raceBase, race: true) }
         if isCity(index) { return city(round: index - cityBase, race: false) }
         return all[max(0, min(index, all.count - 1))]
@@ -248,23 +281,26 @@ extension Levels {
 
     /// The round within its city or race series (0 based).
     static func roundIndex(_ index: Int) -> Int {
-        isRace(index) ? index - raceBase : (isCity(index) ? index - cityBase : index)
+        isTaxi(index) ? index - taxiBase : (isRace(index) ? index - raceBase : (isCity(index) ? index - cityBase : index))
     }
 
     static func isLast(_ index: Int, online: Bool = false) -> Bool {
         if online && isCity(index) { return roundIndex(index) >= onlineRounds - 1 }
+        if isTaxi(index) { return index >= taxiBase + taxiRounds - 1 }
         if isRace(index) { return index >= raceBase + raceRounds - 1 }
         if isCity(index) { return index >= cityBase + cityRounds - 1 }
         return index >= all.count - 1
     }
 
     static func clamp(_ index: Int) -> Int {
+        if isTaxi(index) { return min(index, taxiBase + taxiRounds - 1) }
         if isRace(index) { return min(index, raceBase + raceRounds - 1) }
         if isCity(index) { return min(index, cityBase + cityRounds - 1) }
         return max(0, min(index, all.count - 1))
     }
 
     static func title(_ index: Int, online: Bool = false) -> String {
+        if isTaxi(index) { return Strings.customerRound(index - taxiBase + 1, of: online ? onlineRounds : taxiRounds) }
         if isRace(index) { return Strings.raceRound(index - raceBase + 1, of: online ? onlineRounds : raceRounds) }
         if isCity(index) { return Strings.round(index - cityBase + 1, of: online ? onlineRounds : cityRounds) }
         return Strings.level(index + 1, of: all.count)
@@ -277,8 +313,8 @@ extension Levels {
 
     /// A procedurally generated city with a street grid, parked cars, buildings and traffic.
     /// `race`: a finish line far away and dense traffic instead of a parking target.
-    static func city(round: Int, race: Bool) -> LevelDef {
-        var rng = SplitMix64(seed: (UInt64(round + 1) &* 0x2545_F491_4F6C_DD1D) ^ (race ? 0xA5A5_5A5A : 0))
+    static func city(round: Int, race: Bool, taxi: Bool = false) -> LevelDef {
+        var rng = SplitMix64(seed: (UInt64(round + 1) &* 0x2545_F491_4F6C_DD1D) ^ (race ? 0xA5A5_5A5A : 0) ^ (taxi ? 0x7A71_0000 : 0))
         // 7 x 5 streets: 24 blocks (it was 5 x 4, 12 blocks), about 500 x 300 m
         let map = CityMap(xs: [100, 900, 1700, 2500, 3300, 4100, 4900], ys: [100, 800, 1500, 2200, 2900])
         let worldSize = CGSize(width: 5000, height: 3000)
@@ -433,7 +469,31 @@ extension Levels {
             return FreeSpot(def: SpotDef(center: slot.center, size: spotSize, angle: slot.angle),
                             entry: forward ? targetSeg.a : targetSeg.b, exit: forward ? targetSeg.b : targetSeg.a)
         }
-        let spots = [freeSpots[0].def, freeSpots[2].def]
+        // Taxi: the customer waits by the first bay (the only one left open on that street); the
+        // ride goes to one free bay on a street far away
+        var destination: SpotDef?
+        var destinationSlot: Slot?
+        var destinationSegment = -1
+        if taxi {
+            let pickup = freeSpots[0].def.center
+            for _ in 0..<80 {
+                let candidate = interior[rng.int(interior.count)]
+                if candidate != targetSegment && midpoint(candidate).distance(to: pickup) > 1700 {
+                    destinationSegment = candidate
+                    break
+                }
+            }
+            if destinationSegment < 0 { destinationSegment = interior.first { $0 != targetSegment } ?? targetSegment }
+            let side = rng.unit() < 0.5 ? -1 : 1
+            let count = slots.filter { $0.segment == destinationSegment && $0.side == side }.count
+            let index = 1 + rng.int(max(1, count - 2))
+            destinationSlot = slots.first { $0.segment == destinationSegment && $0.side == side && $0.index == index }
+            if let slot = destinationSlot {
+                destination = SpotDef(center: slot.center, size: spotSize, angle: slot.angle)
+            }
+        }
+        let openSlots: [Slot] = taxi ? [chosen[0]] + (destinationSlot.map { [$0] } ?? []) : chosen
+        let spots = destination.map { [$0, $0] } ?? [freeSpots[0].def, freeSpots[2].def]
         let targetCenter = midpoint(targetSegment)
 
         // Start: a street far away from the target
@@ -462,8 +522,8 @@ extension Levels {
         // Parked cars: the target street is nearly full (only the free bays are open)
         var obstacles: [ObstacleDef] = []
         for slot in slots {
-            if chosen.contains(where: { $0.segment == slot.segment && $0.side == slot.side && $0.index == slot.index }) { continue }
-            let chance: CGFloat = slot.segment == targetSegment ? 0.9 : 0.2
+            if openSlots.contains(where: { $0.segment == slot.segment && $0.side == slot.side && $0.index == slot.index }) { continue }
+            let chance: CGFloat = slot.segment == targetSegment || slot.segment == destinationSegment ? 0.9 : 0.2
             guard rng.unit() < chance else { continue }
             let jitter = rng.range(-6, 6)
             let center = slot.angle == 0 ? CGPoint(x: slot.center.x + jitter, y: slot.center.y)
@@ -478,8 +538,9 @@ extension Levels {
         let playerTime = playerDrive / 200 + 7
         var hunters: [HunterStart] = []
         var taken: [CGPoint] = starts.map { $0.position }
-        for (k, share) in [0.45, 0.8, 1.1, 1.6].enumerated() {
-            let spot = k
+        // (taxi: the rival taxis all go for the customer's bay)
+        for (k, share) in (taxi ? [0.55, 0.95, 1.35] : [0.45, 0.8, 1.1, 1.6]).enumerated() {
+            let spot = taxi ? 0 : k
             let dist = map.distances(to: freeSpots[spot].entry, avoiding: (freeSpots[spot].entry, freeSpots[spot].exit))
             let wanted = max(380, (CGFloat(share) * playerTime - 2.5) * 75)
             var best: BotStart?
@@ -549,8 +610,19 @@ extension Levels {
         }
         var level = LevelDef(nameTR: "Şehir", nameEN: "City", starts: starts, spots: spots, obstacles: obstacles,
                              world: worldSize, city: map, bots: bots)
-        level.freeSpots = freeSpots
+        level.freeSpots = taxi ? [freeSpots[0]] : freeSpots
         level.hunters = hunters
+        if taxi, let destination = destination {
+            // The customer stands on the pavement behind the bay, facing the street
+            let slot = chosen[0]
+            let out = CGFloat(slot.side) * 26
+            let customer = targetSeg.horizontal ? CGPoint(x: slot.center.x, y: slot.center.y + out)
+                                                : CGPoint(x: slot.center.x + out, y: slot.center.y)
+            let facing: CGFloat = targetSeg.horizontal ? (slot.side < 0 ? CGFloat.pi / 2 : -CGFloat.pi / 2)
+                                                       : (slot.side < 0 ? 0 : CGFloat.pi)
+            level.taxi = TaxiDef(customer: customer, facing: facing, destination: destination,
+                                 rider: Rider(rawValue: round % Rider.allCases.count) ?? .hurry)
+        }
         Levels.finishArcade(&level, arcade)
         return level
     }
@@ -1379,6 +1451,28 @@ final class Traffic {
                                     round, index, bot.hunt, bot.from, bot.to, spot.entry, spot.exit, Double(bot.position.x), Double(bot.position.y),
                                     Double(bot.speed), bot.approach ? 1 : 0, Double(bot.parkT), Double(bot.waiting)))
             }
+        }
+        // Taxi: when the rival taxis reach the customer (player standing at the start)
+        for round in 0..<Levels.taxiRounds {
+            let level = Levels.city(round: round, race: false, taxi: true)
+            guard let map = level.city, level.taxi != nil else {
+                lines.append("PPTAXI r\(round) no taxi round")
+                continue
+            }
+            let traffic = Traffic(map: map, starts: level.bots, seed: UInt64((Levels.taxiBase + round) * 31 + 7),
+                                  spots: level.freeSpots, hunters: level.hunters)
+            let player = level.starts.first?.position ?? .zero
+            var first = -1.0
+            var t: CGFloat = 0
+            while t < 120 && first < 0 {
+                traffic.step(1.0 / 60, blockers: [player], playerCars: 1)
+                t += 1.0 / 60
+                if !traffic.takes.isEmpty { first = Double(t) }
+            }
+            let route = map.route(from: player, to: level.freeSpots[0].def.center)
+            let length = zip(route, route.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }
+            lines.append(String(format: "PPTAXI r%d rider=%d rivals=%d route=%.0f firstRival=%.1f", round,
+                                level.taxi?.rider.rawValue ?? -1, level.hunters.count, Double(length), first))
         }
         return lines
     }

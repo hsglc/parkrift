@@ -18,6 +18,9 @@ struct RunStats {
     var topSpeed: Int
     /// Parking precision 0...100 (solo parking levels).
     var precision: Int? = nil
+    /// Taxi rounds: the fare and the tip.
+    var fare = 0
+    var tip = 0
 }
 
 /// Coins earned in a round, line by line, and the daily tasks it completed.
@@ -129,6 +132,8 @@ enum Progression {
             if run.solo && run.stars > 0 { lines.append((Strings.rewardStars, run.stars * 15)) }
             if run.hits == 0 { lines.append((Strings.rewardClean, 25)) }
         }
+        if run.finished && run.fare > 0 { lines.append((Strings.rewardFare, run.fare)) }
+        if run.finished && run.tip > 0 { lines.append((Strings.rewardTip, run.tip)) }
         if run.driftPoints > 0 { lines.append((Strings.rewardDrift, min(150, run.driftPoints / 25))) }
         if run.nearMisses > 0 { lines.append((Strings.rewardNearMiss, run.nearMisses * 10)) }
         if run.escapes > 0 { lines.append((Strings.rewardEscape, run.escapes * 75)) }
