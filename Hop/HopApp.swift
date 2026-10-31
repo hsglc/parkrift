@@ -849,7 +849,7 @@ struct RootView: View {
             if args.contains("-traffictest") {
                 // The traffic check: written where the check workflow picks it up
                 DispatchQueue.global(qos: .userInitiated).async {
-                    let report = Traffic.check().joined(separator: "\n")
+                    let report = Traffic.check().joined(separator: "\n") + "\n"
                     print(report)
                     if let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
                         try? report.write(to: folder.appendingPathComponent("traffic.txt"), atomically: true, encoding: .utf8)

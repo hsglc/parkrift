@@ -1371,6 +1371,13 @@ final class Traffic {
             let length = zip(route, route.dropFirst()).reduce(0) { $0 + $1.0.distance(to: $1.1) }
             lines.append(String(format: "PPSPOT city r%d hunters=%d spots=%d route=%.0f taken=%@",
                                 round, level.hunters.count, level.freeSpots.count, Double(length), times.joined(separator: " ")))
+            // Hunters still out: where they are and what they are doing
+            for (index, bot) in traffic.bots.enumerated() where bot.hunt >= 0 && !bot.parked {
+                let spot = level.freeSpots[bot.hunt]
+                lines.append(String(format: "PPSPOT   r%d bot%d hunt=%d lane=%d>%d bay=%d>%d pos=%.0f,%.0f v=%.0f approach=%d parkT=%.2f wait=%.1f",
+                                    round, index, bot.hunt, bot.from, bot.to, spot.entry, spot.exit, Double(bot.position.x), Double(bot.position.y),
+                                    Double(bot.speed), bot.approach ? 1 : 0, Double(bot.parkT), Double(bot.waiting)))
+            }
         }
         return lines
     }
