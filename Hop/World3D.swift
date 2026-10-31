@@ -3348,11 +3348,6 @@ final class World3D {
         myNeon = nil
     }
 
-    /// A node in the level (the taxi customer and their sign).
-    func addLevelNode(_ node: SCNNode) {
-        levelRoot.addChildNode(node)
-    }
-
     /// A bay someone else took: its light goes out.
     func markSpotTaken(_ index: Int) {
         guard freeSpots.indices.contains(index) else { return }

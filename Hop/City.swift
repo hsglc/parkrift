@@ -539,7 +539,8 @@ extension Levels {
         var hunters: [HunterStart] = []
         var taken: [CGPoint] = starts.map { $0.position }
         // (taxi: the rival taxis all go for the customer's bay)
-        for (k, share) in (taxi ? [0.55, 0.95, 1.35] : [0.45, 0.8, 1.1, 1.6]).enumerated() {
+        let shares: [CGFloat] = taxi ? [0.55, 0.95, 1.35] : [0.45, 0.8, 1.1, 1.6]
+        for (k, share) in shares.enumerated() {
             let spot = taxi ? 0 : k
             let dist = map.distances(to: freeSpots[spot].entry, avoiding: (freeSpots[spot].entry, freeSpots[spot].exit))
             let wanted = max(380, (CGFloat(share) * playerTime - 2.5) * 75)
